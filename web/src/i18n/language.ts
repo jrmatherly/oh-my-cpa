@@ -45,6 +45,8 @@ export type Lang = (typeof LANGUAGES)[number]['id'];
 /** The language a first visit reads, and the one a catalog that cannot be fetched falls back to. */
 export const DEFAULT_LANG: Lang = 'zh';
 
+export const LANG_KEY = 'omc-lang';
+
 export function isLang(value: unknown): value is Lang {
   return LANGUAGES.some((language) => language.id === value);
 }
