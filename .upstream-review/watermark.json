@@ -1,0 +1,13 @@
+{
+  "upstreamUrl": "https://github.com/WizisCool/oh-my-cpa.git",
+  "upstreamRemote": "upstream",
+  "upstreamBranch": "main",
+  "forkPointSha": "183bf120fbc47434c2d9aec08795f891ea42095a",
+  "forkPointDate": "2026-11-09",
+  "forkPointTag": "v0.3.26",
+  "lastReviewedSha": "f67ee930e29dc4462690f285e8871521c6bfd328",
+  "lastReviewedShaShort": "f67ee930",
+  "lastReviewedDate": "2026-11-10",
+  "note": "forkPointSha is the upstream commit (v0.3.26) this fork started tracking from; it never moves. lastReviewedSha is the last upstream commit a decision log classified; only .claude/skills/upstream-review/scripts/upstream-review.sh --advance <sha> moves it, and only forward. The review window runs from lastReviewedSha to the newest upstream v* tag past it, or to upstream/main when no tag is newer (--tip forces the tip). The merge-base is computed, not stored.",
+  "lastAdvancedAt": "2026-11-09T18:09:15Z"
+}

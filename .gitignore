@@ -72,3 +72,6 @@ caddy-config/
 # that would otherwise be committed by a command that stages a directory.
 .wrangler/
 .env.local
+
+# Personal Claude Code overrides
+.claude/settings.local.json

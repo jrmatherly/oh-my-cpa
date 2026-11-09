@@ -1,0 +1,60 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:fast)",
+      "Bash(pnpm test:logic)",
+      "Bash(pnpm test:components)",
+      "Bash(pnpm test:frontend)",
+      "Bash(pnpm type-check)",
+      "Bash(pnpm exec vitest run *)",
+      "Bash(pnpm check-i18n)",
+      "Bash(pnpm check-css-modules)",
+      "Bash(pnpm check:feedback)",
+      "Bash(pnpm check-docs)",
+      "Bash(pnpm lint:antd)",
+      "Bash(pnpm lint:go)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(go build *)",
+      "Bash(gofmt *)",
+      "Bash(golangci-lint run *)"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Edit(/internal/web/dist/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-paths.sh",
+            "args": [],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit.sh",
+            "args": [],
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

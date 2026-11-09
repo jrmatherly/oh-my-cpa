@@ -66,7 +66,7 @@ and operator procedures.
   - `internal/operations/`: Shared business mutations (validation, revision checks, write gates, backups, readback) consumed by both HTTP handlers and Agent/MCP capabilities.
   - `internal/capability/`, `internal/agent/`, `internal/mcpbridge/`: Capability registry, Agent loop/persistence, and MCP transport adapters.
   - `internal/cpa/`: Gateway v8 management client, lossless YAML patching (`configyaml`), credential discovery.
-  - `internal/repository/`: Single-writer SQLite WAL persistence, forward-only migrations (`internal/repository/migrations/`), encrypted fields and backups.
+  - `internal/repository/`: Single-writer SQLite WAL persistence, forward-only migrations (`migrations/`), encrypted fields and backups.
   - `internal/ingest/`, `internal/usage/`, `internal/pricing/`, `internal/quota/`: Usage ingestion, token accounting, versioned price book, and quota observation/warmup.
 - **Frontend structure (`web/src/`)**:
   - `pages/`: Route-level views loaded through `App.tsx` and `PageLoading.tsx`.
