@@ -11,11 +11,17 @@ file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')
 # patterns: resolve the nearest existing ancestor with pwd -P and re-attach the rest.
 root="$(cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" && pwd -P)"
 abs="$file_path"; tail=""
-until dir="$(cd "$abs" 2>/dev/null && pwd -P)"; do
+until dir="$(cd -P -- "$abs" 2>/dev/null && pwd -P)"; do
   tail="/$(basename "$abs")$tail"; abs="$(dirname "$abs")"
   [ "$abs" = "/" ] && { dir=""; break; }
 done
 rel="${dir}${tail}"; rel="${rel#"$root"/}"
+# The tool always sends clean absolute paths; a "." or ".." left in the part that does
+# not exist yet cannot be resolved against the disk, so it is refused rather than guessed.
+case "/$tail/" in */./*|*/../*)
+  jq -n --arg p "$file_path" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:("Path has unresolved dot segments under a directory that does not exist: " + $p)}}'
+  exit 0 ;;
+esac
 # macOS file systems are case-insensitive; "Migrations/057.SQL" is the same file.
 shopt -s nocasematch
 
