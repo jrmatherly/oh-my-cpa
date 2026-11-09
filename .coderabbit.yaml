@@ -14,8 +14,11 @@ tone_instructions: >-
 reviews:
   # This repository's blocking signals are its own gates (`pnpm verify`,
   # `pnpm verify:full`) and a human. A review bot that can request changes would
-  # duplicate CI with a weaker, non-reproducible verdict.
-  request_changes_workflow: false
+  # duplicate CI with a weaker, non-reproducible verdict. `profile` is the
+  # default, written down; `assertive` adds nitpicks the gates already cover.
+  profile: chill
+  auto_approvals:
+    enabled: false
   # A fortune message carries no information, and `review_details` does: it shows
   # what the review actually considered (ignored files, suppressed comments),
   # which is what a maintainer needs when judging a finding.
@@ -41,6 +44,13 @@ reviews:
   path_filters:
     - '!docs/images/**'
     - '!deploy/cloudflare/data/**'
+  # Biome and ESLint have no configuration in this repository, so their
+  # profile defaults would report against rules `pnpm verify` does not enforce.
+  tools:
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
   high_level_summary_instructions: >-
     Summarize what changed and which invariant or document it affects. Group the
     walkthrough by layer (Go packages, SPA, scripts, migrations, context docs)
@@ -211,25 +221,12 @@ reviews:
         data directory, because SQLite access is serialized rather than retried.
 knowledge_base:
   code_guidelines:
-    # Read as review criteria: AGENTS.md states the agent contract and the rule
-    # tiers, and the other three hold the invariants that the path instructions
-    # above refer to.
+    # Read as review criteria. `AGENTS.md`, `CLAUDE.md` and `.claude/rules/**`
+    # are defaults. A bare path applies only under its own directory, so the two
+    # guides under `docs/` name the code they govern.
     filePatterns:
-      - '**/AGENTS.md'
       - 'CONTEXT.md'
-      - 'docs/architecture.md'
-      - 'docs/design.md'
-code_generation:
-  unit_tests:
-    path_instructions:
-      - path: 'internal/**/*.go'
-        instructions: >-
-          Go regression tests belong beside the package under test and should
-          fail when the behavior regresses. Assert the wire or stored
-          representation rather than an internal approximation.
-      - path: 'web/src/**/*.{ts,tsx}'
-        instructions: >-
-          A decision a framework-free helper can make (URL derivation, debounce,
-          validation, formatting, chip mapping) is tested where the helper
-          lives, not in the browser; only claims about rendering, geometry, or
-          the browser lifecycle belong in a browser test.
+      - files: 'docs/architecture.md'
+        applyTo: 'internal/**, cmd/**, migrations/**, deploy/**'
+      - files: 'docs/design.md'
+        applyTo: 'web/src/**'
