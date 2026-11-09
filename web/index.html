@@ -45,7 +45,8 @@
       })();
     </script>
     <!-- The document ships Chinese and the bundle applies the stored reading language only after it
-         mounts, by which time the browser's translate detection has already read this tag. -->
+         mounts; until then a screen reader and the browser's translate detection see `zh-CN` for an
+         English console. `tests/logic/theme-boot.test.ts` holds the locale map to `i18n/language.ts`. -->
     <script id="omc-lang-boot">
       (function () {
         var locales = { zh: 'zh-CN', 'zh-Hant': 'zh-HK', en: 'en', ms: 'ms-MY' };

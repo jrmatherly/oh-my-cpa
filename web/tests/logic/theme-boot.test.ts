@@ -5,12 +5,13 @@
  * bundle downloads, the document stands on screen alone. It has to be painted in the mode this
  * browser last chose, or a resumed dark console flashes white. `web/index.html` therefore carries
  * the two shipped page grounds and a script that reads the stored theme before anything else loads.
- * This holds both to the theme module, so the document cannot drift into a copy of it.
+ * This holds both to the theme module, so the document cannot drift into a copy of it. The language
+ * boot beside the theme boot is held to `i18n/language.ts` the same way.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'vitest';
-import { LANG_KEY, LANGUAGES } from '../../src/i18n/language.ts';
+import { DEFAULT_LANG, LANG_KEY, LANGUAGES, languageLocale } from '../../src/i18n/language.ts';
 import { BUILT_IN_PALETTES, getBuiltInPalette } from '../../src/theme/palette.ts';
 import { migrateLegacyThemeValue, THEME_STORAGE_KEY } from '../../src/theme/themePreference.ts';
 
@@ -119,9 +120,15 @@ function langBootScript(): string {
   return code;
 }
 
-/** Runs the document's language boot against a document that ships `lang="zh-CN"`, and returns its `lang` afterwards. */
+function shippedLang(): string {
+  const match = /<html lang="([^"]+)">/.exec(indexHTML);
+  assert.ok(match?.[1], 'index.html declares no document language');
+  return match[1];
+}
+
+/** Runs the document's language boot against the document as shipped, and returns its `lang` afterwards. */
 function bootedLang(stored: string | null, options: { storageThrows?: boolean } = {}): string {
-  const documentElement = { lang: 'zh-CN' };
+  const documentElement = { lang: shippedLang() };
   const window = {
     localStorage: {
       getItem(key: string): string | null {
@@ -141,14 +148,14 @@ test('the lang boot sets the document language from the stored preference', () =
   }
 });
 
-test('the lang boot leaves the shipped language alone for an unknown or unreadable preference', () => {
-  assert.equal(bootedLang(null), 'zh-CN');
-  assert.equal(bootedLang('klingon'), 'zh-CN');
-  // An inherited object key must not read as a language: a plain `map[stored]` would answer with a function.
-  assert.equal(bootedLang('toString'), 'zh-CN');
-  assert.equal(bootedLang('en', { storageThrows: true }), 'zh-CN');
+test('the document ships the language a first visit reads', () => {
+  assert.equal(shippedLang(), languageLocale(DEFAULT_LANG));
 });
 
-test('the lang boot reads the same storage key the i18n provider writes', () => {
-  assert.match(langBootScript(), new RegExp(`getItem\\('${LANG_KEY}'\\)`));
+test('the lang boot leaves the shipped language alone for an unknown or unreadable preference', () => {
+  assert.equal(bootedLang(null), shippedLang());
+  assert.equal(bootedLang('klingon'), shippedLang());
+  // An inherited object key must not read as a language: a plain `locales[stored]` would answer with a function.
+  assert.equal(bootedLang('toString'), shippedLang());
+  assert.equal(bootedLang('en', { storageThrows: true }), shippedLang());
 });
