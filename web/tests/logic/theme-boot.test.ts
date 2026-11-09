@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'vitest';
+import { LANG_KEY, LANGUAGES } from '../../src/i18n/language.ts';
 import { BUILT_IN_PALETTES, getBuiltInPalette } from '../../src/theme/palette.ts';
 import { migrateLegacyThemeValue, THEME_STORAGE_KEY } from '../../src/theme/themePreference.ts';
 
@@ -108,4 +109,46 @@ test('an unreadable preference leaves the shipped ground rather than taking the 
   assert.equal(groundedMode('{'), undefined);
   assert.equal(groundedMode(JSON.stringify({ mode: 'purple' })), undefined);
   assert.equal(groundedMode(JSON.stringify({ mode: 'light' }), { storageThrows: true }), undefined);
+});
+
+function langBootScript(): string {
+  const match = /<script id="omc-lang-boot">([\s\S]*?)<\/script>/.exec(indexHTML);
+  assert.ok(match, 'index.html carries no omc-lang-boot script');
+  const code = match[1];
+  assert.ok(code);
+  return code;
+}
+
+/** Runs the document's language boot against a document that ships `lang="zh-CN"`, and returns its `lang` afterwards. */
+function bootedLang(stored: string | null, options: { storageThrows?: boolean } = {}): string {
+  const documentElement = { lang: 'zh-CN' };
+  const window = {
+    localStorage: {
+      getItem(key: string): string | null {
+        assert.equal(key, LANG_KEY, 'the lang boot reads the key the i18n provider stores');
+        if (options.storageThrows) throw new Error('storage is blocked by policy');
+        return stored;
+      },
+    },
+  };
+  new Function('window', 'document', langBootScript())(window, { documentElement });
+  return documentElement.lang;
+}
+
+test('the lang boot sets the document language from the stored preference', () => {
+  for (const language of LANGUAGES) {
+    assert.equal(bootedLang(language.id), language.locale);
+  }
+});
+
+test('the lang boot leaves the shipped language alone for an unknown or unreadable preference', () => {
+  assert.equal(bootedLang(null), 'zh-CN');
+  assert.equal(bootedLang('klingon'), 'zh-CN');
+  // An inherited object key must not read as a language: a plain `map[stored]` would answer with a function.
+  assert.equal(bootedLang('toString'), 'zh-CN');
+  assert.equal(bootedLang('en', { storageThrows: true }), 'zh-CN');
+});
+
+test('the lang boot reads the same storage key the i18n provider writes', () => {
+  assert.match(langBootScript(), new RegExp(`getItem\\('${LANG_KEY}'\\)`));
 });
