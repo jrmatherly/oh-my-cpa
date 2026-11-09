@@ -44,8 +44,8 @@ and shipped-artifact checks strict.
 
 ## Browser acceptance diagnostics
 
-`pnpm verify:browser:smoke` and `pnpm verify:browser` compile the production SPA and Go
-binary, start the server against a fake CPA instance, and run Chromium checks (`OMCPA_BROWSER_BINARY` can be set to reuse an already-compiled Go binary). Failures
+`pnpm verify:browser:smoke` and `pnpm verify:browser` compile the Go binary around the SPA
+that `pnpm build` last wrote to `internal/web/dist`, start the server against a fake CPA instance, and run Chromium checks (`OMCPA_BROWSER_BINARY` can be set to reuse an already-compiled Go binary). Failures
 retain diagnostics under `tmp/browser-acceptance-failure/`.
 
 ## CI and releases
