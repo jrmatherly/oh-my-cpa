@@ -221,9 +221,11 @@ export const DashboardProviders = React.memo(function DashboardProviders({
             onClick={() => setIsExpanded((current) => !current)}
           >
             {isExpanded ? <UpOutlined aria-hidden="true" /> : <DownOutlined aria-hidden="true" />}
-            {isExpanded
-              ? t('dash.providers_show_less')
-              : t('dash.providers_show_all', { n: ordered.length })}
+            <span>
+              {isExpanded
+                ? t('dash.providers_show_less')
+                : t('dash.providers_show_all', { n: ordered.length })}
+            </span>
           </button>
         )}
       </div>
