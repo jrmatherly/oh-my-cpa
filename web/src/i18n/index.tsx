@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Catalog, TFunc } from './catalog';
 import { formatMessage } from './format';
-import { DEFAULT_LANG, isLang, languageLocale, type Lang } from './language';
+import { DEFAULT_LANG, isLang, LANG_KEY, languageLocale, type Lang } from './language';
 import { ANTD_LOCALES, CATALOGS } from './resources';
 
 export { LANGUAGES, languageLocale, isChineseLanguage } from './language';
@@ -70,8 +70,6 @@ export function antdLocale(lang: Lang) {
 function isDeferredLanguage(lang: Lang): boolean {
   return typeof CATALOGS[lang] === 'function';
 }
-
-const LANG_KEY = 'omc-lang';
 
 /**
  * The reading language the console falls back to when the stored one cannot be fetched.

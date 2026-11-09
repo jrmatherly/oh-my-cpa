@@ -44,6 +44,19 @@
         }
       })();
     </script>
+    <!-- The document ships Chinese and the bundle applies the stored reading language only after it
+         mounts, by which time the browser's translate detection has already read this tag. -->
+    <script id="omc-lang-boot">
+      (function () {
+        var locales = { zh: 'zh-CN', 'zh-Hant': 'zh-HK', en: 'en', ms: 'ms-MY' };
+        try {
+          var stored = window.localStorage.getItem('omc-lang');
+          if (Object.prototype.hasOwnProperty.call(locales, stored)) document.documentElement.lang = locales[stored];
+        } catch (error) {
+          // The bundle reads the same preference and sets the language once it mounts.
+        }
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <!-- Every URL in the manifest is relative, and start_url, scope and the icon sources resolve
          against the MANIFEST's URL, so one committed file is correct at the site root and under
