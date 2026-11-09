@@ -8,10 +8,14 @@ file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')
 [ -z "$file_path" ] && exit 0
 
 # Canonicalize before matching so "./", ".." and symlinked directories cannot dodge the
-# patterns. A parent that does not exist cannot be one of the protected directories.
+# patterns: resolve the nearest existing ancestor with pwd -P and re-attach the rest.
 root="$(cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" && pwd -P)"
-dir="$(cd "$(dirname "$file_path")" 2>/dev/null && pwd -P)" || exit 0
-rel="${dir}/$(basename "$file_path")"; rel="${rel#"$root"/}"
+abs="$file_path"; tail=""
+until dir="$(cd "$abs" 2>/dev/null && pwd -P)"; do
+  tail="/$(basename "$abs")$tail"; abs="$(dirname "$abs")"
+  [ "$abs" = "/" ] && { dir=""; break; }
+done
+rel="${dir}${tail}"; rel="${rel#"$root"/}"
 # macOS file systems are case-insensitive; "Migrations/057.SQL" is the same file.
 shopt -s nocasematch
 
