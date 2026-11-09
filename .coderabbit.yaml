@@ -2,8 +2,8 @@
 #
 # CodeRabbit review contract for Oh My CPA.
 #
-# AGENTS.md holds the general rules, and the guide below reads it as review
-# criteria. This file only adds what AGENTS.md cannot say: which project
+# AGENTS.md holds the general rules; CodeRabbit reads it as review criteria by
+# default. This file only adds what AGENTS.md cannot say: which project
 # invariant applies to which path, and where a CodeRabbit default does not fit
 # this repository.
 language: en-US
@@ -14,8 +14,9 @@ tone_instructions: >-
 reviews:
   # This repository's blocking signals are its own gates (`pnpm verify`,
   # `pnpm verify:full`) and a human. A review bot that can request changes would
-  # duplicate CI with a weaker, non-reproducible verdict. `profile` is the
-  # default, written down; `assertive` adds nitpicks the gates already cover.
+  # duplicate CI with a weaker, non-reproducible verdict, so `auto_approvals`
+  # stays off. `profile` is the default, written down; `assertive` adds nitpicks
+  # the gates already cover.
   profile: chill
   auto_approvals:
     enabled: false
@@ -44,12 +45,10 @@ reviews:
   path_filters:
     - '!docs/images/**'
     - '!deploy/cloudflare/data/**'
-  # Biome and ESLint have no configuration in this repository, so their
-  # profile defaults would report against rules `pnpm verify` does not enforce.
+  # Biome has no configuration in this repository, so its profile defaults would
+  # report against rules `pnpm verify` does not enforce.
   tools:
     biome:
-      enabled: false
-    eslint:
       enabled: false
   high_level_summary_instructions: >-
     Summarize what changed and which invariant or document it affects. Group the
@@ -227,6 +226,6 @@ knowledge_base:
     filePatterns:
       - 'CONTEXT.md'
       - files: 'docs/architecture.md'
-        applyTo: 'internal/**, cmd/**, migrations/**, deploy/**'
+        applyTo: 'internal/**, cmd/**, migrations/**, deploy/**, Dockerfile, web/src/**'
       - files: 'docs/design.md'
         applyTo: 'web/src/**'
