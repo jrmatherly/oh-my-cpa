@@ -19,12 +19,12 @@ Evidence gathered on 2026-11-09:
 - `web/src/pages/routing/PolicyStrip.tsx:104-116` renders the toggle as `{isFailoverOpen ? <DownOutlined /> : <RightOutlined />}{t('orch.failover')}<span …>`. Opening swaps the icon element, which React commits as `removeChild(oldIcon)` then `insertBefore(newIcon, textNode)`.
 - Chrome Translate (and similar extensions) replace each text node with a `<font>` element holding the translation. React keeps its reference to the original text node, which is no longer a child of the button, so `insertBefore` throws. This is the documented failure mode of browser translation against React trees.
 - Reproduced in jsdom: rendering `RoutingPage`, wrapping the "Failover" text node in `<font>`, and clicking the toggle throws `NotFoundError: The child can not be found in the parent` (jsdom's wording of the same DOM exception) and the router's error element renders.
-- Reproduced on upstream's public demo `https://omc-demo.junze.dev/routing` (built SPA, current release): the same DOM mutation plus one click produced the identical "页面未能加载 / NotFoundError / Failed to execute 'insertBefore'" page. The bug exists at upstream's tip, not only in v0.3.24.
+- Reproduced on upstream's public demo `https://omc-demo.junze.dev/routing` (built SPA, current release): the same DOM mutation plus one click produced the identical error page (the Chinese "This page couldn't load" heading, `NotFoundError`, `Failed to execute 'insertBefore'`). The bug exists at upstream's tip, not only in v0.3.24.
 - Wrapping the label in `<span>` makes the jsdom repro pass; stashing that change makes it fail again.
 - Why the translator ran at all (inferred, not measured): `web/index.html` ships `<html lang="zh-CN">` (the deployed console serves the same), `DEFAULT_LANG` is `zh`, and the app only writes the reader's language to `document.documentElement.lang` in a `useEffect` after mount (`web/src/i18n/index.tsx:167`). A browser reading an English console labelled Chinese is invited to translate it. The reporter's screenshot shows Chrome's translate icon active in the address bar.
 - A scan of `web/src` for the same "conditional icon followed by bare text" shape found one more, the dashboard's provider list toggle in `web/src/components/dashboard/DashboardProviders.tsx`, which gets the same `<span>` wrap (no separate test; the mechanism is the one the routing test pins).
 - The console's Content-Security-Policy (`internal/api/handler.go:1114`) is report-only and allows `'unsafe-inline'` scripts, so a second inline boot script in `index.html` needs no hash or nonce.
-- The reporter's cluster (`~/dev/home-cluster`) runs upstream's published image, and this fork publishes no builds yet. A fix reaches that console either through an upstream release or through the fork's first build, so Task 3 opens the upstream PR as well as the fork's.
+- The reporter's cluster runs upstream's published image, and this fork publishes no builds yet. A fix reaches that console either through an upstream release or through the fork's first build, so Task 3 opens the upstream PR as well as the fork's.
 
 ## Global Constraints
 
@@ -122,7 +122,7 @@ git commit -m "fix(routing): keep the failover label inside an element React own
 - Test: `web/tests/logic/theme-boot.test.ts` (append; the file already holds the document's boot scripts to their modules)
 
 **Interfaces:**
-- Consumes: `LANGUAGES` from `web/src/i18n/language.ts`; the storage key `'omc-lang'`, today the module-private `LANG_KEY` in `web/src/i18n/index.tsx:74`. It moves to `language.ts` as `export const LANG_KEY = 'omc-lang'`, the module whose header already names the HTML `lang` attribute among its non-React readers, and `index.tsx` imports it. A Node logic test then holds the script to it without importing the React provider.
+- Consumes: `LANGUAGES` from `web/src/i18n/language.ts`; the storage key `'omc-lang'`, until this change the module-private `LANG_KEY` in `web/src/i18n/index.tsx`. It moves to `language.ts` as `export const LANG_KEY = 'omc-lang'`, the module whose header already names the HTML `lang` attribute among its non-React readers, and `index.tsx` imports it. A Node logic test then holds the script to it without importing the React provider.
 - Produces: `document.documentElement.lang` set to the stored language's `locale` before any stylesheet or bundle loads, or left as the shipped `zh-CN` when nothing valid is stored.
 
 - [ ] **Step 1: Write the failing tests**
