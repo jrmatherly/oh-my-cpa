@@ -7,7 +7,7 @@ import { createOAuthSortRecords, legacyOAuthSort, OAUTH_SORT_KEYS } from '../fix
 test('every OAuth sort preserves the baseline order, stable ties and input identity', () => {
   for (const count of [0, 1, 12, 60]) {
     const records = createOAuthSortRecords(count);
-    const names = ['A2', 'a02', 'á2', 'a10', 'İ2', 'i2', 'é', 'e\u0301', '中2', '中10', '', '  '];
+    const names = ['A2', 'a02', 'á2', 'a10', 'İ2', 'i2', 'é', 'e\u0301', 'Ω2', 'Ω10', '', '  '];
     if (count === 12) records.forEach((record, index) => { record.file.name = names[index]; });
     for (const record of records) { Object.freeze(record.file); Object.freeze(record); }
     Object.freeze(records);

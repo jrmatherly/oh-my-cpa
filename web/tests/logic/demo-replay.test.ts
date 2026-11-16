@@ -31,7 +31,7 @@ import type { ChatRequest, StreamEvent, Turn } from '../../src/pages/playground/
 const instant = async () => {};
 const QUESTION = agentRecording.turn.user;
 
-function runRequest(content: string, language = 'zh'): AgentRunRequest {
+function runRequest(content: string, language = 'en'): AgentRunRequest {
   return {
     threadId: 'thread-1',
     runId: 'run-1',
@@ -53,7 +53,7 @@ async function fold(request: AgentRunRequest) {
 }
 
 test('a replayed run folds into the turn it then stores', async () => {
-  const { frame, types } = await fold(runRequest(QUESTION.zh));
+  const { frame, types } = await fold(runRequest(QUESTION.en));
   assert.equal(frame.isAccepted, true);
   assert.equal(frame.isFinished, true);
   assert.equal(frame.errorCode, '');
@@ -64,7 +64,7 @@ test('a replayed run folds into the turn it then stores', async () => {
   assert.deepEqual(frame.parts, stored.parts);
   assert.deepEqual(frame.traces, stored.traces);
   assert.equal(frame.turnId, stored.id);
-  assert.equal(stored.user, QUESTION.zh);
+  assert.equal(stored.user, QUESTION.en);
   assert.equal(stored.traces.length, stored.calls);
   assert.equal(types.filter(type => type === 'STEP_STARTED').length, stored.rounds);
   assert.equal(types.at(-1), 'RUN_FINISHED');
@@ -108,7 +108,7 @@ test('the question is accepted as the page offers it in a third reading language
 test('a second replay continues the conversation and a reset empties it', async () => {
   const current = readDemoConversation();
   assert.ok(current);
-  const { frame } = await fold(runRequest(QUESTION.zh));
+  const { frame } = await fold(runRequest(QUESTION.en));
   assert.equal(frame.snapshot?.turns.length, current.turns.length + 1);
   assert.equal(frame.snapshot?.revision, current.revision + 1);
   const reset = resetDemoConversation(frame.snapshot!);
@@ -124,22 +124,18 @@ test('a stopped replay ends as a cancelled request does', async () => {
     throw new DOMException('Aborted', 'AbortError');
   };
   await assert.rejects(async () => {
-    for await (const _event of replayAgentRun(runRequest(QUESTION.zh), controller.signal, abortingPace)) { /* drained */ }
+    for await (const _event of replayAgentRun(runRequest(QUESTION.en), controller.signal, abortingPace)) { /* drained */ }
   }, { name: 'AbortError' });
 });
 
 test('a recording is measured from the moment it is replayed', () => {
   const anchorMS = Date.UTC(2031, 0, 3, 9, 5, 0);
-  for (const language of ['zh', 'en'] as const) {
-    const resolved = JSON.stringify(resolveRecording(agentRecording.turn, anchorMS, language));
-    assert.doesNotMatch(resolved, /\{\{/, 'every placeholder resolves');
-    assert.match(resolved, /2030-12-27/, 'the window opens seven days before the anchor');
-    assert.match(resolved, /2031-01-03/);
-    assert.match(resolved, /09:05/);
-  }
-  // The window an answer names is the window it was asked about: the card states it in the reader's language.
-  const zh = resolveRecording<{ traces: { arguments: { ui: string } }[] }>(agentRecording.turn, anchorMS, 'zh');
-  assert.match(zh.traces.at(-1)!.arguments.ui, /2030 年 12 月 27 日 09:05 – 1 月 3 日 09:05/);
+  const resolved = JSON.stringify(resolveRecording(agentRecording.turn, anchorMS, 'en'));
+  assert.doesNotMatch(resolved, /\{\{/, 'every placeholder resolves');
+  assert.match(resolved, /2030-12-27/, 'the window opens seven days before the anchor');
+  assert.match(resolved, /2031-01-03/);
+  assert.match(resolved, /09:05/);
+  // The window an answer names is the window it was asked about.
   const en = resolveRecording<{ traces: { arguments: { ui: string } }[] }>(agentRecording.turn, anchorMS, 'en');
   assert.match(en.traces.at(-1)!.arguments.ui, /From Dec 27, 2030 09:05 to Jan 3 09:05/);
   // Fields that hold instants are numbers on the wire, not digits in a string.
@@ -159,23 +155,22 @@ test('the recorded figures agree with each other', () => {
   assert.equal(requests, 1632);
   assert.equal(failures, 88);
   for (const row of rows) assert.equal(row.rate, Math.round(1e4 * row.failures / row.requests) / 1e4);
-  for (const language of ['zh', 'en'] as const) {
-    const program = agentRecording.turn.traces.at(-1)!.arguments.ui[language];
-    assert.ok(program.includes('@Sum(rows.requests)'), `${language}: the total is read from the rows`);
-    assert.ok(program.includes('@Round(100 * @Sum(rows.failures) / @Sum(rows.requests), 1)'), `${language}: the rate is read from the rows`);
-  }
+  const program = agentRecording.turn.traces.at(-1)!.arguments.ui.en;
+  assert.ok(program.includes('@Sum(rows.requests)'), 'the total is read from the rows');
+  assert.ok(program.includes('@Round(100 * @Sum(rows.failures) / @Sum(rows.requests), 1)'), 'the rate is read from the rows');
 });
 
 test('text is cut on whole characters', () => {
-  assert.deepEqual(chunkText('a😀b中', 2), ['a😀', 'b中']);
-  assert.equal(recordingLanguage('zh-Hant'), 'zh');
+  assert.deepEqual(chunkText('a😀bé', 2), ['a😀', 'bé']);
+  // A reader whose browser or old profile names another language still gets the English recording.
+  assert.equal(recordingLanguage('zh-Hant'), 'en');
   assert.equal(recordingLanguage('ms'), 'en');
   assert.equal(recordingLanguage(undefined), 'en');
 });
 
 test('a replayed Playground answer folds into a finished turn', async () => {
   const request = { model: 'demo-model', client_key_fingerprint: 'hmac:demo', messages: [] } as unknown as ChatRequest;
-  for (const language of ['zh', 'en'] as const) {
+  for (const language of ['en'] as const) {
     let turn = { id: 'turn-1', request, keyLabel: '', user: { role: 'user', content: [] }, reply: '', status: 'running', startedAt: Date.now(), events: [], eventBytes: 0, isTruncated: false } as unknown as Turn;
     const events: StreamEvent[] = [];
     await replayPlaygroundChat(request, new AbortController().signal, event => {

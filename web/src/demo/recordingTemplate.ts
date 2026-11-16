@@ -5,7 +5,7 @@ import type { RecordingLanguage } from './pacing';
  *
  * A recording is taken once and replayed for as long as the demonstration runs, so nothing in it
  * may be a fixed date: "the last 7 days" has to end at the moment a visitor asks. Its strings
- * carry placeholders measured from that moment, and its sentences are written once per language.
+ * carry placeholders measured from that moment.
  *
  *   {{ms:-168}}   the instant 168 hours before the anchor, in epoch milliseconds
  *   {{iso:-7}}    the UTC calendar day 7 days before the anchor, as YYYY-MM-DD
@@ -14,8 +14,8 @@ import type { RecordingLanguage } from './pacing';
  *   {{hm}}        the anchor's UTC time of day
  *
  * A string that is exactly one `{{ms:…}}` placeholder becomes a number, because the fields that
- * hold instants are numbers on the wire. An object with exactly the keys `zh` and `en` is a
- * sentence in both languages and resolves to the one being read.
+ * hold instants are numbers on the wire. An object whose only key is `en` is a sentence, and
+ * resolves to it.
  */
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -27,13 +27,12 @@ function pad(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-function formatDay(instant: number, style: 'iso' | 'md' | 'ymd', language: RecordingLanguage): string {
+function formatDay(instant: number, style: 'iso' | 'md' | 'ymd', _language: RecordingLanguage): string {
   const date = new Date(instant);
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth();
   const day = date.getUTCDate();
   if (style === 'iso') return `${year}-${pad(month + 1)}-${pad(day)}`;
-  if (language === 'zh') return style === 'md' ? `${month + 1} 月 ${day} 日` : `${year} 年 ${month + 1} 月 ${day} 日`;
   return style === 'md' ? `${ENGLISH_MONTHS[month]} ${day}` : `${ENGLISH_MONTHS[month]} ${day}, ${year}`;
 }
 
@@ -51,7 +50,7 @@ function resolveText(text: string, anchorMS: number, language: RecordingLanguage
 
 function isLocalized(value: object): value is Record<RecordingLanguage, unknown> {
   const keys = Object.keys(value);
-  return keys.length === 2 && 'zh' in value && 'en' in value;
+  return keys.length === 1 && 'en' in value;
 }
 
 export function resolveRecording<T>(template: unknown, anchorMS: number, language: RecordingLanguage): T {

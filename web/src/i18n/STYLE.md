@@ -1,116 +1,110 @@
 # Style
 
-How a sentence in a catalog reads. These rules describe the copy that is already there, so a
-reviewer can tell a mistake from a choice — and so a new sentence looks like the ones beside it.
+How a sentence in the catalog reads. These rules describe the copy that is already there, so a
+reviewer can tell a mistake from a choice, and so a new sentence looks like the ones beside it.
 
 ## Voice
 
 Second person, addressed to the operator who runs the deployment. The console says what a screen
-does and what a control changes; it does not congratulate, apologise, or explain itself.
+does and what a control changes. It does not congratulate, apologise, or explain itself.
 
-- `en`: sentence case, no trailing period in a label, tooltip or button; a full sentence that
-  explains a consequence keeps its period.
-- `zh`: full-width punctuation (`，。：；`), a space between a Chinese sentence and an inline Latin
-  word or number is not inserted — the font handles the gap.
-- `zh-Hant`: the same, written in Hong Kong Traditional Chinese (軟件, 網絡, 帳戶, 金鑰). See
-  `GLOSSARY.md` for the terms.
-- `ms`: sentence case, Latin punctuation, and the standard Malaysian spelling (the catalog writes
-  `tetapan`, not `setelan`).
+Use sentence case. A label, tooltip or button has no trailing period. A full sentence that
+explains a consequence keeps its period.
 
 ## What a sentence may contain
 
-- **A placeholder, a unit, or a proper noun.** Nothing else that is not words: an id, a JSON field
+- **A placeholder, a unit, or a proper noun.** Nothing else that is not words. An id, a JSON field
   name, or a raw HTTP status in the middle of a sentence belongs in a code span beside it, not in
   the sentence.
-- **The same placeholders as the source sentence, exactly once each.** `pnpm check-i18n` compares
-  the sets; a translation that drops `{n}` silently loses the number.
-- **An ICU plural only where the language inflects.** English and Malay take `one`/`other`; Chinese
-  takes `other` alone, because it has no plural form. Every plural keeps `other`.
+- **Each placeholder exactly once.** A sentence that drops `{n}` silently loses the number.
+- **An ICU plural wherever a count changes the noun.** English takes `one` and `other`:
+  `{n, plural, one {# key} other {# keys}}`. Every plural keeps `other`.
 - **No leading or trailing whitespace**, and no double space. The layout owns spacing.
-- **No middle dot (`\u00b7`) between parts.** A catalog sentence relates its parts in words, a
-  comma or parentheses: `第 {page} 页，共 {n} 条记录`, `Auto ({model})`, `缓存写入（5 分钟）`. Two facts
-  that are not one phrase are two catalog entries the layout sets apart (`MetaLine`, a tooltip
-  card). `pnpm check:feedback` refuses the dot in catalogs too.
+- **No middle dot (`·`) between parts.** A catalog sentence relates its parts in words, a
+  comma or parentheses: `Page {page} of {n} records`, `Auto ({model})`, `Cache write (5 min)`. Two
+  facts that are not one phrase are two catalog entries the layout sets apart (`MetaLine`, a
+  tooltip card). `pnpm check:feedback` refuses the dot in the catalog too.
 
 ## Names of things
 
 A surface is named once and keeps that name: the same word for the page title, the menu entry, the
-breadcrumb and the empty state. `GLOSSARY.md` is where the name for a concept is decided; this file
+breadcrumb and the empty state. `GLOSSARY.md` is where the name for a concept is decided. This file
 is only about how a sentence around it is written.
 
 ## Errors
 
 An error sentence says what happened and, where the operator can act, what to do. It never shows a
-stack, an exception type, or an upstream's English body as the sentence — those are quoted
-underneath, in a code frame. A refused action names the rule it broke:
+stack, an exception type, or an upstream's raw body as the sentence. Those are quoted underneath,
+in a code frame. A refused action names the rule it broke:
 
-> 该备份来自更早的版本，无法直接恢复。
+> This backup comes from an older version and cannot be restored directly.
 
-rather than "操作失败".
+rather than "Operation failed".
 
 ## Length
 
 A label has one line. When a sentence does not fit in a control, the answer is a shorter sentence,
 not a wider control: the mobile console renders the same catalog. A tooltip may hold the longer
 explanation, and that is where a caveat belongs. A tooltip never repeats the control's own label or
-explains how to press it ("点击以筛选"); see `docs/dev/design.md`, Tooltips.
+explains how to press it ("Click to filter"). See `docs/dev/design.md`, Tooltips.
 
 ## Subtitles, hints, and secondary copy (Captions)
 
 Secondary copy (form field hints, card subtitles, section descriptions, table footers) exists to help
-the operator act with clarity and confidence. It is a visual whisper that supports the interface,
-not a legal disclaimer, an architecture manual, or an agent safety cushion.
+the operator act with clarity and confidence. It supports the interface quietly. It is not a legal
+disclaimer, an architecture manual, or an agent safety cushion.
 
 ### Invariants for secondary copy
 
 1. **User necessity over agent defense.** State what the field does, what format it accepts, or what
-   its immediate effect is. Never write defensive disclaimers ("并非解除所有限制", "请谨慎操作以免造成不可挽回的损失"),
-   passive-aggressive warnings, or historical gateway version lectures ("此优先级要求 CPA v8.0.33 或更高版本；依赖凭据覆盖前请先升级旧网关").
-   If an old gateway version is incompatible, enforce that via API/feature detection or graceful validation,
-   not by lecturing the user in the caption.
-2. **Concise precision on real gotchas.** When a real hazard or subtle rule exists (e.g. data deletion,
-   precedence overriding an upstream wildcard, restart required), state it in a single, calm sentence.
-   Do not explain the theoretical philosophy behind why the system was designed this way.
-3. **Typographic budget & visual rhythm.**
-   - A hint should typically be 1 concise sentence (maximum 2 short sentences).
-   - Chinese copy should generally not exceed 40–50 characters.
-   - Secondary copy must never dominate the vertical height or draw more visual attention than the control itself.
-4. **No negative preemption and defensive case enumeration.**
-   - Do not write what something is *not* ("不是xxx") unless users regularly and dangerously mistake it
-     for something destructive (e.g. "清空列表将恢复继承当前提供商规则" is complete and clean; adding "并非解除所有限制"
-     is redundant defensive clutter). State positive ownership directly (e.g. "CPA 运行时文件路径" rather than "不是Oh My CPA的路径").
-   - Do not enumerate obvious default/empty fallback states ("为空时xxx，为xx时xxx", "0 为默认").
-     Let placeholders, control defaults, and unit labels carry ordinary fallbacks. When a special sentinel value
-     carries non-obvious semantics (e.g. `0` meaning "unlimited" rather than "zero"), convey that through the
-     placeholder (e.g. `0（无限制）`) or a concise positive caption.
-5. **Omission is preferred over redundancy.** If the field's label, placeholder, unit, or picker options
-   are already self-explanatory (e.g. "端口", "TLS 证书路径", "调试模式", "启用连接池"), omit the subtitle entirely.
-   Retain secondary copy only when it provides genuine value that prevents real operator ambiguity.
+   its immediate effect is. Never write defensive disclaimers ("This does not lift every
+   restriction", "Proceed with caution to avoid irreversible loss"), passive-aggressive warnings, or
+   gateway version lectures ("This priority needs CPA v8.0.33 or later; upgrade older gateways
+   before relying on credential overrides"). If an old gateway version is incompatible, enforce that
+   through API or feature detection or validation, not by lecturing the user in the caption.
+2. **Concise precision on real gotchas.** When a real hazard or subtle rule exists (data deletion,
+   precedence over an upstream wildcard, a required restart), state it in a single, calm sentence.
+   Do not explain why the system was designed this way.
+3. **Typographic budget and visual rhythm.**
+   - A hint is usually one concise sentence, and at most two short ones.
+   - Keep a hint within about 100 characters.
+   - Secondary copy never takes more height or attention than the control itself.
+4. **No negative preemption and no defensive case enumeration.**
+   - Do not write what something is *not* unless users regularly and dangerously mistake it for
+     something destructive. "Clearing the list restores the provider's inherited rules" is complete;
+     adding "this does not lift every restriction" is clutter. State positive ownership directly:
+     "Path inside the CPA runtime" rather than "Not a path on the Oh My CPA host".
+   - Do not enumerate obvious default or empty states ("When empty, X; when set, Y", "0 means
+     default"). Let placeholders, control defaults and unit labels carry ordinary fallbacks. When a
+     sentinel value has non-obvious meaning (`0` meaning "unlimited" rather than "zero"), convey it
+     through the placeholder (`0 (unlimited)`) or a concise positive caption.
+5. **Omission is preferred over redundancy.** If the label, placeholder, unit or picker options are
+   already self-explanatory ("Port", "TLS certificate path", "Debug mode", "Enable connection
+   pool"), omit the subtitle. Keep secondary copy only when it prevents real operator ambiguity.
 
-### Bad vs Good Examples
+### Bad and good examples
 
-- **Bad (Defensive & bloated):**
-  > 以逗号或换行分隔模型 ID。非空列表会替代提供商禁用规则（包括 *）。清空列表将恢复继承当前提供商规则，并非解除所有限制。此优先级要求 CPA v8.0.33 或更高版本；依赖凭据覆盖前请先升级旧网关。
-- **Good (Direct & actionable):**
-  > 以逗号或换行分隔模型 ID；非空列表会替代提供商禁用规则（包括 *），清空列表将恢复继承当前提供商规则。
+- **Bad (defensive and bloated):**
+  > Separate model IDs with commas or new lines. A non-empty list replaces the provider's exclusion rules (including *). Clearing the list restores the provider's inherited rules and does not lift every restriction. This priority needs CPA v8.0.33 or later; upgrade older gateways before relying on credential overrides.
+- **Good (direct and actionable):**
+  > Separate model IDs with commas or new lines. A non-empty list replaces the provider's exclusion rules (including *), and clearing it restores the inherited rules.
 
-- **Bad (Defensive "不是xxx" & internal filesystem trivia):**
-  > CPA运行环境中的文件路径，不是Oh My CPA的路径；留空使用<auth-dir>/kv.db。
-- **Good (State positive identity; placeholder shows default):**
-  > CPA 运行时文件路径 *(Placeholder: `<auth-dir>/kv.db`)*
+- **Bad (defensive "not X" and filesystem trivia):**
+  > A file path in the CPA runtime, not a path on the Oh My CPA host. Leave empty to use <auth-dir>/kv.db.
+- **Good (positive identity, placeholder shows the default):**
+  > Path inside the CPA runtime *(Placeholder: `<auth-dir>/kv.db`)*
 
-- **Bad (Verbose "为空时xxx，为xx时xxx" & redundant command):**
-  > 允许提供转发客户端 IP 请求头的代理 IP 或 CIDR；为空时不信任转发头。修改后需重启
-- **Good (Calm statement of capability with required action):**
-  > 允许提供客户端真实 IP 请求头的代理 IP 或 CIDR（重启网关生效）
+- **Bad (empty-state enumeration and an operational command):**
+  > Proxy IPs or CIDRs allowed to send forwarded client IP headers. When empty, forwarded headers are not trusted. Restart after changing.
+- **Good (calm statement of capability with the required action):**
+  > Proxy IPs or CIDRs allowed to send the real client IP header (applies after a gateway restart)
 
-- **Bad (Redundant caption restating label):**
-  > 端口 — 服务监听的 TCP 端口号
-- **Good (Self-explanatory label, omit subtitle):**
-  > 端口 *(No subtitle needed)*
+- **Bad (caption restating the label):**
+  > Port: the TCP port the service listens on
+- **Good (self-explanatory label, no subtitle):**
+  > Port *(No subtitle needed)*
 
-- **Bad (Anxious disclaimers):**
-  > 注意：此操作具有较高风险，可能导致已有的鉴权配置失效并影响线上业务，请确保已做好配置备份后再行修改。
-- **Good (Calm statement of consequence):**
-  > 修改后立即生效，现有连接将使用新配置重新鉴权。
-
+- **Bad (anxious disclaimer):**
+  > Warning: this is a high-risk action that may invalidate existing authentication settings and affect production traffic. Back up your configuration before changing it.
+- **Good (calm statement of consequence):**
+  > Takes effect immediately; existing connections re-authenticate with the new settings.

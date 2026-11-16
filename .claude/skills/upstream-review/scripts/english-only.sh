@@ -32,8 +32,8 @@ for file in "$LOCALES"/en/*.ts; do
       echo "removed $file (deleted upstream)"
       continue
     fi
-    # We only ever strip lines from these files, so upstream's side is the whole truth. A fork
-    # edit to an English sentence in a conflicted file is lost here: re-apply it after the run.
+    # Apart from the stripped lines and the key removed below, these files are upstream's, so its
+    # side is the truth. Any other fork edit to a conflicted file is lost here: re-apply it by hand.
     git checkout --theirs -- "$file"
     conflicted=1
     echo "took upstream's $file"
@@ -51,6 +51,13 @@ for file in "$LOCALES"/en/*.ts; do
   # Stage only what this run settled, never an unrelated local edit.
   if [ "$conflicted" = 1 ] || [ "$before" != "$(git hash-object "$file")" ]; then git add -- "$file"; fi
 done
+
+# The Chinese number style is gone from this fork, and its label with it.
+if grep -q "'omc\.token_style_zh':" "$LOCALES/en/settings.ts" 2>/dev/null; then
+  perl -ni -e "print unless /'omc\\.token_style_zh':/" "$LOCALES/en/settings.ts"
+  git add -- "$LOCALES/en/settings.ts"
+  echo "removed omc.token_style_zh from $LOCALES/en/settings.ts"
+fi
 
 # An English domain file upstream deleted while we had stripped it shows up outside the glob above.
 git ls-files -u -- "$LOCALES/en" | awk '{print $4}' | sort -u | while IFS= read -r file; do

@@ -2,7 +2,7 @@
   "windows": [
     {
       "id": "ag_Plugin_bucket_0_3",
-      "label": "Plugin · 5小时限制 (5-Hour)",
+      "label": "Plugin · 5-hour limit",
       "scope": "group",
       "used_percent": 75,
       "remaining_percent": 25,
@@ -11,7 +11,7 @@
     },
     {
       "id": "ag_Plugin_upstream-week",
-      "label": "Plugin · 每周限制 (Weekly)",
+      "label": "Plugin · Weekly limit",
       "scope": "group",
       "used_percent": 62.5,
       "remaining_percent": 37.5,
@@ -20,7 +20,7 @@
     },
     {
       "id": "ag_Plugin_bucket_0_1",
-      "label": "Plugin · 每周限制 (Weekly)",
+      "label": "Plugin · Weekly limit",
       "scope": "group",
       "used_percent": 37.5,
       "remaining_percent": 62.5,
@@ -38,7 +38,7 @@
     },
     {
       "id": "ag_Plugin_upstream-day",
-      "label": "Plugin · 每日限制 (Daily)",
+      "label": "Plugin · Daily limit",
       "scope": "group",
       "used_percent": 50,
       "remaining_percent": 50,

@@ -242,7 +242,7 @@ func TestDashboardModelsKeepsTheNameFromCollidingWithTheRemainder(t *testing.T) 
 	now := time.Now().UTC()
 	events := []usage.Event{
 		// The colliding name is the largest volume in the window, so it ranks first rather than folding.
-		modelEventFor("collide", "其他模型", now.Add(-time.Minute), 9000),
+		modelEventFor("collide", "Other models", now.Add(-time.Minute), 9000),
 		modelEventFor("plain-1", "model-1", now.Add(-2*time.Minute), 800),
 		modelEventFor("plain-2", "model-2", now.Add(-3*time.Minute), 700),
 	}
@@ -260,7 +260,7 @@ func TestDashboardModelsKeepsTheNameFromCollidingWithTheRemainder(t *testing.T) 
 	if len(body.Models) != 3 {
 		t.Fatalf("got %d groups, want 3 with no remainder: %s", len(body.Models), describeGroups(body.Models))
 	}
-	if body.Models[0].Folded || body.Models[0].Model != "其他模型" {
+	if body.Models[0].Folded || body.Models[0].Model != "Other models" {
 		t.Fatalf("first group = %q (folded=%v, %d tokens), want the real model ranked first",
 			body.Models[0].Model, body.Models[0].Folded, body.Models[0].Tokens)
 	}

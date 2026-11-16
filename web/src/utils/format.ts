@@ -57,8 +57,8 @@ export function formatErrorCode(parts: { code?: string | null; status?: number |
 }
 
 /**
- * Clauses of one description as a sentence list in the reader's language - "长上下文 ≥ 200K，
- * 09:00–18:00 UTC" or "long context ≥ 200K, 09:00–18:00 UTC". Empty clauses are dropped.
+ * Clauses of one description as a sentence list in the reader's language, such as
+ * "long context ≥ 200K, 09:00–18:00 UTC". Empty clauses are dropped.
  */
 export function joinPhrases(t: TFunc, phrases: readonly (string | false | null | undefined)[]): string {
   const shown = phrases.filter((phrase): phrase is string => typeof phrase === 'string' && phrase !== '');

@@ -568,7 +568,7 @@ func startChannelPricingTestServer(t *testing.T) (*http.Client, string, *reposit
 	})
 	ctx := context.Background()
 	if _, err := repo.ReplacePricingModels(ctx, map[string]string{"vendor/model": "vendor/model"},
-		pricing.CatalogProvider{ID: "openai-compat-0", Channel: "华为云/us+west", Models: []string{"vendor/model"}}); err != nil {
+		pricing.CatalogProvider{ID: "openai-compat-0", Channel: "Zürich/us+west", Models: []string{"vendor/model"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.UpsertModelPrices(ctx, []pricing.ModelPrice{{Model: "vendor/model", PromptPricePer1M: 2,
@@ -581,7 +581,7 @@ func startChannelPricingTestServer(t *testing.T) (*http.Client, string, *reposit
 func TestPricingChannelModelParameterRouting(t *testing.T) {
 	fake := &fakePricing{}
 	client, baseURL := startPricingTestServer(t, fake)
-	for _, channel := range []string{" \t华为云/us+west\n ", " \t "} {
+	for _, channel := range []string{" \tZürich/us+west\n ", " \t "} {
 		target := baseURL + "/omc/api/v1/pricing/models/%20vendor%2Fmodel%20?channel=" + url.QueryEscape(channel)
 		response, payload := doJSON(t, client, http.MethodPut, target, `{"mode":"custom"}`)
 		if response.StatusCode != http.StatusOK {
@@ -609,7 +609,7 @@ func TestPricingChannelModelParameterRouting(t *testing.T) {
 func TestPricingChannelModelEndpoints(t *testing.T) {
 	client, baseURL, repo := startChannelPricingTestServer(t)
 	endpoint := baseURL + "/omc/api/v1/pricing/models/vendor%2Fmodel"
-	scoped := endpoint + "?channel=" + url.QueryEscape(" \t华为云/us+west\n ")
+	scoped := endpoint + "?channel=" + url.QueryEscape(" \tZürich/us+west\n ")
 	read := func(target string) map[string]json.RawMessage {
 		t.Helper()
 		response, payload := getJSON(t, client, target)
@@ -625,7 +625,7 @@ func TestPricingChannelModelEndpoints(t *testing.T) {
 	shared := read(endpoint)["price"]
 	assertPricingJSON(t, read(endpoint + "?channel=+%09+")["price"], string(shared))
 	inherited := read(scoped)
-	assertPricingJSON(t, inherited["channel"], `"华为云/us+west"`)
+	assertPricingJSON(t, inherited["channel"], `"Zürich/us+west"`)
 	assertPricingJSON(t, inherited["is_inherited"], `true`)
 	assertPricingJSON(t, inherited["price"], string(shared))
 	assertPricingJSON(t, inherited["versions"], `[]`)
@@ -638,10 +638,10 @@ func TestPricingChannelModelEndpoints(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("PUT: %d %s", response.StatusCode, payload)
 	}
-	wantPrice := `{"model":"vendor/model","channel":"华为云/us+west","prompt_price_per_1m":3,"completion_price_per_1m":6,"cache_read_price_per_1m":0.3,"cache_write_price_per_1m":3.75,"price_multiplier":0.5,"tiers":[{"utc_start":0,"utc_end":830,"time_zone":"Asia/Shanghai","prompt_price_per_1m":1.5}],"source":"manual","upstream_id":"","match_kind":"","mode":"custom","synced_at_ms":0,"updated_at_ms":0}`
+	wantPrice := `{"model":"vendor/model","channel":"Zürich/us+west","prompt_price_per_1m":3,"completion_price_per_1m":6,"cache_read_price_per_1m":0.3,"cache_write_price_per_1m":3.75,"price_multiplier":0.5,"tiers":[{"utc_start":0,"utc_end":830,"time_zone":"Asia/Shanghai","prompt_price_per_1m":1.5}],"source":"manual","upstream_id":"","match_kind":"","mode":"custom","synced_at_ms":0,"updated_at_ms":0}`
 	assertPricingJSON(t, payload, `{"price":`+wantPrice+`}`)
 	current := read(scoped)
-	assertPricingJSON(t, current["channel"], `"华为云/us+west"`)
+	assertPricingJSON(t, current["channel"], `"Zürich/us+west"`)
 	assertPricingJSON(t, current["is_inherited"], `false`)
 	assertPricingJSON(t, current["candidate"], `null`)
 	var price map[string]json.RawMessage
@@ -663,7 +663,7 @@ func TestPricingChannelModelEndpoints(t *testing.T) {
 		t.Fatalf("channel versions = %s, err %v", current["versions"], err)
 	}
 	assertPricingJSON(t, versions[0]["available"], `true`)
-	assertPricingJSON(t, versions[0]["price"], `{"model":"vendor/model","channel":"华为云/us+west","prompt_price_per_1m":3,"completion_price_per_1m":6,"cache_read_price_per_1m":0.3,"cache_write_price_per_1m":3.75,"price_multiplier":0.5,"tiers":[{"utc_start":0,"utc_end":830,"time_zone":"Asia/Shanghai","prompt_price_per_1m":1.5}],"source":"manual","upstream_id":""}`)
+	assertPricingJSON(t, versions[0]["price"], `{"model":"vendor/model","channel":"Zürich/us+west","prompt_price_per_1m":3,"completion_price_per_1m":6,"cache_read_price_per_1m":0.3,"cache_write_price_per_1m":3.75,"price_multiplier":0.5,"tiers":[{"utc_start":0,"utc_end":830,"time_zone":"Asia/Shanghai","prompt_price_per_1m":1.5}],"source":"manual","upstream_id":""}`)
 	assertPricingJSON(t, read(endpoint)["price"], string(shared))
 	assertPricingJSON(t, read(endpoint + "?channel=other")["is_inherited"], `true`)
 	book := read(baseURL + "/omc/api/v1/pricing")
@@ -702,10 +702,10 @@ func TestPricingChannelModelEndpoints(t *testing.T) {
 
 func TestPricingChannelModelRefusals(t *testing.T) {
 	client, baseURL, repo := startChannelPricingTestServer(t)
-	endpoint := baseURL + "/omc/api/v1/pricing/models/vendor%2Fmodel?channel=" + url.QueryEscape(" 华为云/us+west ")
+	endpoint := baseURL + "/omc/api/v1/pricing/models/vendor%2Fmodel?channel=" + url.QueryEscape(" Zürich/us+west ")
 	for _, tc := range []struct{ name, target, body, code string }{
 		{"unknown channel", baseURL + "/omc/api/v1/pricing/models/vendor%2Fmodel?channel=unknown", `{"mode":"custom"}`, "pricing_model_not_in_catalog"},
-		{"unknown model", baseURL + "/omc/api/v1/pricing/models/unknown?channel=" + url.QueryEscape("华为云/us+west"), `{"mode":"custom"}`, "pricing_model_not_in_catalog"},
+		{"unknown model", baseURL + "/omc/api/v1/pricing/models/unknown?channel=" + url.QueryEscape("Zürich/us+west"), `{"mode":"custom"}`, "pricing_model_not_in_catalog"},
 		{"automatic channel price", endpoint, `{"mode":"auto"}`, "pricing_invalid_mode"},
 		{"linked channel price", endpoint, `{"mode":"linked","upstream_id":"vendor/model"}`, "pricing_invalid_mode"},
 		{"unknown field", endpoint, `{"mode":"custom","unknown":true}`, ""},

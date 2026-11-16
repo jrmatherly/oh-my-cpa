@@ -68,7 +68,6 @@ export default {
   'omc.token_style': 'Token unit style',
   'omc.token_style_desc': 'Reading only; tooltips always carry the exact value.',
   'omc.token_style_en': 'Compact K/M/B',
-  'omc.token_style_zh': 'Chinese 万/亿',
   'omc.token_style_full': 'Full digits',
   'omc.request_model_icons': 'Model icons in request list',
   'omc.request_model_icons_desc': 'Show provider icons before model names in the request list.',

@@ -39,7 +39,7 @@ interface HeaderNavProps {
  * Phones keep refresh direct and disclose labelled tools; desktop controls remain fixed-width.
  * Every desktop action is a fixed-width control. Sign out is an icon button rather than a
  * labelled one because its label is the only text here that changes length with the
- * language - "退出" beside "Sign out" - and a button that resizes on a language switch
+ * language, and a button that resizes on a language switch
  * moves the controls beside it, so the operator has to re-aim at a button they were
  * already pointing at. Its name is on the tooltip and on the accessible label instead;
  * the exit-door icon carries the meaning at a glance.

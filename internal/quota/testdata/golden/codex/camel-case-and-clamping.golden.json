@@ -7,13 +7,13 @@
   "windows": [
     {
       "id": "five_hour",
-      "label": "5小时用量上限 (5-Hour)",
+      "label": "5-hour usage limit",
       "kind": "five_hour",
       "scope": "standard",
       "used_percent": 100,
       "remaining_percent": 0,
       "reset_at_ms": 1735689720000,
-      "reset_label": "00:02 (2分钟后恢复)",
+      "reset_label": "00:02 (in 2m)",
       "period_hours": 5,
       "reset_accuracy": "derived"
     }

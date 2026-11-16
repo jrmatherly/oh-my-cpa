@@ -89,9 +89,15 @@ function groupLabel(window: QuotaWindow): string {
   return group.replace(/\s+models$/i, '') || group;
 }
 
-/** "Sonnet 每周用量" and "GPT-5-Codex-Spark 5小时配额" name their model before the period phrase. */
+/**
+ * "Sonnet weekly usage" and "GPT-5-Codex-Spark 5-hour limit" name their model before the period
+ * phrase. A snapshot stored before this fork wrote labels in English carries the phrase as one
+ * Chinese word, which the second alternative still removes (the four words are escaped).
+ */
 function modelLabel(window: QuotaWindow): string {
-  const name = window.label.replace(/\s+\S*(?:配额|用量|限额|限制|limit|usage)\S*$/i, '').trim();
+  const name = window.label
+    .replace(/\s+(?:(?:\d+(?:\.\d+)?-(?:hour|minute)|daily|weekly|monthly)\s+(?:limit|usage)|\S*(?:\u914d\u989d|\u7528\u91cf|\u9650\u989d|\u9650\u5236|limit|usage)\S*)$/i, '')
+    .trim();
   return name || window.model || window.label;
 }
 

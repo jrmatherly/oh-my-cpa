@@ -363,7 +363,7 @@ func TestPullProviderModelsByProviderID(t *testing.T) {
 			}
 			http.Error(w, "missing anthropic auth headers", http.StatusUnauthorized)
 		default:
-			http.Error(w, `{"error":{"code":"1001","message":"Header中未收到Authorization参数，无法进行身份验证。"}}`, http.StatusUnauthorized)
+			http.Error(w, `{"error":{"code":"1001","message":"Authorization header was not received, authentication failed."}}`, http.StatusUnauthorized)
 		}
 	}))
 	defer fakeUpstream.Close()

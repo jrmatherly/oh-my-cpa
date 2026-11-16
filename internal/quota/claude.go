@@ -280,12 +280,12 @@ func ParseClaudeUsage(raw []byte, nowMS int64) ([]QuotaWindow, *QuotaExtraUsage,
 		})
 	}
 
-	addWindow(payload.FiveHour, "five_hour", "5小时滚动用量 (5-Hour)", "standard", "", 5)
-	addWindow(payload.SevenDay, "seven_day", "每周总用量上限 (Weekly)", "standard", "", 168)
-	addWindow(payload.SevenDaySonnet, "seven_day_sonnet", "Sonnet 每周用量", "model", "claude-3-5-sonnet", 168)
-	addWindow(payload.SevenDayOpus, "seven_day_opus", "Opus 每周用量", "model", "claude-3-opus", 168)
-	addWindow(payload.SevenDayOAuthApps, "seven_day_oauth_apps", "第三方应用 每周用量", "standard", "", 168)
-	addWindow(payload.SevenDayCowork, "seven_day_cowork", "Cowork 协作每周用量", "standard", "", 168)
+	addWindow(payload.FiveHour, "five_hour", "5-hour rolling usage", "standard", "", 5)
+	addWindow(payload.SevenDay, "seven_day", "Weekly usage limit", "standard", "", 168)
+	addWindow(payload.SevenDaySonnet, "seven_day_sonnet", "Sonnet weekly usage", "model", "claude-3-5-sonnet", 168)
+	addWindow(payload.SevenDayOpus, "seven_day_opus", "Opus weekly usage", "model", "claude-3-opus", 168)
+	addWindow(payload.SevenDayOAuthApps, "seven_day_oauth_apps", "Third-party apps weekly usage", "standard", "", 168)
+	addWindow(payload.SevenDayCowork, "seven_day_cowork", "Cowork weekly usage", "standard", "", 168)
 
 	// Fable arrives either as a modern model-scoped limit or under the legacy
 	// iguana_necktie window, so both spellings are probed.
@@ -311,7 +311,7 @@ func ParseClaudeUsage(raw []byte, nowMS int64) ([]QuotaWindow, *QuotaExtraUsage,
 				periodHours := 168.0
 				windows = append(windows, QuotaWindow{
 					ID:               "seven_day_fable",
-					Label:            "Fable 每周用量",
+					Label:            "Fable weekly usage",
 					Scope:            "model",
 					Model:            "fable",
 					UsedPercent:      &clampedUsed,
@@ -326,7 +326,7 @@ func ParseClaudeUsage(raw []byte, nowMS int64) ([]QuotaWindow, *QuotaExtraUsage,
 		}
 	}
 	if !foundFable && payload.IguanaNecktie != nil && !payload.IguanaNecktie.isDollarDenominated() {
-		addWindow(payload.IguanaNecktie, "seven_day_fable", "Fable 每周用量", "model", "fable", 168)
+		addWindow(payload.IguanaNecktie, "seven_day_fable", "Fable weekly usage", "model", "fable", 168)
 	}
 
 	// A disabled block is still reported: it says the credential cannot overflow

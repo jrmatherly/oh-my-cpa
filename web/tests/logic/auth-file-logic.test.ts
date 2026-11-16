@@ -200,7 +200,7 @@ test('Credential name validation counts code points, not UTF-16 units', () => {
   const astral = '𝔞'.repeat(MAX_CREDENTIAL_NAME_LENGTH);
   assert.equal(astral.length, MAX_CREDENTIAL_NAME_LENGTH * 2);
   assert.equal(credentialNameProblem(astral), null);
-  assert.equal(credentialNameProblem('名'.repeat(MAX_CREDENTIAL_NAME_LENGTH + 1)), 'too_long');
+  assert.equal(credentialNameProblem('€'.repeat(MAX_CREDENTIAL_NAME_LENGTH + 1)), 'too_long');
   assert.equal(credentialNameProblem('line\nbreak'), 'control');
   assert.equal(credentialNameProblem('seat\u202eevil'), 'control');
 });

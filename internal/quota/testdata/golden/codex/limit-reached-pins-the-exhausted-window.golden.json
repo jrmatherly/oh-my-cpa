@@ -7,25 +7,25 @@
   "windows": [
     {
       "id": "five_hour",
-      "label": "5小时用量上限 (5-Hour)",
+      "label": "5-hour usage limit",
       "kind": "five_hour",
       "scope": "standard",
       "used_percent": 100,
       "remaining_percent": 0,
       "reset_at_ms": 1735699600000,
-      "reset_label": "02:46 (2小时47分后恢复)",
+      "reset_label": "02:46 (in 2h 47m)",
       "period_hours": 5,
       "reset_accuracy": "derived"
     },
     {
       "id": "weekly",
-      "label": "每周用量上限 (Weekly)",
+      "label": "Weekly usage limit",
       "kind": "weekly",
       "scope": "standard",
       "used_percent": 37,
       "remaining_percent": 63,
       "reset_at_ms": 1736089600000,
-      "reset_label": "01-05 15:06 (4天15小时后恢复)",
+      "reset_label": "01-05 15:06 (in 4d 15h)",
       "period_hours": 168,
       "reset_accuracy": "derived"
     }

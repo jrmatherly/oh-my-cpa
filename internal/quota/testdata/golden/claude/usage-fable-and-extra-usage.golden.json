@@ -7,35 +7,35 @@
   "windows": [
     {
       "id": "five_hour",
-      "label": "5小时滚动用量 (5-Hour)",
+      "label": "5-hour rolling usage",
       "scope": "standard",
       "used_percent": 25.5,
       "remaining_percent": 74.5,
       "reset_at_ms": 1785146400000,
-      "reset_label": "07-27 10:00 (572天10小时后恢复)",
+      "reset_label": "07-27 10:00 (in 572d 10h)",
       "period_hours": 5,
       "reset_accuracy": "exact"
     },
     {
       "id": "seven_day",
-      "label": "每周总用量上限 (Weekly)",
+      "label": "Weekly usage limit",
       "scope": "standard",
       "used_percent": 80,
       "remaining_percent": 20,
       "reset_at_ms": 1785146400000,
-      "reset_label": "07-27 10:00 (572天10小时后恢复)",
+      "reset_label": "07-27 10:00 (in 572d 10h)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     },
     {
       "id": "seven_day_fable",
-      "label": "Fable 每周用量",
+      "label": "Fable weekly usage",
       "scope": "model",
       "model": "fable",
       "used_percent": 64,
       "remaining_percent": 36,
       "reset_at_ms": 1785146400000,
-      "reset_label": "07-27 10:00 (572天10小时后恢复)",
+      "reset_label": "07-27 10:00 (in 572d 10h)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     }

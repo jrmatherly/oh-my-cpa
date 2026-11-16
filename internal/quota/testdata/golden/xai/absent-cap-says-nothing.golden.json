@@ -7,7 +7,7 @@
   "windows": [
     {
       "id": "xai_credit_usage",
-      "label": "额度总使用率 (Credit Usage)",
+      "label": "Credit usage",
       "scope": "standard",
       "used_percent": 5,
       "remaining_percent": 95,

@@ -443,10 +443,10 @@ test('pricing display', () => {
   });
 });
 
-test('clauses of one description join with the reading language\'s comma', async () => {
+test('clauses of one description join with the catalog\'s list separator', async () => {
   const { joinPhrases } = await import('../../src/utils/format.ts');
-  const zh = ((_key: string, vars?: Record<string, unknown>) => `${vars?.first}，${vars?.rest}`) as Parameters<typeof joinPhrases>[0];
-  assert.equal(joinPhrases(zh, ['长上下文 ≥ 200K', '', null, '09:00–18:00 UTC', 'Flex 服务等级']), '长上下文 ≥ 200K，09:00–18:00 UTC，Flex 服务等级');
-  assert.equal(joinPhrases(zh, ['标准价']), '标准价');
-  assert.equal(joinPhrases(zh, []), '');
+  const t = ((_key: string, vars?: Record<string, unknown>) => `${vars?.first}; ${vars?.rest}`) as Parameters<typeof joinPhrases>[0];
+  assert.equal(joinPhrases(t, ['long context ≥ 200K', '', null, '09:00–18:00 UTC', 'Flex tier']), 'long context ≥ 200K; 09:00–18:00 UTC; Flex tier');
+  assert.equal(joinPhrases(t, ['standard price']), 'standard price');
+  assert.equal(joinPhrases(t, []), '');
 });

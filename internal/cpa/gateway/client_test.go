@@ -74,7 +74,7 @@ func TestStreamProjectionAndFragmentedUTF8(t *testing.T) {
 			t.Error("missing streaming usage")
 		}
 		writer.Header().Set("Content-Type", "text/event-stream")
-		body := ": heartbeat\r\n\r\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\",\"api_key\":\"do-not-forward\"}}]}\r\n\r\n" +
+		body := ": heartbeat\r\n\r\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Zürich €\",\"api_key\":\"do-not-forward\"}}]}\r\n\r\n" +
 			"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
 			"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6,\"secret\":\"do-not-forward\"}}\n\n" + "data: [DONE]\n\n"
 		for _, value := range []byte(body) {
@@ -88,7 +88,7 @@ func TestStreamProjectionAndFragmentedUTF8(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(events)
-	if len(events) != 3 || events[0].Content != "你好" || events[2].Type != "done" || strings.Contains(string(encoded), "do-not-forward") {
+	if len(events) != 3 || events[0].Content != "Zürich €" || events[2].Type != "done" || strings.Contains(string(encoded), "do-not-forward") {
 		t.Fatalf("unexpected stream %s", encoded)
 	}
 }

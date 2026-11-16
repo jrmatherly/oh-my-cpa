@@ -1,7 +1,6 @@
 import React from 'react';
 import { DEFAULT_TPS_CALCULATION_MODE, TPS_CALCULATION_PREFERENCE, parseTpsCalculationMode, type TpsCalculationMode } from './tpsCalculation';
 import { usePreference } from '../hooks/usePreference';
-import { useI18n } from '../i18n';
 import {
   DEFAULT_MODEL_CHART_VIEW,
   DEFAULT_REQUEST_MODEL_ICONS,
@@ -9,7 +8,6 @@ import {
   parseModelChartView,
   parseRequestModelIcons,
   parseTokenNumberStyle,
-  resolveTokenNumberStyle,
   type ModelChartView,
   type TokenNumberStyle,
 } from './tokenDisplay';
@@ -22,11 +20,7 @@ export const MODEL_VIEW_PREFERENCE = 'omc_models_view';
 export const REQUEST_MODEL_ICONS_PREFERENCE = 'omc_request_model_icons';
 
 interface TokenDisplayContextValue {
-  /**
-   * How token counts are abbreviated across the console, already resolved against
-   * the reading language - see `resolveTokenNumberStyle`. Surfaces render this
-   * value, so none of them has to remember the language rule.
-   */
+  /** How token counts are abbreviated across the console. */
   style: TokenNumberStyle;
   /** How the model panels group their series. */
   modelView: ModelChartView;
@@ -60,7 +54,6 @@ const TokenDisplayContext = React.createContext<TokenDisplayContextValue>({
  * one setting after a change. One subscription point makes the switch atomic.
  */
 export const TokenDisplayProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { lang } = useI18n();
   // Reference-stable parsers are part of usePreference's memo contract; see its
   // note on render loops.
   const parseStyle = React.useRef(parseTokenNumberStyle).current;
@@ -74,13 +67,7 @@ export const TokenDisplayProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const tpsPref = usePreference<TpsCalculationMode>(TPS_CALCULATION_PREFERENCE, DEFAULT_TPS_CALCULATION_MODE, parseTpsMode);
 
-  // The language rule lives here and only here: every surface reads the resolved
-  // value, so a Chinese-only unit can never reach a non-Chinese reading even if a
-  // future page forgets the rule.
-  const style = React.useMemo(
-    () => resolveTokenNumberStyle(stylePref.value, lang),
-    [stylePref.value, lang],
-  );
+  const style = stylePref.value;
 
   const value = React.useMemo<TokenDisplayContextValue>(
     () => ({

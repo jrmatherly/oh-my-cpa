@@ -181,10 +181,10 @@ test('plugin config', () => {
   const localizedEntry = entry({
     id: 'localized', name: 'Base title', description: 'Base description', tags: ['base-tag'],
     locales: {
-      'zh-CN': { name: '简体标题', description: '简体描述', tags: ['简体标签'] },
+      'zh-CN': { name: 'Simplified title', description: 'Simplified description', tags: ['simplified-tag'] },
     },
   });
-  assert.deepEqual(filterStorePlugins([localizedEntry], '简体描述', 'all', 'en'), []);
+  assert.deepEqual(filterStorePlugins([localizedEntry], 'Simplified description', 'all', 'en'), []);
   assert.deepEqual(filterStorePlugins([localizedEntry], 'base-tag', 'all', 'en'), [localizedEntry]);
   assert.deepEqual(filterStorePlugins([localizedEntry], 'base description', 'all', 'en'), [localizedEntry]);
   assert.deepEqual(filterStorePlugins([localizedEntry], 'localized', 'all', 'en'), [localizedEntry]);
@@ -196,7 +196,7 @@ test('plugin config', () => {
   assert.deepEqual(filterStorePlugins([englishEntry], 'base-tag', 'all', 'en'), []);
   const localizedInstalled = { ...multiPortalPlugin, id: 'localized' };
   assert.deepEqual(filterInstalledPlugins([localizedInstalled], 'listed description', storeListingsByPluginId([englishEntry]), 'en'), [localizedInstalled]);
-  assert.deepEqual(filterInstalledPlugins([localizedInstalled], '简体标签', storeListingsByPluginId([localizedEntry]), 'en'), []);
+  assert.deepEqual(filterInstalledPlugins([localizedInstalled], 'simplified-tag', storeListingsByPluginId([localizedEntry]), 'en'), []);
   const base = entry({
     name: 'Base name', description: 'Base description', author: 'Base author',
     homepage: 'https://publisher.example', license: 'Base license', tags: ['base-tag'],
@@ -208,7 +208,7 @@ test('plugin config', () => {
   });
   const translated = { ...baseMetadata, name: 'Title en', description: 'Text en', author: 'Author en', homepage: 'https://publisher.example/en', license: 'License en', tags: ['tag-en'] };
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: translated } }, 'en'), translated);
-  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: '简体' }, 'en-GB': { name: 'British' } } }, 'en'), baseMetadata);
+  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: 'Simplified' }, 'en-GB': { name: 'British' } } }, 'en'), baseMetadata);
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: { name: ' ', description: 'Localized', author: '', homepage: '', license: '', tags: [' '] } } }, 'en'), { ...baseMetadata, description: 'Localized' });
   const registeredPlugin = { ...localizedInstalled, metadata: { name: 'Runtime name', author: 'Runtime author', version: '1.0.0' } };
   const confirmedListing = { ...englishEntry, installed: true, install_source_status: 'matched' };

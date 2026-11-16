@@ -28,6 +28,7 @@ function Field({ onChange }: { onChange: (value: string) => void }) {
   );
 }
 
+// '\u4F60\u597D' is the CJK text a pinyin input method commits for "nihao", escaped to keep the source English only.
 describe('SearchInput', () => {
   it('hears the text an input method commits, not the draft it composes', () => {
     const onChange = vi.fn();
@@ -43,9 +44,9 @@ describe('SearchInput', () => {
     expect(onChange).not.toHaveBeenCalled();
 
     // The input method commits: the field holds the text, and the page hears it once.
-    typeInto(input, '你好', false);
-    expect(onChange).toHaveBeenLastCalledWith('你好');
-    expect((input as HTMLInputElement).value).toBe('你好');
+    typeInto(input, '\u4F60\u597D', false);
+    expect(onChange).toHaveBeenLastCalledWith('\u4F60\u597D');
+    expect((input as HTMLInputElement).value).toBe('\u4F60\u597D');
   });
 
   it('filters on the text a hand types when no input method is composing', () => {
@@ -80,14 +81,14 @@ describe('SearchInput', () => {
 
     fireEvent.compositionStart(input);
     typeInto(input, 'ni', true);
-    typeInto(input, '你好', true);
+    typeInto(input, '\u4F60\u597D', true);
     fireEvent.compositionEnd(input);
     // The input a composition ends with carries the text the page already heard; the page hears
     // one edit, not two.
-    typeInto(input, '你好', false);
+    typeInto(input, '\u4F60\u597D', false);
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenLastCalledWith('你好');
+    expect(onChange).toHaveBeenLastCalledWith('\u4F60\u597D');
   });
 
   it('commits a draft the input method ended without announcing', () => {

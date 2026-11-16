@@ -92,7 +92,7 @@
   {
     "id": "Ai360",
     "title": "AI360",
-    "fullTitle": "Ai360 (360智脑)",
+    "fullTitle": "Ai360",
     "docsUrl": "ai360",
     "desc": "https://ai.360.com/",
     "group": "provider",
@@ -101,7 +101,7 @@
   {
     "id": "AiHubMix",
     "title": "AiHubMix",
-    "fullTitle": "AiHubMix (推理时代)",
+    "fullTitle": "AiHubMix",
     "docsUrl": "ai-hub-mix",
     "desc": "https://aihubmix.com",
     "group": "provider",
@@ -110,7 +110,7 @@
   {
     "id": "AiMass",
     "title": "AiMass",
-    "fullTitle": "AiMass (紫东太初)",
+    "fullTitle": "AiMass",
     "docsUrl": "ai-mass",
     "desc": "https://ai-maas.wair.ac.cn",
     "group": "provider",
@@ -173,7 +173,7 @@
   {
     "id": "AlibabaCloud",
     "title": "AlibabaCloud",
-    "fullTitle": "AlibabaCloud (阿里云)",
+    "fullTitle": "AlibabaCloud",
     "docsUrl": "alibaba-cloud",
     "desc": "https://aliyun.com",
     "group": "provider",
@@ -335,7 +335,7 @@
   {
     "id": "BAAI",
     "title": "BAAI",
-    "fullTitle": "BAAI (智源研究院)",
+    "fullTitle": "BAAI",
     "docsUrl": "baai",
     "desc": "https://baai.ac.cn",
     "group": "model",
@@ -344,7 +344,7 @@
   {
     "id": "Baichuan",
     "title": "Baichuan",
-    "fullTitle": "Baichuan (百川)",
+    "fullTitle": "Baichuan",
     "docsUrl": "baichuan",
     "desc": "https://baichuan-ai.com",
     "group": "model",
@@ -362,7 +362,7 @@
   {
     "id": "BaiduCloud",
     "title": "BaiduCloud",
-    "fullTitle": "BaiduCloud (百度智能云)",
+    "fullTitle": "BaiduCloud",
     "docsUrl": "baidu-cloud",
     "desc": "https://cloud.baidu.com",
     "group": "provider",
@@ -371,7 +371,7 @@
   {
     "id": "Bailian",
     "title": "BaiLian",
-    "fullTitle": "Bailian (阿里云百炼)",
+    "fullTitle": "Bailian",
     "docsUrl": "bailian",
     "desc": "https://bailian.console.aliyun.com",
     "group": "provider",
@@ -407,7 +407,7 @@
   {
     "id": "Bilibili",
     "title": "bilibili",
-    "fullTitle": "Bilibili (哔哩哔哩)",
+    "fullTitle": "Bilibili",
     "docsUrl": "bilibili",
     "desc": "https://github.com/bilibili",
     "group": "provider",
@@ -434,7 +434,7 @@
   {
     "id": "Bocha",
     "title": "Bocha",
-    "fullTitle": "Bocha (博查)",
+    "fullTitle": "Bocha",
     "docsUrl": "bocha",
     "desc": "https://open.bochaai.com",
     "group": "provider",
@@ -524,7 +524,7 @@
   {
     "id": "ChatGLM",
     "title": "ChatGLM",
-    "fullTitle": "ChatGLM (智谱)",
+    "fullTitle": "ChatGLM",
     "docsUrl": "chat-glm",
     "desc": "https://github.com/THUDM/ChatGLM-6B",
     "group": "model",
@@ -929,7 +929,7 @@
   {
     "id": "Doubao",
     "title": "Doubao",
-    "fullTitle": "Doubao (豆包)",
+    "fullTitle": "Doubao",
     "docsUrl": "doubao",
     "desc": "https://team.doubao.com",
     "group": "model",
@@ -1235,7 +1235,7 @@
   {
     "id": "Hailuo",
     "title": "Hailuo",
-    "fullTitle": "Hailuo (海螺)",
+    "fullTitle": "Hailuo",
     "docsUrl": "hailuo",
     "desc": "https://hailuoai.video",
     "group": "application",
@@ -1298,7 +1298,7 @@
   {
     "id": "HuaweiCloud",
     "title": "HuaweiCloud",
-    "fullTitle": "HuaweiCloud (华为云)",
+    "fullTitle": "HuaweiCloud",
     "docsUrl": "huawei-cloud",
     "desc": "https://huaweicloud.com",
     "group": "provider",
@@ -1316,7 +1316,7 @@
   {
     "id": "Hunyuan",
     "title": "Hunyuan",
-    "fullTitle": "Hunyuan (腾讯混元)",
+    "fullTitle": "Hunyuan",
     "docsUrl": "hunyuan",
     "desc": "https://hunyuan.tencent.com",
     "group": "model",
@@ -1343,7 +1343,7 @@
   {
     "id": "IFlyTekCloud",
     "title": "iFlyTekCloud",
-    "fullTitle": "IFlyTekCloud (讯飞开放平台)",
+    "fullTitle": "IFlyTekCloud",
     "docsUrl": "i-fly-tek-cloud",
     "desc": "https://xfyun.cn",
     "group": "provider",
@@ -1397,7 +1397,7 @@
   {
     "id": "Infinigence",
     "title": "Infinigence",
-    "fullTitle": "Infinigence (无问芯穹)",
+    "fullTitle": "Infinigence",
     "docsUrl": "infinigence",
     "desc": "https://cloud.infini-ai.com",
     "group": "provider",
@@ -1433,7 +1433,7 @@
   {
     "id": "Jimeng",
     "title": "Jimeng",
-    "fullTitle": "Jimeng (即梦)",
+    "fullTitle": "Jimeng",
     "docsUrl": "jimeng",
     "desc": "https://jimeng.jianying.com",
     "group": "application",
@@ -1496,7 +1496,7 @@
   {
     "id": "Kling",
     "title": "Kling",
-    "fullTitle": "Kling (可灵)",
+    "fullTitle": "Kling",
     "docsUrl": "kling",
     "desc": "https://klingai.com",
     "group": "application",
@@ -1514,7 +1514,7 @@
   {
     "id": "Kolors",
     "title": "Kolors",
-    "fullTitle": "Kolors (快手可图)",
+    "fullTitle": "Kolors",
     "docsUrl": "kolors",
     "desc": "https://kolors.kuaishou.com",
     "group": "model",
@@ -1856,7 +1856,7 @@
   {
     "id": "ModelScope",
     "title": "ModelScope",
-    "fullTitle": "ModelScope (魔搭)",
+    "fullTitle": "ModelScope",
     "docsUrl": "model-scope",
     "desc": "https://modelscope.cn",
     "group": "provider",
@@ -1874,7 +1874,7 @@
   {
     "id": "Moonshot",
     "title": "MoonshotAI",
-    "fullTitle": "Moonshot (月之暗面)",
+    "fullTitle": "Moonshot",
     "docsUrl": "moonshot",
     "desc": "https://moonshot.cn",
     "group": "provider",
@@ -2270,7 +2270,7 @@
   {
     "id": "Qingyan",
     "title": "Qingyan",
-    "fullTitle": "Qingyan (智谱清言)",
+    "fullTitle": "Qingyan",
     "docsUrl": "qingyan",
     "desc": "https://chatglm.cn",
     "group": "application",
@@ -2279,7 +2279,7 @@
   {
     "id": "Qiniu",
     "title": "Qiniu",
-    "fullTitle": "Qiniu (七牛云)",
+    "fullTitle": "Qiniu",
     "docsUrl": "qiniu",
     "desc": "https://qiniu.com",
     "group": "provider",
@@ -2297,7 +2297,7 @@
   {
     "id": "Qwen",
     "title": "Qwen",
-    "fullTitle": "Qwen (千问)",
+    "fullTitle": "Qwen",
     "docsUrl": "qwen",
     "desc": "https://huggingface.co/Qwen",
     "group": "model",
@@ -2450,7 +2450,7 @@
   {
     "id": "SenseNova",
     "title": "SenseNova",
-    "fullTitle": "SenseNova (商汤)",
+    "fullTitle": "SenseNova",
     "docsUrl": "sense-nova",
     "desc": "https://platform.sensenova.cn",
     "group": "model",
@@ -2477,7 +2477,7 @@
   {
     "id": "Skywork",
     "title": "Skywork",
-    "fullTitle": "Skywork (天工)",
+    "fullTitle": "Skywork",
     "docsUrl": "skywork",
     "desc": "https://skywork.ai",
     "group": "model",
@@ -2531,7 +2531,7 @@
   {
     "id": "Spark",
     "title": "Spark",
-    "fullTitle": "Spark (讯飞星火)",
+    "fullTitle": "Spark",
     "docsUrl": "spark",
     "desc": "https://xinghuo.xfyun.cn",
     "group": "model",
@@ -2558,7 +2558,7 @@
   {
     "id": "StateCloud",
     "title": "StateCloud",
-    "fullTitle": "StateCloud (天翼云)",
+    "fullTitle": "StateCloud",
     "docsUrl": "state-cloud",
     "desc": "https://ctyun.cn/act/xirang/deepseek",
     "group": "provider",
@@ -2567,7 +2567,7 @@
   {
     "id": "Stepfun",
     "title": "StepFun",
-    "fullTitle": "Stepfun (阶跃星辰)",
+    "fullTitle": "Stepfun",
     "docsUrl": "stepfun",
     "desc": "https://stepfun.com",
     "group": "model",
@@ -2657,7 +2657,7 @@
   {
     "id": "TencentCloud",
     "title": "TencentCloud",
-    "fullTitle": "TencentCloud (腾讯云)",
+    "fullTitle": "TencentCloud",
     "docsUrl": "tencent-cloud",
     "desc": "https://cloud.tencent.com",
     "group": "provider",
@@ -2666,7 +2666,7 @@
   {
     "id": "Tiangong",
     "title": "Tiangong",
-    "fullTitle": "Tiangong (天工)",
+    "fullTitle": "Tiangong",
     "docsUrl": "tiangong",
     "desc": "https://tiangong.cn",
     "group": "application",
@@ -2837,7 +2837,7 @@
   {
     "id": "Volcengine",
     "title": "Volcengine",
-    "fullTitle": "Volcengine (火山引擎)",
+    "fullTitle": "Volcengine",
     "docsUrl": "volcengine",
     "desc": "https://volcengine.com",
     "group": "provider",
@@ -2882,7 +2882,7 @@
   {
     "id": "Wenxin",
     "title": "Wenxin",
-    "fullTitle": "Wenxin (文心)",
+    "fullTitle": "Wenxin",
     "docsUrl": "wenxin",
     "desc": "https://yiyan.baidu.com",
     "group": "model",
@@ -2953,8 +2953,8 @@
   },
   {
     "id": "Xuanyuan",
-    "title": "轩辕",
-    "fullTitle": "Xuanyuan (度小满轩辕)",
+    "title": "Xuanyuan",
+    "fullTitle": "Xuanyuan",
     "docsUrl": "xuanyuan",
     "desc": "https://github.com/Duxiaoman-DI/XuanYuan",
     "group": "model",
@@ -2972,7 +2972,7 @@
   {
     "id": "Yi",
     "title": "Yi",
-    "fullTitle": "Yi (零一万物)",
+    "fullTitle": "Yi",
     "docsUrl": "yi",
     "desc": "https://github.com/01-ai/Yi",
     "group": "model",
@@ -2990,7 +2990,7 @@
   {
     "id": "Yuanbao",
     "title": "Yuanbao",
-    "fullTitle": "Yuanbao (腾讯元宝)",
+    "fullTitle": "Yuanbao",
     "docsUrl": "yuanbao",
     "desc": "https://yuanbao.tencent.com",
     "group": "application",
@@ -3044,7 +3044,7 @@
   {
     "id": "ZeroOne",
     "title": "01.AI",
-    "fullTitle": "01.AI (零一万物)",
+    "fullTitle": "01.AI",
     "docsUrl": "zero-one",
     "desc": "https://lingyiwanwu.com/",
     "group": "provider",
@@ -3053,7 +3053,7 @@
   {
     "id": "Zhipu",
     "title": "Zhipu",
-    "fullTitle": "Zhipu (智谱)",
+    "fullTitle": "Zhipu",
     "docsUrl": "zhipu",
     "desc": "https://zhipuai.cn",
     "group": "provider",

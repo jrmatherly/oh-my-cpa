@@ -110,7 +110,7 @@ func TestUsageFacetsEquivalent(t *testing.T) {
 	seedFacetDimensions(t, repo, 257)
 	// Binary ordering, whitespace, empty values, and legacy mask fillers must retain their meanings.
 	_, err := repo.SQL().Exec(`UPDATE usage_events SET model = CASE id % 7
- WHEN 0 THEN '' WHEN 1 THEN ' ' WHEN 2 THEN 'Alpha' WHEN 3 THEN 'alpha' WHEN 4 THEN '中文' ELSE model END,
+ WHEN 0 THEN '' WHEN 1 THEN ' ' WHEN 2 THEN 'Alpha' WHEN 3 THEN 'alpha' WHEN 4 THEN 'Ωmega' ELSE model END,
  model_alias = CASE WHEN id % 5 = 0 THEN NULL ELSE model_alias END,
  provider = CASE WHEN id % 3 = 0 THEN 'codex' ELSE provider END,
  effective_service_tier = CASE WHEN id % 3 = 0 THEN 'auto' ELSE '' END,

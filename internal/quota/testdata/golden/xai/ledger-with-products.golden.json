@@ -19,12 +19,12 @@
   "windows": [
     {
       "id": "xai_credit_usage",
-      "label": "额度总使用率 (Credit Usage)",
+      "label": "Credit usage",
       "scope": "standard",
       "used_percent": 34.5,
       "remaining_percent": 65.5,
       "reset_at_ms": 1769904000000,
-      "reset_label": "02-01 00:00 (396天后恢复)",
+      "reset_label": "02-01 00:00 (in 396d)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     }

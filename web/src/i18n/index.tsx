@@ -5,7 +5,7 @@ import { DEFAULT_LANG, languageLocale, resolveInitialLang, type Lang } from './l
 import { CATALOGS } from './resources';
 import { getAppConfig } from '../types/config';
 
-export { LANGUAGES, languageLocale, isChineseLanguage } from './language';
+export { LANGUAGES, languageLocale } from './language';
 export type { Lang } from './language';
 export type { MessageKey, MessageVars, TFunc } from './catalog';
 export { hasMessage, messageKey, translateOr, prefixedKey } from './catalog';

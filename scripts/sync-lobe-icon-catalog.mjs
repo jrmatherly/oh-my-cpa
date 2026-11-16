@@ -8,6 +8,9 @@ const CATALOG_PACKAGE = '@lobehub/icons';
 const CATALOG_ENTRY = 'package/es/toc.json';
 const REGISTRY = 'https://registry.npmjs.org';
 
+const CHINESE = /[\u4e00-\u9fff]/;
+const withoutChinese = text => text.replace(/\s*\([^()]*[\u4e00-\u9fff][^()]*\)/g, '').trim();
+
 /**
  * The console looks marks up by id and group and never needs the upstream
  * rendering parameters, so the vendored catalog keeps only the fields
@@ -24,8 +27,11 @@ export function projectLobeIconCatalog(tableOfContents, hasAsset) {
     .filter(entry => hasAsset(`${lobeIconSlug(entry.id)}.svg`))
     .map(entry => ({
       id: entry.id,
-      title: entry.title,
-      fullTitle: entry.fullTitle,
+      // The source names many brands twice, as "Qwen (<Chinese name>)", and a few only in
+      // Chinese. This fork reads English only: the parenthetical is dropped, and a Chinese-only
+      // title falls back to the full title.
+      title: CHINESE.test(entry.title) ? withoutChinese(entry.fullTitle) || entry.id : entry.title,
+      fullTitle: withoutChinese(entry.fullTitle) || entry.id,
       docsUrl: entry.docsUrl,
       desc: entry.desc,
       group: entry.group,

@@ -183,7 +183,7 @@ func ParseXaiBilling(raw []byte, nowMS int64) (*QuotaPlan, []QuotaWindow, error)
 		}
 		windows = append(windows, QuotaWindow{
 			ID:               "xai_credit_usage",
-			Label:            "额度总使用率 (Credit Usage)",
+			Label:            "Credit usage",
 			Scope:            "standard",
 			UsedPercent:      &clampedUsed,
 			RemainingPercent: &clampedRem,

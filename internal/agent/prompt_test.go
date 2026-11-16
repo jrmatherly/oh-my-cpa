@@ -91,8 +91,8 @@ func TestPromptAsksForAReadableAnswer(t *testing.T) {
 			t.Errorf("wording rules lack %q", phrase)
 		}
 	}
-	if chinese := SystemPrompt(PromptContext{AnchorMS: 1, TokenStyle: "zh"}); !strings.Contains(chinese, "亿") || strings.Contains(chinese, "K, M and B") {
-		t.Fatalf("the Chinese token scale is not stated: %s", chinese)
+	if unknown := SystemPrompt(PromptContext{AnchorMS: 1, TokenStyle: "zh"}); !strings.Contains(unknown, "K, M and B") {
+		t.Fatal("an unknown token style does not fall back to the compact rule")
 	}
 	if full := SystemPrompt(PromptContext{AnchorMS: 1, TokenStyle: "full"}); !strings.Contains(full, "in full") {
 		t.Fatal("the full token style is not stated")
@@ -151,7 +151,7 @@ func TestPromptBoundsEscapedIdentityMetadata(t *testing.T) {
 func TestModelInstructionsDescribeAvailableCapabilities(t *testing.T) {
 	declarations, _ := json.Marshal(DisplayToolDeclarations(openUIConsole))
 	own := SystemPrompt(PromptContext{AnchorMS: 1})
-	for _, phrase := range []string{"older clients", "old client", "new client", "legacy", "compatibility", "旧客户端", "新客户端", "render_ui", "canvas"} {
+	for _, phrase := range []string{"older clients", "old client", "new client", "legacy", "compatibility", "render_ui", "canvas"} {
 		if strings.Contains(strings.ToLower(own+string(declarations)), phrase) {
 			t.Errorf("model instructions contain %q", phrase)
 		}

@@ -2,7 +2,7 @@
   "windows": [
     {
       "id": "kimi_0",
-      "label": "每日限额",
+      "label": "Daily limit",
       "kind": "daily",
       "scope": "model",
       "model": "moonshot-v1-8k",
@@ -11,7 +11,7 @@
       "used_percent": 15,
       "remaining_percent": 85,
       "reset_at_ms": 1735693200000,
-      "reset_label": "01:00 (1小时后恢复)",
+      "reset_label": "01:00 (in 1h)",
       "period_hours": 24,
       "reset_accuracy": "exact"
     }

@@ -59,7 +59,7 @@ it('retains runtime base paths, UTF-8 keepalive admission and error classificati
     requests.push({ path, options });
     return new Response('{}', { headers: { 'Content-Type': 'application/json' } });
   }));
-  const values = ['a'.repeat(8190), 'a'.repeat(8191), '汉'.repeat(2730), '汉'.repeat(2731)];
+  const values = ['a'.repeat(8190), 'a'.repeat(8191), '€'.repeat(2730), '€'.repeat(2731)];
   for (const value of values) await api.putPreference('playground_session', value);
   expect(requests.map(request => request.options.keepalive)).toEqual([true, false, true, false]);
   expect(requests.every(request => request.path === '/console/nested/api/v1/preferences/playground_session')).toBe(true);

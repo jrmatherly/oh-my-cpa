@@ -41,7 +41,7 @@ it('validates task drafts and recognises server-made names', () => {
 
 it('runs a task manually and clears its history', async () => {
   const surface = mount(<WarmupSettingsDrawer open onClose={vi.fn()} />);
-  await screen.findByText('claude.json 窗口重置后 (5h)');
+  await screen.findByText('claude.json after window reset (5h)');
 
   fireEvent.click(await screen.findByRole('button', { name: 'Send once now' }));
   const history = await screen.findByTestId('warmup-last-result');
@@ -60,7 +60,7 @@ it('runs a task manually and clears its history', async () => {
 
 it('creates a new warmup task from the settings drawer', async () => {
   const surface = mount(<WarmupSettingsDrawer open onClose={vi.fn()} />);
-  await screen.findByText('claude.json 窗口重置后 (5h)');
+  await screen.findByText('claude.json after window reset (5h)');
 
   fireEvent.click(screen.getByTestId('warmup-add-task'));
   const dialog = await screen.findByTestId('warmup-task-editor');
@@ -88,7 +88,7 @@ it('creates a new warmup task from the settings drawer', async () => {
 
 it('keeps an open draft when a background refresh fails', async () => {
   const surface = mount(<WarmupSettingsDrawer open onClose={vi.fn()} />);
-  await screen.findByText('claude.json 窗口重置后 (5h)');
+  await screen.findByText('claude.json after window reset (5h)');
 
   fireEvent.click(screen.getByTestId('warmup-add-task'));
   const dialog = await screen.findByTestId('warmup-task-editor');

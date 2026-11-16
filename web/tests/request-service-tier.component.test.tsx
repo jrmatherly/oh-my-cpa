@@ -46,11 +46,11 @@ function renderTier(overrides: Partial<UsageEvent>, renderContent?: (event: Usag
 
 it('marks Codex priority and outbound/response Fast tiers accurately', () => {
   const first = renderTier({ resolved_service_tier: 'priority', resolved_service_tier_source: 'request' });
-  expect(screen.getByTestId('request-fast-tier').getAttribute('aria-label')).toMatch(/请求服务等级 priority|requested service tier priority/);
+  expect(screen.getByTestId('request-fast-tier').getAttribute('aria-label')).toMatch(/requested service tier priority/);
   first.unmount();
 
   const second = renderTier({ service_tier: 'auto', effective_service_tier: 'priority', resolved_service_tier: 'priority', resolved_service_tier_source: 'outbound' });
-  expect(screen.getByTestId('request-fast-tier').getAttribute('aria-label')).toMatch(/出站服务等级 priority|outbound service tier priority/);
+  expect(screen.getByTestId('request-fast-tier').getAttribute('aria-label')).toMatch(/outbound service tier priority/);
   second.unmount();
 
   const third = renderTier({ provider: 'openai', resolved_service_tier: 'default', resolved_service_tier_source: 'response' });
@@ -67,10 +67,10 @@ it('shows the client, outbound and response tiers separately in request details 
     <UsageEventDrawer eventId={event.id} credentials={new Map()} onClose={() => undefined} />
     <CostBreakdownView breakdown={breakdown} model="fixture-model" />
   </>);
-  fireEvent.click(await screen.findByRole('tab', { name: /^(?:Raw fields|原始字段)$/ }));
-  expect(await screen.findByText(/priority.*(?:based on outbound request|按出站判断)/)).toBeTruthy();
-  expect(screen.getByText(/^(?:Outbound tier|出站档位)$/)).toBeTruthy();
-  expect(screen.getByTestId('cost-service-tier').textContent).toMatch(/priced from outbound request|按出站档位计价/);
+  fireEvent.click(await screen.findByRole('tab', { name: /^Raw fields$/ }));
+  expect(await screen.findByText(/priority.*based on outbound request/)).toBeTruthy();
+  expect(screen.getByText(/^Outbound tier$/)).toBeTruthy();
+  expect(screen.getByTestId('cost-service-tier').textContent).toMatch(/priced from outbound request/);
 });
 
 it('paints the duration from its ramp in the row and drawer, and leaves TTFT in the secondary ink', async () => {

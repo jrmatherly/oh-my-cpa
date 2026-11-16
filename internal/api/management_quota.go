@@ -1154,7 +1154,7 @@ func (h *Handler) buildQuotaOverview(ctx context.Context, client *management.Cli
 			}
 		} else if normalized.Status == "exhausted" {
 			dto.QuotaExceeded = true
-			dto.QuotaReason = "配额已耗尽"
+			dto.QuotaReason = "Quota exhausted"
 		}
 
 		items = append(items, dto)

@@ -50,7 +50,7 @@ func TestCredentialDisplayNameLifecycle(t *testing.T) {
 		t.Fatalf("cleared name left a row: %+v", listed)
 	}
 
-	for _, invalid := range []string{strings.Repeat("名", MaxCredentialDisplayNameLength+1), "line\nbreak", "seat‮evil"} {
+	for _, invalid := range []string{strings.Repeat("€", MaxCredentialDisplayNameLength+1), "line\nbreak", "seat‮evil"} {
 		if _, err := repo.SetCredentialDisplayName(ctx, "default", file, invalid, 0); !errors.Is(err, ErrCredentialDisplayNameInvalid) {
 			t.Fatalf("name %q err = %v, want invalid", invalid, err)
 		}

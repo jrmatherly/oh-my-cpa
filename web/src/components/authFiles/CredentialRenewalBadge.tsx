@@ -41,7 +41,7 @@ export function CredentialRenewalBadge({ file, onOpen, className }: CredentialRe
   const t = useT();
   const kind = renewalKind(file);
 
-  // Management by exception (例外管理模式):
+  // Management by exception:
   // When renewal is healthy (verified, awaiting), remain completely silent.
   // When sign-in is required, the primary StatusLabel itself already states "Sign-in required"
   // with an action button "Reauthenticate" beneath it; adding an icon beside it is redundant and crowds the cell.

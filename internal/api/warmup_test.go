@@ -390,7 +390,7 @@ func TestWarmupHandlerCertifiesWireCorpus(t *testing.T) {
 
 	task := warmup.Task{
 		ID:        "t_wire_test",
-		Name:      "claude.json 窗口重置后 (5h)",
+		Name:      "claude.json after window reset (5h)",
 		Enabled:   true,
 		Provider:  "claude",
 		AuthIndex: "exact-claude",

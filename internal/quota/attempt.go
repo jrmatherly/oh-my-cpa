@@ -90,7 +90,7 @@ func ApplyReadingHealth(q *NormalizedQuota, attempt *ReadAttempt, hasStoredReadi
 				Status:   "needs_reauth",
 				Priority: "critical",
 				Action:   "reauth",
-				Reason:   "最近一次额度刷新认证失败，凭据可能已失效，建议重新授权",
+				Reason:   "The last quota refresh failed authentication. The credential may have expired; sign in again.",
 			}
 			return
 		}
@@ -100,7 +100,7 @@ func ApplyReadingHealth(q *NormalizedQuota, attempt *ReadAttempt, hasStoredReadi
 				Status:   "warning",
 				Priority: "medium",
 				Action:   "refresh",
-				Reason:   "最近一次额度刷新失败，正在显示上一次成功读取的数据，可尝试重新刷新",
+				Reason:   "The last quota refresh failed. Showing the last successful reading; try refreshing again.",
 			}
 			return
 		}
@@ -112,7 +112,7 @@ func ApplyReadingHealth(q *NormalizedQuota, attempt *ReadAttempt, hasStoredReadi
 			Status:   "warning",
 			Priority: "medium",
 			Action:   "refresh",
-			Reason:   "最近一次额度刷新失败，尚未取得额度读数，可尝试重新刷新",
+			Reason:   "The last quota refresh failed and no reading is available yet; try refreshing again.",
 		}
 		return
 	}
@@ -122,7 +122,7 @@ func ApplyReadingHealth(q *NormalizedQuota, attempt *ReadAttempt, hasStoredReadi
 			Status:   "warning",
 			Priority: "low",
 			Action:   "refresh",
-			Reason:   "读数已超过其窗口的重置时间，刷新以获取当前额度",
+			Reason:   "This reading is older than its window's reset time. Refresh for the current quota.",
 		}
 	}
 }

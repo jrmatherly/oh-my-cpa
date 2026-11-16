@@ -445,8 +445,8 @@ test('a countdown marks an instant the provider did not state exactly', () => {
     'quota.recovered',
   );
   assert.equal(
-    quotaResetCountdown({ reset_at_ms: now - 60_000, reset_accuracy: 'derived', reset_label: '已恢复' }, now, echoT),
-    '~已恢复',
+    quotaResetCountdown({ reset_at_ms: now - 60_000, reset_accuracy: 'derived', reset_label: 'recovered' }, now, echoT),
+    '~recovered',
     'a passed derived instant defers to what upstream stated instead of claiming recovery',
   );
   assert.equal(
@@ -586,10 +586,10 @@ test('one model’s limits form one family whatever period each covers', () => {
   // The label carries the period, so keying the family by label would split one model into
   // two and let the row and the Drawer pick from different sets.
   const fiveHour = {
-    id: 'addl_0_p', label: 'gpt-reserve 5小时配额', kind: 'model_scoped', scope: 'model', model: 'gpt-reserve',
+    id: 'addl_0_p', label: 'gpt-reserve 5-hour limit', kind: 'model_scoped', scope: 'model', model: 'gpt-reserve',
   } as const;
   const weekly = {
-    id: 'addl_0_s', label: 'gpt-reserve 每周配额', kind: 'model_scoped', scope: 'model', model: 'gpt-reserve',
+    id: 'addl_0_s', label: 'gpt-reserve weekly limit', kind: 'model_scoped', scope: 'model', model: 'gpt-reserve',
   } as const;
   assert.equal(quotaWindowGroupKey(fiveHour), quotaWindowGroupKey(weekly));
   assert.notEqual(
@@ -601,7 +601,7 @@ test('one model’s limits form one family whatever period each covers', () => {
 
 test('a limit outside the plan’s windows is not folded into them', () => {
   const standard = { id: 'weekly', label: 'Weekly', kind: 'weekly', scope: 'standard' } as const;
-  const codeReview = { id: 'code_review_weekly', label: '代码审查 每周配额', scope: 'code_review' } as const;
+  const codeReview = { id: 'code_review_weekly', label: 'Code review weekly limit', scope: 'code_review' } as const;
   assert.equal(quotaWindowGroupKey(standard), 'standard');
   assert.notEqual(
     quotaWindowGroupKey(codeReview),
@@ -623,8 +623,8 @@ test('an allowance outside the plan is one family, not one per window', () => {
   // Keyed by id as well, the code-review allowance's five-hour and weekly windows became two
   // families of one window each, so a credential whose only limits were those would show one
   // of them and hide the other.
-  const fiveHour = { id: 'code_review_5h', label: '代码审查 5小时配额', scope: 'code_review' } as const;
-  const weekly = { id: 'code_review_weekly', label: '代码审查 每周配额', scope: 'code_review' } as const;
+  const fiveHour = { id: 'code_review_5h', label: 'Code review 5-hour limit', scope: 'code_review' } as const;
+  const weekly = { id: 'code_review_weekly', label: 'Code review weekly limit', scope: 'code_review' } as const;
   assert.equal(quotaWindowGroupKey(fiveHour), quotaWindowGroupKey(weekly));
   assert.notEqual(quotaWindowGroupKey(weekly), quotaWindowGroupKey({ id: 'weekly', label: 'Weekly', scope: 'standard' }));
 });
@@ -651,7 +651,7 @@ const quotaRecord = (name: string, windows: QuotaWindow[], provider = 'antigravi
   buildOAuthWorkspaceProjection([file({ name, auth_index: name, type: provider, provider })], [quota({ auth_index: name, name, type: provider, provider, windows })], choices).records[0];
 
 test('quota lines: a family per line, five-hour then weekly, a lone limit across both columns', () => {
-  const group = (name: string, bucket: string, hours: number): QuotaWindow => ({ id: `ag_${name}_${bucket}`, label: `${name} · ${hours === 5 ? '5小时限制 (5-Hour)' : '每周限制 (Weekly)'}`, scope: 'group', period_hours: hours });
+  const group = (name: string, bucket: string, hours: number): QuotaWindow => ({ id: `ag_${name}_${bucket}`, label: `${name} · ${hours === 5 ? '5-hour limit' : 'Weekly limit'}`, scope: 'group', period_hours: hours });
   // Each line reads as "label: slot slot", where a lone limit reads "span".
   const cases: Array<[string, QuotaWindow[], string[], string?]> = [
     ['antigravity Pro: Gemini on one line, Argon weekly across both columns, Claude and GPT not listed', [
@@ -663,11 +663,11 @@ test('quota lines: a family per line, five-hour then weekly, a lone limit across
       { id: 'weekly', label: 'Weekly', kind: 'weekly', scope: 'standard' },
     ], ['plan: span'], 'codex'],
     ['a second weekly limit in the plan, and each model, gets a line of its own', [
-      { id: 'five_hour', label: '5小时滚动用量 (5-Hour)', scope: 'standard', period_hours: 5 },
-      { id: 'seven_day', label: '每周总用量上限 (Weekly)', scope: 'standard', period_hours: 168 },
-      { id: 'seven_day_oauth_apps', label: '第三方应用 每周用量', scope: 'standard', period_hours: 168 },
-      { id: 'seven_day_opus', label: 'Opus 每周用量', scope: 'model', model: 'claude-3-opus', period_hours: 168 },
-    ], ['plan: short long', '第三方应用: span', 'Opus: span'], 'claude'],
+      { id: 'five_hour', label: '5-hour rolling usage', scope: 'standard', period_hours: 5 },
+      { id: 'seven_day', label: 'Weekly usage limit', scope: 'standard', period_hours: 168 },
+      { id: 'seven_day_oauth_apps', label: 'Third-party apps weekly usage', scope: 'standard', period_hours: 168 },
+      { id: 'seven_day_opus', label: 'Opus weekly usage', scope: 'model', model: 'claude-3-opus', period_hours: 168 },
+    ], ['plan: short long', 'Third-party apps: span', 'Opus: span'], 'claude'],
     ['a period with no name is placed by its hours', [
       { id: 'meta_window', label: '3-hour window', scope: 'standard', period_hours: 3 },
       { id: 'meta_weekly', label: 'Weekly', kind: 'weekly', scope: 'standard', period_hours: 168 },
@@ -677,7 +677,7 @@ test('quota lines: a family per line, five-hour then weekly, a lone limit across
       { id: 'burst', label: 'Burst', scope: 'standard' },
     ], ['plan: span', 'Burst: span'], 'meta'],
     ['the code-review allowance leads with the plan before it', [
-      { id: 'code_review_weekly', label: '代码审查 每周配额', scope: 'code_review', period_hours: 168 },
+      { id: 'code_review_weekly', label: 'Code review weekly limit', scope: 'code_review', period_hours: 168 },
       { id: 'five_hour', label: '5h', kind: 'five_hour', scope: 'standard' },
     ], ['plan: span', 'code_review: span'], 'codex'],
     ['no readings, no lines', [], []],
@@ -692,9 +692,9 @@ test('quota lines: a family per line, five-hour then weekly, a lone limit across
 // Synthetic windows reproduce the standard plugin quota shape without account data or reset times.
 test('Factory list keeps all six group windows and names monthly extras in the console language', async () => {
   const windows: QuotaWindow[] = ['Standard', 'Core'].flatMap((group) => [
-    { id: `${group}_5h`, label: `${group} · 5小时限制 (5-Hour)`, scope: 'group', period_hours: 5 },
-    { id: `${group}_7d`, label: `${group} · 每周限制 (Weekly)`, scope: 'group', period_hours: 168 },
-    { id: `${group}_30d`, label: `${group} · 每月限制 (Monthly)`, scope: 'group', period_hours: 720 },
+    { id: `${group}_5h`, label: `${group} · 5-hour limit`, scope: 'group', period_hours: 5 },
+    { id: `${group}_7d`, label: `${group} · Weekly limit`, scope: 'group', period_hours: 168 },
+    { id: `${group}_30d`, label: `${group} · Monthly limit`, scope: 'group', period_hours: 720 },
   ]);
   const placed = packQuotaLines(quotaLinesOf(quotaRecord('factory', windows, 'factory')));
   assert.deepEqual(placed.map(({ cell }) => cell.window.id), [
@@ -713,10 +713,10 @@ test('Factory list keeps all six group windows and names monthly extras in the c
 
 test('quota reading names preserve model scope and provider text for unknown group periods', () => {
   const windows: QuotaWindow[] = [
-    { id: 'model_5h', label: 'Sonnet 5小时用量', scope: 'model', model: 'claude-sonnet', period_hours: 5 },
-    { id: 'model_7d', label: 'Sonnet 每周用量', scope: 'model', model: 'claude-sonnet', period_hours: 168 },
-    { id: 'model_30d', label: 'Sonnet 每月用量', scope: 'model', model: 'claude-sonnet', period_hours: 720 },
-    { id: 'group_7d', label: 'Standard · 每周限制 (Weekly)', scope: 'group', period_hours: 168 },
+    { id: 'model_5h', label: 'Sonnet 5-hour usage', scope: 'model', model: 'claude-sonnet', period_hours: 5 },
+    { id: 'model_7d', label: 'Sonnet weekly usage', scope: 'model', model: 'claude-sonnet', period_hours: 168 },
+    { id: 'model_30d', label: 'Sonnet monthly usage', scope: 'model', model: 'claude-sonnet', period_hours: 720 },
+    { id: 'group_7d', label: 'Standard · Weekly limit', scope: 'group', period_hours: 168 },
     { id: 'group_custom', label: 'Standard · Custom allowance', scope: 'group', period_hours: 48 },
     { id: 'group_unknown', label: 'Standard · Burst allowance', scope: 'group' },
   ];
@@ -728,6 +728,31 @@ test('quota reading names preserve model scope and provider text for unknown gro
   assert.deepEqual(placed.map(({ line, cell }) => quotaReadingName(line, cell, makeT('en'))), [
     '5 hours Sonnet', 'Weekly Sonnet', 'Monthly Sonnet', 'Weekly Standard', 'Standard (Custom allowance)', 'Standard (Burst allowance)',
   ]);
+});
+
+test('a model limit is named by its model, in the English labels and in ones stored before them', () => {
+  // The backend names a model limit "<model> <period> limit|usage". A quota snapshot saved before
+  // this fork wrote labels in English still carries upstream's Chinese period word. Those two labels
+  // are escaped so the fork's phrase translator, which rewrites Chinese in tests, leaves them alone.
+  const windows: QuotaWindow[] = [
+    { id: 'spark_5h', label: 'GPT-5-Codex-Spark 5-hour limit', scope: 'model', model: 'spark', period_hours: 5 },
+    { id: 'opus_7d', label: 'Opus weekly usage', scope: 'model', model: 'opus', period_hours: 168 },
+    { id: 'burst', label: 'Burst-Model 1.5-hour limit', scope: 'model', model: 'burst', period_hours: 1.5 },
+    { id: 'named_weekly', label: 'Atlas Weekly', scope: 'model', model: 'atlas', period_hours: 168 },
+    { id: 'stored_7d', label: 'Sonnet \u6bcf\u5468\u7528\u91cf', scope: 'model', model: 'sonnet', period_hours: 168 },
+    { id: 'stored_5h', label: 'Reserve-Model 5\u5c0f\u65f6\u914d\u989d', scope: 'model', model: 'reserve', period_hours: 5 },
+  ];
+  const placed = packQuotaLines(quotaLinesOf(quotaRecord('labels', windows, 'factory')));
+  const names = Object.fromEntries(placed.map(({ line, cell }) => [cell.window.id, quotaReadingName(line, cell, makeT('en'))]));
+  assert.deepEqual(names, {
+    spark_5h: '5 hours GPT-5-Codex-Spark',
+    opus_7d: 'Weekly Opus',
+    burst: 'Burst-Model',
+    // A model whose own name ends in a period word keeps it: only "<period> limit|usage" is a phrase.
+    named_weekly: 'Weekly Atlas Weekly',
+    stored_7d: 'Weekly Sonnet',
+    stored_5h: '5 hours Reserve-Model',
+  });
 });
 
 test('group allowance names survive unknown periods and duplicate known periods in any source order', () => {
@@ -748,11 +773,11 @@ test('group allowance names survive unknown periods and duplicate known periods 
 
 test('a row pairs further single limits two to a line and draws a leftover one across both columns', () => {
   const plan = (id: string, hours: number, label = id): QuotaWindow => ({ id, label, scope: 'standard', period_hours: hours });
-  const model = (name: string): QuotaWindow => ({ id: `seven_day_${name}`, label: `${name} 每周用量`, scope: 'model', model: name, period_hours: 168 });
+  const model = (name: string): QuotaWindow => ({ id: `seven_day_${name}`, label: `${name} weekly usage`, scope: 'model', model: name, period_hours: 168 });
   const placement = (windows: QuotaWindow[]) => packQuotaLines(quotaLinesOf(quotaRecord('cred', windows, 'claude')))
     .map(({ cell }) => `${cell.window.id}:${cell.spans ? 'span' : cell.slot}`);
   assert.deepEqual(
-    placement([plan('five_hour', 5), plan('seven_day', 168), plan('seven_day_oauth_apps', 168, '第三方应用 每周用量'), model('Sonnet'), model('Opus')]),
+    placement([plan('five_hour', 5), plan('seven_day', 168), plan('seven_day_oauth_apps', 168, 'Third-party apps weekly usage'), model('Sonnet'), model('Opus')]),
     ['five_hour:short', 'seven_day:long', 'seven_day_oauth_apps:short', 'seven_day_Sonnet:long', 'seven_day_Opus:span'],
   );
   // The first line keeps its columns even when it has one limit: it is what the headers describe.
@@ -943,11 +968,11 @@ test('antigravity list excludes Claude and GPT while drawer preserves all window
   assert.equal(isListQuotaFamilyExcluded('claude', 'Claude and GPT'), false);
 
   const windows: QuotaWindow[] = [
-    { id: 'ag_gemini_5h', label: 'Gemini models · 5小时限制 (5-Hour)', scope: 'group', period_hours: 5 },
-    { id: 'ag_gemini_week', label: 'Gemini models · 每周限制 (Weekly)', scope: 'group', period_hours: 168 },
-    { id: 'ag_claude_5h', label: 'Claude and GPT models · 5小时限制 (5-Hour)', scope: 'group', period_hours: 5 },
-    { id: 'ag_claude_week', label: 'Claude and GPT models · 每周限制 (Weekly)', scope: 'group', period_hours: 168 },
-    { id: 'ag_argon_week', label: 'Gemini 4 Argon · 每周限制 (Weekly)', scope: 'group', period_hours: 168 },
+    { id: 'ag_gemini_5h', label: 'Gemini models · 5-hour limit', scope: 'group', period_hours: 5 },
+    { id: 'ag_gemini_week', label: 'Gemini models · Weekly limit', scope: 'group', period_hours: 168 },
+    { id: 'ag_claude_5h', label: 'Claude and GPT models · 5-hour limit', scope: 'group', period_hours: 5 },
+    { id: 'ag_claude_week', label: 'Claude and GPT models · Weekly limit', scope: 'group', period_hours: 168 },
+    { id: 'ag_argon_week', label: 'Gemini 4 Argon · Weekly limit', scope: 'group', period_hours: 168 },
   ];
   const rec = quotaRecord('ag-1', windows, 'antigravity');
   const sections = buildCredentialSections([rec], [rec]);
@@ -967,7 +992,7 @@ test('isUnusedFullCodexFiveHourWindow distinguishes unstarted windows from start
   const fiveHours = 5 * 3_600_000;
   const base: QuotaWindow = {
     id: 'five_hour',
-    label: '5小时用量上限 (5-Hour)',
+    label: '5-hour usage limit',
     kind: 'five_hour',
     scope: 'standard',
     used_percent: 0,

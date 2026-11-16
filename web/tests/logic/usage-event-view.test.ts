@@ -1245,12 +1245,12 @@ test('usage event view', () => {
 
   // Configured AI provider match
   const configuredProviders = [
-    { id: 'custom-deepseek', name: 'DeepSeek 专线', family: 'deepseek', auth_index: 'auth-apikey' },
+    { id: 'custom-deepseek', name: 'DeepSeek relay', family: 'deepseek', auth_index: 'auth-apikey' },
     { id: 'opencode-1', name: 'Opencode', family: 'openai-compatibility', auth_index: 'auth-opencode' },
   ];
   const customResolved = resolveProviderInfo(apiKeyEvent, credFiles, { 'custom-deepseek': 'DeepSeek' }, configuredProviders);
   assert.equal(customResolved.isOAuth, false);
-  assert.equal(customResolved.title, 'DeepSeek 专线');
+  assert.equal(customResolved.title, 'DeepSeek relay');
   assert.equal(customResolved.iconId, 'DeepSeek');
   assert.equal(customResolved.credential, undefined);
 
@@ -1404,15 +1404,15 @@ test('usage event view', () => {
   // prefix, capitalising, or matching a substring) would print a name nobody chose.
   const nameResolver = createProviderNameResolver([
     { id: 'openai-compat-0', name: 'CommandCode GOAT', upstream_name: 'commandcode goat', family: 'openai-compatibility' },
-    { id: 'custom-deepseek', name: 'DeepSeek 专线', upstream_name: 'deepseek', family: 'openai-compatibility' },
+    { id: 'custom-deepseek', name: 'DeepSeek relay', upstream_name: 'deepseek', family: 'openai-compatibility' },
     { id: 'claude-1', name: 'Claude relay', family: 'claude' },
   ]);
   // The key CPA stores is the prefix plus the upstream name, so the lookup is exact.
   assert.equal(nameResolver('openai-compatible-commandcode goat'), 'CommandCode GOAT');
-  assert.equal(nameResolver('openai-compatible-deepseek'), 'DeepSeek 专线');
+  assert.equal(nameResolver('openai-compatible-deepseek'), 'DeepSeek relay');
   // The local provider id resolves too, for a key that carries one.
   assert.equal(nameResolver('openai-compat-0'), 'CommandCode GOAT');
-  assert.equal(nameResolver('custom-deepseek'), 'DeepSeek 专线');
+  assert.equal(nameResolver('custom-deepseek'), 'DeepSeek relay');
   assert.equal(nameResolver('claude-1'), 'Claude relay');
   // Case never decides identity, and surrounding whitespace is not a difference.
   assert.equal(nameResolver('OPENAI-COMPATIBLE-COMMANDCODE GOAT'), 'CommandCode GOAT');
@@ -1440,14 +1440,14 @@ test('usage event view', () => {
   // A custom name differing from the upstream name still resolves through the
   // upstream identity, which is the whole point of recording it separately.
   const customName = createProviderNameResolver([
-    { id: 'openai-compat-3', name: '我的专线', upstream_name: 'vendor-x' },
+    { id: 'openai-compat-3', name: 'My relay line', upstream_name: 'vendor-x' },
   ]);
-  assert.equal(customName('openai-compatible-vendor-x'), '我的专线');
+  assert.equal(customName('openai-compatible-vendor-x'), 'My relay line');
   // The custom name alone must not resolve, because it is not what CPA stores.
-  assert.equal(customName('openai-compatible-我的专线'), 'openai-compatible-我的专线');
+  assert.equal(customName('openai-compatible-My relay line'), 'openai-compatible-My relay line');
   const upstreamOnlyEvent = { ...apiKeyEvent, provider: 'openai-compatible-vendor-x', auth_index: '' };
   assert.equal(resolveProviderInfo(upstreamOnlyEvent, credFiles, {}, [
-    { id: 'openai-compat-3', name: '我的专线', upstream_name: 'vendor-x' },
+    { id: 'openai-compat-3', name: 'My relay line', upstream_name: 'vendor-x' },
   ]).title, customName(upstreamOnlyEvent.provider), 'rows and facets resolve the same exact upstream identity');
   // CPA's compatibility namespace distinguishes an upstream named "codex" from
   // the native family's indexless records; the bare family is not its identity.
@@ -1484,7 +1484,7 @@ test('usage event view', () => {
   const servingResolver = createServingProviderResolver([
     { id: 'claude-0', name: 'AnyRouter', family: 'claude', auth_indexes: ['key-claude-01', 'key-claude-02'] },
     { id: 'claude-1', name: 'Backup relay', family: 'claude', auth_index: 'key-claude-03' },
-    { id: 'openai-compat-0', name: 'DeepSeek 专线', upstream_name: 'deepseek', family: 'openai-compatibility', auth_indexes: ['relay-key'] },
+    { id: 'openai-compat-0', name: 'DeepSeek relay', upstream_name: 'deepseek', family: 'openai-compatibility', auth_indexes: ['relay-key'] },
     { id: 'claude-4', name: 'First claim', family: 'claude', auth_indexes: ['shared-key'] },
     { id: 'claude-5', name: 'Second claim', family: 'claude', auth_indexes: ['shared-key'] },
   ]);

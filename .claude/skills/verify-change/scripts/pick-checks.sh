@@ -43,7 +43,8 @@ changed '^\.github/workflows/' && add "pnpm verify:workflow:lint"
 changed '^(internal/api|internal/demo)/' && add "pnpm check:demo"
 changed '^internal/api/' && add "pnpm check:openapi"
 
-[ ${#cmds[@]} -eq 0 ] && { echo "No repository check maps to these files; review them by hand."; exit 0; }
+# The fork is English only; this fails on any Chinese character outside its allow list.
+add "pnpm check:english"
 
 printf '%s\n' "${cmds[@]}"
 if [ "$run" -eq 1 ]; then

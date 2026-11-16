@@ -86,17 +86,6 @@ export function resolveInitialLang(
   return matchBrowserLanguage(browserLanguages) ?? DEFAULT_LANG;
 }
 
-/**
- * Whether a reading language uses Chinese numeric scales.
- *
- * Both Chinese scripts share 万/亿 as words, so the answer follows the locale's
- * language subtag rather than a list of ids: a later Chinese variant reads its own
- * unit style without being added here.
- */
-export function isChineseLanguage(lang: Lang): boolean {
-  return languageLocale(lang).startsWith('zh');
-}
-
 /** The BCP 47 tag for a reading language, for Intl and the document element. */
 export function languageLocale(lang: Lang): string {
   return LANGUAGES.find((language) => language.id === lang)?.locale ?? 'en';

@@ -36,7 +36,7 @@ func TestToInt64RejectsTheRoundedMaxInt64Boundary(t *testing.T) {
 	}
 }
 
-// A window shorter than an hour is named in minutes. Rounded to hours it reads as "0小时",
+// A window shorter than an hour is named in minutes. Rounded to hours it reads as "0-hour",
 // which is not a period at all - and a provider that meters a short window would have it
 // described as no window.
 func TestWindowPeriodNameKeepsShortWindowsReadable(t *testing.T) {
@@ -44,13 +44,13 @@ func TestWindowPeriodNameKeepsShortWindowsReadable(t *testing.T) {
 		seconds float64
 		want    string
 	}{
-		{seconds: 90, want: "2分钟"},
-		{seconds: 600, want: "10分钟"},
-		{seconds: 1800, want: "30分钟"},
-		{seconds: FiveHourSeconds, want: "5小时"},
-		{seconds: DailySeconds, want: "每日"},
-		{seconds: WeeklySeconds, want: "每周"},
-		{seconds: MonthlySeconds, want: "每月"},
+		{seconds: 90, want: "2-minute"},
+		{seconds: 600, want: "10-minute"},
+		{seconds: 1800, want: "30-minute"},
+		{seconds: FiveHourSeconds, want: "5-hour"},
+		{seconds: DailySeconds, want: "daily"},
+		{seconds: WeeklySeconds, want: "weekly"},
+		{seconds: MonthlySeconds, want: "monthly"},
 		{seconds: 0, want: ""},
 	} {
 		if got := windowPeriodName(one.seconds); got != one.want {
@@ -81,7 +81,7 @@ func TestResolveCodexPlanTierNamesCurrentPlans(t *testing.T) {
 		{"free", "free", "Free"},
 		{" future_plan ", "standard", "Future_plan"},
 		{"promax_future", "standard", "Promax_future"},
-		{"", "unknown", "未知套餐"},
+		{"", "unknown", "Unknown plan"},
 	}
 	for _, tc := range cases {
 		tier, label := resolveCodexPlanTier(tc.planType)

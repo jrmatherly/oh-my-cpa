@@ -36,14 +36,14 @@ export const REPLAY_ROUND_PAUSE_MS = 550;
 /** A call's floor, so one that took milliseconds is still seen running. */
 export const REPLAY_CALL_FLOOR_MS = 420;
 
-/** The languages a recording is written in; every other reading language takes the English one. */
-export type RecordingLanguage = 'zh' | 'en';
+/** The language a recording is written in. This fork records and replays English only. */
+export type RecordingLanguage = 'en';
 
-export function recordingLanguage(language: string | undefined): RecordingLanguage {
-  return language?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+export function recordingLanguage(_language: string | undefined): RecordingLanguage {
+  return 'en';
 }
 
-/** Answer text per frame: Chinese carries more per character, so it is written fewer at a time. */
-export function answerChunkSize(language: RecordingLanguage): number {
-  return language === 'zh' ? 3 : 9;
+/** Answer text per frame. */
+export function answerChunkSize(_language: RecordingLanguage): number {
+  return 9;
 }

@@ -107,8 +107,8 @@ test('agent workspace', async () => {
 
   check('a directory query can match the text the operator reads', () => {
     const items = [capability('providers_list', 'read', 'List providers'), capability('keys_list', 'read', 'List keys')];
-    const localized: Record<string, string> = { providers_list: '列出提供方', keys_list: '列出客户端密钥' };
-    const groups = groupCapabilities(items, '密钥', item => `${item.name} ${localized[item.name]}`);
+    const localized: Record<string, string> = { providers_list: 'Show every provider', keys_list: 'Show client secrets' };
+    const groups = groupCapabilities(items, 'secrets', item => `${item.name} ${localized[item.name]}`);
     assert.deepEqual(groups.flatMap(group => group.items.map(item => item.name)), ['keys_list']);
   });
 
@@ -280,7 +280,7 @@ test('agent workspace', async () => {
   }
 
   await checkAsync('the SSE reader survives chunks split inside characters, lines and frames', async () => {
-    const bytes = new TextEncoder().encode(': keepalive\n\ndata: {"a":"中文"}\r\n\r\nevent: delta\ndata: one\ndata: two\n\ndata: tail-without-blank');
+    const bytes = new TextEncoder().encode(': keepalive\n\ndata: {"a":"€😀"}\r\n\r\nevent: delta\ndata: one\ndata: two\n\ndata: tail-without-blank');
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         // One byte at a time: every possible split point.
@@ -290,7 +290,7 @@ test('agent workspace', async () => {
     });
     const frames = [];
     for await (const frame of readSSE(stream)) frames.push(frame);
-    assert.deepEqual(frames, [{ data: '{"a":"中文"}' }, { event: 'delta', data: 'one\ntwo' }]);
+    assert.deepEqual(frames, [{ data: '{"a":"€😀"}' }, { event: 'delta', data: 'one\ntwo' }]);
   });
 
   // ── the transcript as assistant-ui messages ────────────────────────────────────

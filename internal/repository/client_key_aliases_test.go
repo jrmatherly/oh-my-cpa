@@ -335,7 +335,7 @@ func TestClientKeyAliasValidation(t *testing.T) {
 	}
 	for _, valid := range []string{
 		"Production CI",
-		"   桌面客户端   ",
+		"   Desktop client   ",
 		strings.Repeat("x", MaxClientKeyAliasLength),
 	} {
 		normalized, err := NormalizeClientKeyAlias(valid)
