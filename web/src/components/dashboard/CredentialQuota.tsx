@@ -7,7 +7,9 @@ import clsx from 'clsx';
 import { api } from '../../api/client';
 import { useT, type TFunc } from '../../i18n';
 import { LoadFailure, useToast } from '../feedback';
-import { LoadingRegion, Placeholder } from '../common/Placeholder';
+import { EmptyState } from '../common/EmptyState';
+import { LoadingRegion } from '../common/Placeholder';
+import { CredentialQuotaPlaceholder } from './DashboardSkeleton';
 import { RefreshButton } from '../common/RefreshButton';
 import { Tooltip } from '../common/Tooltip';
 import { usePluginMultiPortalKeys, usePluginOAuthLogos } from '../../hooks/usePluginOAuthLogos';
@@ -303,10 +305,8 @@ export const CredentialQuotaPanel: React.FC<CredentialQuotaPanelProps> = ({
         </div>
 
         {state === 'loading' && (
-          <LoadingRegion className="quota-skeleton">
-            {Array.from({ length: 4 }, (_, row) => (
-              <Placeholder key={row} width="100%" height={18} row={row} className="placeholder-line" />
-            ))}
+          <LoadingRegion>
+            <CredentialQuotaPlaceholder hasHeader={false} />
           </LoadingRegion>
         )}
 
@@ -315,13 +315,12 @@ export const CredentialQuotaPanel: React.FC<CredentialQuotaPanelProps> = ({
         )}
 
         {state === 'empty' && (
-          <div className="quota-empty">
-            <p className="empty-copy">{t('dash.quota.empty')}</p>
+          <EmptyState size="compact" title={t('dash.quota.empty')}>
             <Link to="/oauth-management?action=connect" className="quota-foot-link">
               <span>{t('dash.quota.connect')}</span>
               <RightOutlined className="quota-link-icon" />
             </Link>
-          </div>
+          </EmptyState>
         )}
 
         {board && state === 'ready' && (
@@ -343,7 +342,7 @@ export const CredentialQuotaPanel: React.FC<CredentialQuotaPanelProps> = ({
                 {board.rows.map((row) => <CredentialQuotaRowView key={row.key} row={row} nowMS={nowMS} pluginLogos={pluginLogos} />)}
               </ul>
             ) : (
-              <p className="empty-copy quota-all-disabled">{t('dash.quota.all_disabled')}</p>
+              <EmptyState size="compact" title={t('dash.quota.all_disabled')} />
             )}
           </>
         )}
