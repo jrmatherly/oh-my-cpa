@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/logs';
-
 export default {
   'logs.tab_tail': 'Live tail',
   'logs.tab_errors': 'Error log files',
@@ -223,4 +220,4 @@ export default {
   'audit.action.warmup.task.delete': 'Deleted a window warmup task',
   'audit.action.warmup.task.run': 'Ran a window warmup',
   'audit.action.warmup.runs.clear': 'Cleared window warmup runs',
-} satisfies Translation<typeof source>;
+};

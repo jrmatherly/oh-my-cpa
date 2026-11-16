@@ -1,9 +1,8 @@
-import source from './locales/zh';
+import source from './locales/en';
 
 /**
- * A message id. The Simplified Chinese catalog defines the set: it is the product's semantic
- * source, so a key exists once its source sentence does, and every other language is checked
- * against it by the compiler.
+ * A message id. The English catalog defines the set: it is this fork's source, so a key exists
+ * once its sentence does, and any other language would be checked against it by the compiler.
  */
 export type MessageKey = keyof typeof source;
 

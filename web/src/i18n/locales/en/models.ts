@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/models';
-
 export default {
   'models.group_count': 'Models: {count}',
   'models.summary_line': '{models} models from {makers} makers',
@@ -77,4 +74,4 @@ export default {
   'models.catalog_status.error': 'Failed',
   'models.catalog_error.refresh_failed': 'CPA could not refresh this catalog',
   'models.catalog_error.invalid_response': 'Unreadable refresh result for this catalog',
-} satisfies Translation<typeof source>;
+};

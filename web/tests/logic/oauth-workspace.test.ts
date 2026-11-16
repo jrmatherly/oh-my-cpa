@@ -701,12 +701,9 @@ test('Factory list keeps all six group windows and names monthly extras in the c
     'Standard_5h', 'Standard_7d', 'Standard_30d', 'Core_5h', 'Core_7d', 'Core_30d',
   ]);
   const expected = {
-    zh: ['5 小时 Standard', '每周 Standard', '每月 Standard', '5 小时 Core', '每周 Core', '每月 Core'],
     en: ['5 hours Standard', 'Weekly Standard', 'Monthly Standard', '5 hours Core', 'Weekly Core', 'Monthly Core'],
-    'zh-Hant': ['5 小時 Standard', '每週 Standard', '每月 Standard', '5 小時 Core', '每週 Core', '每月 Core'],
-    ms: ['Standard 5 jam', 'Standard Mingguan', 'Standard Bulanan', 'Core 5 jam', 'Core Mingguan', 'Core Bulanan'],
   };
-  for (const lang of ['zh', 'en', 'zh-Hant', 'ms'] as const) {
+  for (const lang of ['en'] as const) {
     const entry = CATALOGS[lang];
     const catalog = typeof entry === 'function' ? await entry() : entry;
     const t: TFunc = (key, vars) => formatMessage(catalog[key], vars, languageLocale(lang));
@@ -728,13 +725,9 @@ test('quota reading names preserve model scope and provider text for unknown gro
     ['model_5h', 'model', 'claude-sonnet'], ['model_7d', 'model', 'claude-sonnet'], ['model_30d', 'model', 'claude-sonnet'],
     ['group_7d', 'group', undefined], ['group_custom', 'group', undefined], ['group_unknown', 'group', undefined],
   ]);
-  for (const lang of ['zh', 'en'] as const) {
-    assert.deepEqual(placed.map(({ line, cell }) => quotaReadingName(line, cell, makeT(lang))), lang === 'zh' ? [
-      '5 小时 Sonnet', '每周 Sonnet', '每月 Sonnet', '每周 Standard', 'Standard（Custom allowance）', 'Standard（Burst allowance）',
-    ] : [
-      '5 hours Sonnet', 'Weekly Sonnet', 'Monthly Sonnet', 'Weekly Standard', 'Standard (Custom allowance)', 'Standard (Burst allowance)',
-    ]);
-  }
+  assert.deepEqual(placed.map(({ line, cell }) => quotaReadingName(line, cell, makeT('en'))), [
+    '5 hours Sonnet', 'Weekly Sonnet', 'Monthly Sonnet', 'Weekly Standard', 'Standard (Custom allowance)', 'Standard (Burst allowance)',
+  ]);
 });
 
 test('group allowance names survive unknown periods and duplicate known periods in any source order', () => {
@@ -749,9 +742,6 @@ test('group allowance names survive unknown periods and duplicate known periods 
     if (windows.includes(general) && windows.includes(partner)) {
       assert.equal(names.general, 'Weekly Standard (General allowance)');
       assert.equal(names.partner, 'Weekly Standard (Partner allowance)');
-      const zhNames = Object.fromEntries(placed.map(({ line, cell }) => [cell.window.id, quotaReadingName(line, cell, makeT('zh'))]));
-      assert.equal(zhNames.general, '每周 Standard（General allowance）');
-      assert.equal(zhNames.partner, '每周 Standard（Partner allowance）');
     }
   }
 });

@@ -302,10 +302,7 @@ type Interrupt struct {
 // LANGUAGES maps the console's reading languages to the names the model is told. The set is closed
 // so the prompt never quotes a client-supplied string.
 var LANGUAGES = map[string]string{
-	"zh":      "Simplified Chinese",
-	"zh-Hant": "Traditional Chinese",
-	"en":      "English",
-	"ms":      "Malay",
+	"en": "English",
 }
 
 type ModelClient interface {

@@ -1,13 +1,9 @@
 import type { Lang } from '../i18n/language';
 import { pluginDisplayName, type PluginItem, type StorePluginItem } from './plugin';
 
-// OMC's stored `zh` means Simplified; bare `zh` must never supply Traditional.
-// Prefer the console's regional reading, then an explicit same-script catalog.
+// The publisher locale keys each reading language accepts, most specific first.
 const STORE_LOCALES: Record<Lang, readonly string[]> = {
-  zh: ['zh-CN', 'zh-Hans', 'zh'],
-  'zh-Hant': ['zh-HK', 'zh-Hant', 'zh-TW'],
   en: ['en'],
-  ms: ['ms-MY', 'ms'],
 };
 
 type StoreMetadata = Pick<StorePluginItem, 'name' | 'description' | 'author' | 'homepage' | 'license' | 'tags'>;

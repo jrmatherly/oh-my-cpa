@@ -1,6 +1,6 @@
 #!/bin/bash
 # PostToolUse hook for Edit|Write. Mirrors two CI gates at edit time: gofmt on Go
-# files, and the four-locale rule for the i18n catalogs.
+# files, and the English-only rule for the i18n catalog.
 set -euo pipefail
 
 input=$(cat)
@@ -15,8 +15,12 @@ case "$file_path" in
     fi ;;
   */web/src/i18n/locales/*/*.ts)
     locale=$(basename "$(dirname "$file_path")")
-    others=$(ls "$(dirname "$(dirname "$file_path")")" | grep -vx "$locale" | tr '\n' ' ')
-    jq -n --arg ctx "The $locale catalog changed. The same keys exist in the ${others}catalogs (web/src/i18n/locales/), and 'pnpm check-i18n' verifies placeholders, plurals and unused keys across all four." \
+    if [ "$locale" = en ]; then
+      ctx="The English catalog changed. It is this fork's only catalog and the typed source of every message id; 'pnpm check-i18n' verifies placeholders, plurals and unused keys."
+    else
+      ctx="This fork reads English only: web/src/i18n/locales/$locale must not exist. Put the copy in locales/en, or run .claude/skills/upstream-review/scripts/english-only.sh after an upstream merge."
+    fi
+    jq -n --arg ctx "$ctx" \
       '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$ctx}}' ;;
 esac
 exit 0

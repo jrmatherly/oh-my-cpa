@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/providers';
-
 export default {
   "pool.group_title": "Group connection reuse defaults",
   "pool.key_title": "Key connection reuse",
@@ -183,4 +180,4 @@ export default {
   'pro.traffic_unknown': 'Traffic is unavailable',
   'pro.traffic_none': 'No requests',
   'pro.traffic_requests': '{n} requests',
-} satisfies Translation<typeof source>;
+};

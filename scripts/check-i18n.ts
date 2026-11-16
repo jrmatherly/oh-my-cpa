@@ -25,7 +25,7 @@ import { ensureDemoDataset } from './generate-demo-data.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const I18N = path.join(ROOT, 'web', 'src', 'i18n');
 const LOCALES = path.join(I18N, 'locales');
-const SOURCE_LANG = 'zh';
+const SOURCE_LANG = 'en';
 
 type Messages = Record<string, string>;
 

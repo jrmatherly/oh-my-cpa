@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/insights';
-
 export default {
   'insights.range.24h': 'Last 24 hours',
   'insights.range.7d': 'Last 7 days',
@@ -99,4 +96,4 @@ export default {
   'insights.scale_more': 'More',
   'insights.peak': 'Peak',
   'insights.sample_note': 'n={n}',
-} satisfies Translation<typeof source>;
+};

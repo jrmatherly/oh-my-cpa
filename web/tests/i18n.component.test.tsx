@@ -14,7 +14,7 @@ import { I18nProvider, useI18n } from '../src/i18n';
 function Probe() {
   const { lang, setLang } = useI18n();
   return (
-    <button type="button" onClick={() => setLang('zh')}>
+    <button type="button" onClick={() => setLang('en')}>
       {lang}
     </button>
   );
@@ -49,7 +49,7 @@ describe('the reading language a visit starts in', () => {
 
     fireEvent.click(screen.getByRole('button'));
 
-    expect(screen.getByRole('button').textContent).toBe('zh');
-    expect(window.localStorage.getItem('omc-lang')).toBe('zh');
+    expect(screen.getByRole('button').textContent).toBe('en');
+    expect(window.localStorage.getItem('omc-lang')).toBe('en');
   });
 });

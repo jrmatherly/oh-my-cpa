@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/quota';
-
 export default {
   'quota.retry_at': 'Retry after: {time}',
   'quota.clear_all_cooldowns': 'Clear all credential cooldowns',
@@ -114,4 +111,4 @@ export default {
   'quota.in_days_min': '{d}d {h}h left',
   'quota.time_with_countdown': '{time} ({countdown})',
   'quota.days_ago': '{n}d ago',
-} satisfies Translation<typeof source>;
+};

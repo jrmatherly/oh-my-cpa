@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/dashboard';
-
 export default {
   'dash.loading': 'Loading CPA management data',
   'dash.error_title': 'Failed to load the management overview',
@@ -177,4 +174,4 @@ export default {
   'dash.receipt.export_failed': 'Could not create the receipt image',
   'dash.receipt.load_failed': 'Could not read the receipt figures',
   'dash.models.set_price': 'Click to set its price',
-} satisfies Translation<typeof source>;
+};

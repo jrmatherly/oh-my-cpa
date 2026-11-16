@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/plugins';
-
 export default {
   'plugin.tab_installed': 'Installed {n}',
   'plugin.tab_store': 'Store',
@@ -227,4 +224,4 @@ export default {
   'plugin.clear_filters': 'Clear filters',
   'plugin.state_filter_label': 'Running state',
   'plugin.source_empty': 'This source lists no plugins',
-} satisfies Translation<typeof source>;
+};

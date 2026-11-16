@@ -62,7 +62,7 @@ Use concise conventional commit subjects (`fix:`, `feat:`, `refactor:`, `docs:`)
 A draft PR is useful for large work in progress. Automated review supplements the
 repository checks and maintainer review; it does not replace either.
 
-User-facing copy belongs in all four [locale catalogs](web/src/i18n/locales/) rather
+User-facing copy belongs in the English [catalog](web/src/i18n/locales/en/) rather
 than hardcoded in components. Follow the [copy guide](web/src/i18n/STYLE.md).
 Technical prose and intent-focused code comments are English. Contributions are
 licensed under the project's [MIT license](LICENSE).

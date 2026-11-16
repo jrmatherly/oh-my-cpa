@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/routing';
-
 export default {
   'orch.title': 'Routing',
   'orch.load_failed': 'Routing could not be read',
@@ -84,4 +81,4 @@ export default {
   'orch.leave_title': 'Leave routing?',
   'orch.leave_desc': 'Unsaved changes will be discarded. Changes already applied remain in effect.',
   'orch.leave_confirm': 'Leave page',
-} satisfies Translation<typeof source>;
+};

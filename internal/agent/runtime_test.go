@@ -427,7 +427,7 @@ func TestRuntimeAnnouncesACallBeforeItRuns(t *testing.T) {
 		}), nil
 	}
 	var final *Conversation
-	err := runtime.Run(context.Background(), Input{Message: "read", Model: "fixture", Fingerprint: "key", Language: "zh"}, func(event Event) error {
+	err := runtime.Run(context.Background(), Input{Message: "read", Model: "fixture", Fingerprint: "key", Language: "en"}, func(event Event) error {
 		if event.Type == "tool_call" {
 			isAnnouncedFirst = executions == 0 && event.Trace.Arguments == `{"window":"24h"}` && event.Trace.StartedMS > 0
 		}

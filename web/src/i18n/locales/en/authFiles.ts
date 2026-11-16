@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/authFiles';
-
 export default {
   "af.field_proxy_auth_hint": "Saved proxy credentials are masked; entering a new URL will overwrite",
   'af.status_all': 'All statuses',
@@ -234,4 +231,4 @@ export default {
   'af.raw_facts': 'Raw details',
   'af.metric_priority': 'Priority',
   'af.metric_weight': 'Weight',
-} satisfies Translation<typeof source>;
+};

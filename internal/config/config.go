@@ -121,7 +121,11 @@ const DefaultLanguageEnv = "OMCPA_DEFAULT_LANGUAGE"
 // language menu lists them. The console's registry (web/src/i18n/language.ts) is the
 // source of truth; a test reads it so this list cannot drift out of it and reject a
 // language the console already reads.
-var ConsoleLanguages = []string{"zh", "zh-Hant", "en", "ms"}
+var ConsoleLanguages = []string{"en"}
+
+// retiredConsoleLanguages are the languages upstream reads and this fork dropped. A
+// deployment that pinned one before the fork went English-only must still start.
+var retiredConsoleLanguages = []string{"zh", "zh-Hant", "ms"}
 
 // loadDefaultLanguage returns the language the operator pinned, or "" when the console
 // follows each visitor's browser.
@@ -133,6 +137,11 @@ func loadDefaultLanguage() (string, error) {
 	for _, id := range ConsoleLanguages {
 		if raw == id {
 			return id, nil
+		}
+	}
+	for _, id := range retiredConsoleLanguages {
+		if raw == id {
+			return "", nil
 		}
 	}
 	return "", fmt.Errorf("%s must be auto or one of %s: %q", DefaultLanguageEnv, strings.Join(ConsoleLanguages, ", "), raw)

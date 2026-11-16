@@ -6,7 +6,6 @@ import { resolveApiTarget, resolveBasePath } from '../scripts/api-target.mjs';
 import { syncLobeIcons } from '../scripts/sync-lobe-icons.mjs';
 import { bundleGraphPlugin } from '../scripts/bundle-graph.mjs';
 import { bareBaseRedirectPlugin, devRuntimeConfigPlugin } from '../scripts/dev-base-redirect.mjs';
-import { compactEnglishCatalogPlugin } from '../scripts/compact-locales.mjs';
 
 const repoRoot = path.resolve(__dirname, '..');
 const devBasePath = resolveBasePath(repoRoot);
@@ -33,7 +32,6 @@ export default defineConfig(({ command }) => ({
     bundleGraphPlugin(repoRoot),
     bareBaseRedirectPlugin(),
     devRuntimeConfigPlugin(devBasePath),
-    compactEnglishCatalogPlugin(repoRoot),
   ],
   // Development follows OMCPA_BASE_PATH so an existing local environment and the
   // backend agree on the entry, runtime API paths and proxy. New environments use

@@ -29,7 +29,7 @@ var openUIConsole = []string{PRESENT_OPENUI}
 // TestPromptSectionsAreOrderedAndComplete pins the prompt's structure: each concern in its own
 // section, in a fixed order, so a presentation change cannot land in the safety rules.
 func TestPromptSectionsAreOrderedAndComplete(t *testing.T) {
-	context := PromptContext{AnchorMS: 1, TimeZone: "Asia/Shanghai", Language: "zh", DisplayTools: openUIConsole}
+	context := PromptContext{AnchorMS: 1, TimeZone: "Asia/Shanghai", Language: "en", DisplayTools: openUIConsole}
 	sections := promptSections(context)
 	if got := sectionNames(sections); got != "identity,approach,data,safety,wording,presentation,context" {
 		t.Fatalf("sections %s", got)
@@ -40,7 +40,7 @@ func TestPromptSectionsAreOrderedAndComplete(t *testing.T) {
 		}
 	}
 	prompt := SystemPrompt(context)
-	for _, rule := range []string{"untrusted data", "NOT executed", "`rejected`", "`uncertain`", "ask_question", "prompt_openui", "database_query", "window", "Asia/Shanghai", "Simplified Chinese", "1970-01-01T00:00:00Z"} {
+	for _, rule := range []string{"untrusted data", "NOT executed", "`rejected`", "`uncertain`", "ask_question", "prompt_openui", "database_query", "window", "Asia/Shanghai", "console language is English", "1970-01-01T00:00:00Z"} {
 		if !strings.Contains(prompt, rule) {
 			t.Errorf("prompt lacks %q", rule)
 		}
