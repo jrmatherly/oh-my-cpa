@@ -8,8 +8,8 @@
  * Chinese?".
  *
  * `name` is the language's **endonym** - its own name in its own script - and is
- * deliberately not translated. A switcher that renamed 简体中文 to "Simplified
- * Chinese" would be unusable by exactly the reader who needs it: someone who
+ * deliberately not translated. A switcher that renamed a language to its English
+ * name would be unusable by exactly the reader who needs it: someone who
  * cannot read the console's current language cannot recognize their own behind a
  * translation of it, and would have no way back out. `id` and `code` are likewise
  * stable in every reading, which is what lets the header's trigger - a flag and a
@@ -30,13 +30,10 @@ export interface LanguageOption {
   readonly locale: string;
 }
 
+// This fork reads English only. The registry, the provider and the catalog loader stay as upstream
+// built them, so a language is still one row here plus its catalog.
 export const LANGUAGES = [
-  { id: 'zh', name: '简体中文', code: '中', locale: 'zh-CN' },
-  // Hong Kong usage (軟件, 網絡, 密鑰, 帳戶). The id stays `zh-Hant` because stored preferences
-  // already name it; the locale says which Traditional Chinese the catalog is written in.
-  { id: 'zh-Hant', name: '繁體中文', code: '繁', locale: 'zh-HK' },
   { id: 'en', name: 'English', code: 'EN', locale: 'en' },
-  { id: 'ms', name: 'Bahasa Melayu', code: 'MS', locale: 'ms-MY' },
 ] as const satisfies readonly LanguageOption[];
 
 export type Lang = (typeof LANGUAGES)[number]['id'];
@@ -47,9 +44,7 @@ export type Lang = (typeof LANGUAGES)[number]['id'];
  * read. It is shipped with the entry, which is what makes it a fallback at all: a deferred
  * catalog that failed is exactly the one that could not be fetched.
  */
-export const DEFAULT_LANG: Lang = 'zh';
-
-export const LANG_KEY = 'omc-lang';
+export const DEFAULT_LANG: Lang = 'en';
 
 export function isLang(value: unknown): value is Lang {
   return LANGUAGES.some((language) => language.id === value);
@@ -59,19 +54,13 @@ export function isLang(value: unknown): value is Lang {
  * The registered language a browser's preferred tags ask for, or `undefined` when they name none.
  *
  * Tags are matched by primary subtag, because a region is not a reading language: `en-GB` and
- * `en-US` both read `en`, and `ms-SG` reads `ms`. Chinese is the one language whose two catalogs
- * are two scripts rather than two regions, so the tags that ask for the Traditional script -
- * `zh-Hant*`, and the regions that write it, Taiwan, Hong Kong and Macao - read `zh-Hant`, and
- * every other Chinese tag reads `zh`.
+ * `en-US` both read `en`.
  */
 export function matchBrowserLanguage(tags: readonly string[]): Lang | undefined {
   for (const tag of tags) {
     const normalized = tag.trim().toLowerCase();
     if (!normalized) continue;
     const primary = normalized.split('-')[0];
-    if (primary === 'zh') {
-      return /(^|-)hant(-|$)/.test(normalized) || /^zh-(tw|hk|mo)(-|$)/.test(normalized) ? 'zh-Hant' : 'zh';
-    }
     const match = LANGUAGES.find((language) => language.locale.toLowerCase().split('-')[0] === primary);
     if (match) return match.id;
   }

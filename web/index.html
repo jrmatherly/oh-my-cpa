@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <!-- The document paints the console's own ground before its stylesheet arrives. A phone that
@@ -41,20 +41,6 @@
           if (mode === 'light' || mode === 'dark') document.documentElement.dataset.themeMode = mode;
         } catch (error) {
           // The bundle reads the same preference and paints the console once it mounts.
-        }
-      })();
-    </script>
-    <!-- The document ships Chinese and the bundle applies the stored reading language only after it
-         mounts; until then a screen reader and the browser's translate detection see `zh-CN` for an
-         English console. `tests/logic/theme-boot.test.ts` holds the locale map to `i18n/language.ts`. -->
-    <script id="omc-lang-boot">
-      (function () {
-        var locales = { zh: 'zh-CN', 'zh-Hant': 'zh-HK', en: 'en', ms: 'ms-MY' };
-        try {
-          var stored = window.localStorage.getItem('omc-lang');
-          if (Object.prototype.hasOwnProperty.call(locales, stored)) document.documentElement.lang = locales[stored];
-        } catch (error) {
-          // The bundle reads the same preference and sets the language once it mounts.
         }
       })();
     </script>

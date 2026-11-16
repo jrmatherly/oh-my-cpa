@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/oauth';
-
 export default {
   "recovery.session_conflict": "An authorization is already running for this provider. Finish or cancel it before recovering another credential.",
   "recovery.title": "Renewal and recovery",
@@ -171,4 +168,4 @@ export default {
   'oauth.status_unread': 'Status read failed; retrying: {msg}',
   'oauth.view_auth_files': 'Go to OAuth management',
   'oauth.login_another': 'Sign in another account',
-} satisfies Translation<typeof source>;
+};

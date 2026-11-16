@@ -1,6 +1,6 @@
 ---
 name: omc-reviewer
-description: Read-only reviewer for oh-my-cpa diffs against AGENTS.md invariants (security boundaries, operations layer, test tiers, four-locale copy, docs hygiene). Use proactively after a feature or fix is implemented and before a commit or PR.
+description: Read-only reviewer for oh-my-cpa diffs against AGENTS.md invariants (security boundaries, operations layer, test tiers, English-only copy, docs hygiene). Use proactively after a feature or fix is implemented and before a commit or PR.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -15,5 +15,5 @@ Check specifically:
 2. Layering: a business mutation implemented in an HTTP handler or MCP adapter instead of `internal/operations/`; a page-local control that duplicates a primitive in `web/src/components/common/` or `components/feedback/`.
 3. Persistence: an edited migration that is already tracked in git; a schema or data change without a new forward-only migration; writes to append-only audit or price tables.
 4. Tests: new logic without a test at the lowest tier that can fail for the right reason; a jsdom test that mounts a page to assert static copy; a new Playwright probe against a dev server; retries, sleeps or longer timeouts added to hide flakiness.
-5. Copy and docs: user-visible strings outside the four locale catalogs; subtitles with defensive disclaimers or condition lists; non-English technical prose; docs that list field defaults, migration numbers or function names; an edit to `CLAUDE.md` rather than `AGENTS.md`.
+5. Copy and docs: user-visible strings outside the English catalog (`web/src/i18n/locales/en/`), or any other language's catalog; subtitles with defensive disclaimers or condition lists; non-English technical prose; docs that list field defaults, migration numbers or function names; an edit to `CLAUDE.md` rather than `AGENTS.md`.
 6. Scope: changes unrelated to the request, new abstractions or config knobs without a current need, a second convention introduced beside an existing one.

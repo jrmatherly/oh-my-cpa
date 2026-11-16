@@ -1,4 +1,3 @@
-import type { Catalog } from '../../catalog';
 import shell from './shell';
 import agent from './agent';
 import dashboard from './dashboard';
@@ -37,4 +36,4 @@ export default {
   ...system,
   ...settings,
   ...routing,
-} satisfies Catalog;
+};

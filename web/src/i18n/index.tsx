@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Catalog, TFunc } from './catalog';
 import { formatMessage } from './format';
-import { DEFAULT_LANG, LANG_KEY, languageLocale, resolveInitialLang, type Lang } from './language';
+import { DEFAULT_LANG, languageLocale, resolveInitialLang, type Lang } from './language';
 import { CATALOGS } from './resources';
 import { getAppConfig } from '../types/config';
 
@@ -66,6 +66,8 @@ export function makeT(lang: Lang): TFunc {
 function isDeferredLanguage(lang: Lang): boolean {
   return typeof CATALOGS[lang] === 'function';
 }
+
+const LANG_KEY = 'omc-lang';
 
 /**
  * The reading language the console falls back to when the preferred one cannot be fetched.

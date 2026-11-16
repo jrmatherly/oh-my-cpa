@@ -75,7 +75,7 @@ and operator procedures.
   - `components/common/` & `components/feedback/`: Shared console primitives (`AppModal`, `ConfirmAction`, `NumberInput`, `SearchSelect`, `RowReorder`, `RefreshButton`, `Notice`, `useToast`, etc.). Always reuse shared primitives before building page-local controls.
   - `api/` & `hooks/`: Typed HTTP client and React Query hooks.
   - `types/`: Domain models and pure state/derivation helpers.
-  - `theme/` & `i18n/`: Tokenized palette/theme projection and 4-locale catalogs (`zh`, `en`, `zh-Hant`, `ms`).
+  - `theme/` & `i18n/`: Tokenized palette/theme projection and the English catalog (`en`), the only language this fork reads.
 - **Security & data invariants**:
   - Never expose raw keys, OAuth tokens or auth files in ordinary DTOs, logs, preferences or browser storage. Caller keys use masks and keyed-HMAC identities, never masks as join keys. CPA's management key is the one deliberate exception: the console mirrors it into the CPAMC-compatible browser storage that plugin pages written for CPAMC read, and puts it nowhere else.
   - Sensitive operations fail closed when their required audit record cannot be written.
@@ -130,6 +130,6 @@ To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testin
 - A tooltip is a last resort: it names an icon-only control, explains a disabled one, completes truncated text, or reads an exact value or a data mark. It never repeats visible text or explains how to click. More than one fact is a `TipCard` (heading, label/value rows, notes) rendered by `TooltipReadout`, never a joined string; see [Design](docs/dev/design.md#tooltips).
 - Read only declared tokens (no `var(--x, fallback)` for a token that does not exist), keep `--meta` for quiet prose rather than anything pressable, key motion on `data-reduced-motion` rather than `prefers-reduced-motion`, and use 900px for shell-shaped rules and 640px only for phone content; see [Design](docs/dev/design.md#small-screens-keyboard-and-touch).
 - Keep external contract spellings (`JSON`, `SQL`, CPA YAML fields) exact. Use `is`/`has`/`can`/`should` prefixes for booleans and kebab-case CSS module classes via `styles['class-name']`.
-- User-visible copy belongs in all four locale catalogs (`web/src/i18n/locales/{zh,en,zh-Hant,ms}/`).
+- User-visible copy belongs in the English catalog (`web/src/i18n/locales/en/`), never inline. This fork ships no other language.
 - **No defensive copy or condition enumeration**: When authoring UI subtitles, descriptions, and hints, never write defensive disclaimers (e.g. "不是xxx", "并非xxx"), fallback/empty-state condition enumeration (e.g. "为空时xxx，为xx时xxx", "0 表示xxx", "留空则xxx"), or operational commands (e.g. "修改后需重启"). State capabilities directly in a single calm sentence; let placeholders, units, and control defaults communicate fallback behavior. If a control is self-explanatory (ports, paths, URLs with placeholders, standard switches), omit the subtitle entirely.
 - Prefer self-documenting code, types, tests, and adjacent comments over standalone prose. Update `docs/` only when an architectural boundary, operator procedure, or public contract actually changes. Never append migration numbers, internal function names, or historical change logs to operational docs.

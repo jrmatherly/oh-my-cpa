@@ -177,23 +177,26 @@ test('plugin config', () => {
   assert.deepEqual(filterInstalledPlugins([multiPortalPlugin], ' RELAY-SECONDARY ', new Map(), 'en'), [multiPortalPlugin]);
   assert.deepEqual(filterInstalledPlugins([multiPortalPlugin], 'other-portal', new Map(), 'en'), []);
   assert.deepEqual(filterStorePlugins(STORE, '', 'updates', 'en').map((item) => item.store_id), ['official/logger']);
+  // A publisher's listing in a language this console does not read never replaces the base copy.
   const localizedEntry = entry({
     id: 'localized', name: 'Base title', description: 'Base description', tags: ['base-tag'],
     locales: {
       'zh-CN': { name: '简体标题', description: '简体描述', tags: ['简体标签'] },
-      'zh-Hant': { name: '繁體標題', description: '繁體描述', tags: ['繁體標籤'] },
     },
   });
-  assert.deepEqual(filterStorePlugins([localizedEntry], '简体描述', 'all', 'zh'), [localizedEntry]);
-  assert.deepEqual(filterStorePlugins([localizedEntry], '繁體標籤', 'all', 'zh-Hant'), [localizedEntry]);
-  assert.deepEqual(filterStorePlugins([localizedEntry], '简体标题', 'all', 'zh-Hant'), []);
-  assert.deepEqual(filterStorePlugins([localizedEntry], 'base-tag', 'all', 'zh'), []);
+  assert.deepEqual(filterStorePlugins([localizedEntry], '简体描述', 'all', 'en'), []);
+  assert.deepEqual(filterStorePlugins([localizedEntry], 'base-tag', 'all', 'en'), [localizedEntry]);
   assert.deepEqual(filterStorePlugins([localizedEntry], 'base description', 'all', 'en'), [localizedEntry]);
-  assert.deepEqual(filterStorePlugins([localizedEntry], 'localized', 'all', 'zh'), [localizedEntry]);
+  assert.deepEqual(filterStorePlugins([localizedEntry], 'localized', 'all', 'en'), [localizedEntry]);
+  const englishEntry = entry({
+    id: 'localized', name: 'Base title', description: 'Base description', tags: ['base-tag'],
+    locales: { en: { name: 'Listed title', description: 'Listed description', tags: ['listed-tag'] } },
+  });
+  assert.deepEqual(filterStorePlugins([englishEntry], 'listed description', 'all', 'en'), [englishEntry]);
+  assert.deepEqual(filterStorePlugins([englishEntry], 'base-tag', 'all', 'en'), []);
   const localizedInstalled = { ...multiPortalPlugin, id: 'localized' };
-  const localizedCatalog = storeListingsByPluginId([localizedEntry]);
-  assert.deepEqual(filterInstalledPlugins([localizedInstalled], '繁體描述', localizedCatalog, 'zh-Hant'), [localizedInstalled]);
-  assert.deepEqual(filterInstalledPlugins([localizedInstalled], '简体标签', localizedCatalog, 'zh-Hant'), []);
+  assert.deepEqual(filterInstalledPlugins([localizedInstalled], 'listed description', storeListingsByPluginId([englishEntry]), 'en'), [localizedInstalled]);
+  assert.deepEqual(filterInstalledPlugins([localizedInstalled], '简体标签', storeListingsByPluginId([localizedEntry]), 'en'), []);
   const base = entry({
     name: 'Base name', description: 'Base description', author: 'Base author',
     homepage: 'https://publisher.example', license: 'Base license', tags: ['base-tag'],
@@ -203,39 +206,30 @@ test('plugin config', () => {
     name: base.name, description: base.description, author: base.author,
     homepage: base.homepage, license: base.license, tags: base.tags,
   });
-  for (const [lang, locale] of [
-    ['zh', 'zh-CN'], ['zh', 'zh-Hans'], ['zh', 'zh'],
-    ['zh-Hant', 'zh-HK'], ['zh-Hant', 'zh-Hant'], ['zh-Hant', 'zh-TW'],
-    ['en', 'en'], ['ms', 'ms-MY'], ['ms', 'ms'],
-  ] as const) {
-    const translated = { ...baseMetadata, name: `Title ${locale}`, description: `Text ${locale}`, author: `Author ${locale}`, homepage: `https://publisher.example/${locale}`, license: `License ${locale}`, tags: [locale] };
-    assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { [locale]: translated } }, lang), translated);
-  }
-  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: '简体' }, zh: { name: '通用' } } }, 'zh-Hant'), baseMetadata);
-  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-Hant': { name: '繁體' }, 'zh-TW': { name: '臺灣' } } }, 'zh'), baseMetadata);
+  const translated = { ...baseMetadata, name: 'Title en', description: 'Text en', author: 'Author en', homepage: 'https://publisher.example/en', license: 'License en', tags: ['tag-en'] };
+  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: translated } }, 'en'), translated);
+  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: '简体' }, 'en-GB': { name: 'British' } } }, 'en'), baseMetadata);
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: { name: ' ', description: 'Localized', author: '', homepage: '', license: '', tags: [' '] } } }, 'en'), { ...baseMetadata, description: 'Localized' });
-  assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: 'Regional' }, 'zh-Hans': { description: 'Other variant' } } }, 'zh'), { ...baseMetadata, name: 'Regional' });
-  assert.equal(selectStorePluginMetadata({ ...base, locales: { 'zh-HK': { name: 'Hong Kong' }, 'zh-Hant': { name: 'Traditional' }, 'zh-TW': { name: 'Taiwan' } } }, 'zh-Hant').name, 'Hong Kong');
   const registeredPlugin = { ...localizedInstalled, metadata: { name: 'Runtime name', author: 'Runtime author', version: '1.0.0' } };
-  const confirmedListing = { ...localizedEntry, installed: true, install_source_status: 'matched' };
-  assert.equal(selectInstalledPluginMetadata(registeredPlugin, confirmedListing, 'zh').name, '简体标题');
-  assert.equal(selectInstalledPluginMetadata(registeredPlugin, confirmedListing, 'en').name, 'Runtime name');
-  assert.equal(selectInstalledPluginMetadata(registeredPlugin, confirmedListing, 'zh').author, 'Runtime author');
-  assert.equal(selectInstalledPluginMetadata(registeredPlugin, undefined, 'zh').name, 'Runtime name');
+  const confirmedListing = { ...englishEntry, installed: true, install_source_status: 'matched' };
+  assert.equal(selectInstalledPluginMetadata(registeredPlugin, confirmedListing, 'en').name, 'Listed title');
+  assert.equal(selectInstalledPluginMetadata(registeredPlugin, { ...confirmedListing, locales: undefined }, 'en').name, 'Runtime name');
+  assert.equal(selectInstalledPluginMetadata(registeredPlugin, confirmedListing, 'en').author, 'Runtime author');
+  assert.equal(selectInstalledPluginMetadata(registeredPlugin, undefined, 'en').name, 'Runtime name');
   for (const listing of [
     { ...confirmedListing, install_source_status: 'different' },
     { ...confirmedListing, install_source_status: undefined },
     { ...confirmedListing, installed: false },
     { ...confirmedListing, id: 'different-plugin' },
   ]) {
-    const foreignListing = { ...listing, author: 'Foreign author', locales: { 'zh-CN': { name: 'Foreign name', author: 'Foreign translated author' } } };
-    const metadata = selectInstalledPluginMetadata(registeredPlugin, foreignListing, 'zh');
+    const foreignListing = { ...listing, author: 'Foreign author', locales: { en: { name: 'Foreign name', author: 'Foreign translated author' } } };
+    const metadata = selectInstalledPluginMetadata(registeredPlugin, foreignListing, 'en');
     assert.equal(metadata.name, 'Runtime name');
     assert.equal(metadata.author, 'Runtime author');
     const catalog = storeListingsByPluginId([foreignListing]);
-    assert.deepEqual(filterInstalledPlugins([registeredPlugin], 'Foreign', catalog, 'zh'), []);
-    assert.deepEqual(filterInstalledPlugins([registeredPlugin], 'Runtime name', catalog, 'zh'), [registeredPlugin]);
-    const withoutRuntimeMetadata = selectInstalledPluginMetadata({ ...registeredPlugin, metadata: undefined }, foreignListing, 'zh');
+    assert.deepEqual(filterInstalledPlugins([registeredPlugin], 'Foreign', catalog, 'en'), []);
+    assert.deepEqual(filterInstalledPlugins([registeredPlugin], 'Runtime name', catalog, 'en'), [registeredPlugin]);
+    const withoutRuntimeMetadata = selectInstalledPluginMetadata({ ...registeredPlugin, metadata: undefined }, foreignListing, 'en');
     assert.equal(withoutRuntimeMetadata.name, registeredPlugin.id);
     assert.equal(withoutRuntimeMetadata.author, undefined);
   }

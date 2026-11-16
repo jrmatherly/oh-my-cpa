@@ -151,11 +151,9 @@ export const OmcSettingsPage: React.FC = () => {
   const isNarrow = useIsNarrowViewport();
   const reducedMotion = useReducedMotionPreference();
 
-  // The Chinese scale is words - 万, 亿 - so it is offered only to a Chinese
-  // console. The option stays visible and disabled rather than hidden: an
-  // operator who knows the setting exists should find it and see why it is
-  // unavailable, instead of concluding the console dropped it.
-  const tokenStyleOptions = TOKEN_NUMBER_STYLES.map((value: TokenNumberStyle) => ({
+  // The Chinese scale is words, so it is listed only when the console registers a Chinese
+  // reading language, which this fork does not.
+  const tokenStyleOptions = TOKEN_NUMBER_STYLES.filter((value) => value !== 'zh' || LANGUAGES.some((language) => isChineseLanguage(language.id))).map((value: TokenNumberStyle) => ({
     value,
     label: value === 'zh' ? t('omc.token_style_zh') : value === 'full' ? t('omc.token_style_full') : t('omc.token_style_en'),
     disabled: value === 'zh' && !isChineseLanguage(lang),
@@ -261,7 +259,7 @@ export const OmcSettingsPage: React.FC = () => {
         <PaletteSetting mode="light" />
         <PaletteSetting mode="dark" />
         <FontSettings />
-        <SettingRow
+        {LANGUAGES.length > 1 && <SettingRow
           label={t('omc.language')}
           control={
             <Segmented
@@ -284,7 +282,7 @@ export const OmcSettingsPage: React.FC = () => {
               // narrow-layout rule hands this picker.
             />
           }
-        />
+        />}
         <SettingRow
           label={t('omc.reduced_motion')}
           description={t('omc.reduced_motion_desc')}

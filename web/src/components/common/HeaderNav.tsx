@@ -141,8 +141,8 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               {t(`omc.theme_mode_${mode}`)}
             </Button>
           ))}
-          <span className="action-menu-label">{t('header.language')}</span>
-          {LANGUAGES.map((language) => (
+          {LANGUAGES.length > 1 && <span className="action-menu-label">{t('header.language')}</span>}
+          {LANGUAGES.length > 1 && LANGUAGES.map((language) => (
             <Button key={language.id} variant="ghost" aria-pressed={lang === language.id} onClick={() => setLang(language.id)}>
               {language.name}
             </Button>

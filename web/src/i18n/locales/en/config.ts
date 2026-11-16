@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/config';
-
 export default {
   'cfg.source_tools': 'Source tools',
   'cfg.tools': 'Configuration tools',
@@ -531,4 +528,4 @@ export default {
   'policy.rule_problem_action': 'Choose an action',
   'policy.rule_problem_no_match': 'Add at least one pattern, or the gateway never runs this rule',
   'policy.rule_problem_empty_match': 'A pattern cannot be empty',
-} satisfies Translation<typeof source>;
+};

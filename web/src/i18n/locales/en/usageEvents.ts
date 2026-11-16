@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/usageEvents';
-
 export default {
   'events.detail_image_search_calls': 'Image search calls',
   'events.detail_tool_use_prompt_tokens': 'Tool-use prompt tokens',
@@ -447,4 +444,4 @@ export default {
   'events.cause_upstream_hint': 'The upstream failed internally. When the configuration is not the cause, it usually recovers by itself.',
   'events.cause_unknown': 'Request did not succeed',
   'events.cause_unknown_hint': 'No clear cause was recorded. Diagnostics shows the upstream response and related errors.',
-} satisfies Translation<typeof source>;
+};

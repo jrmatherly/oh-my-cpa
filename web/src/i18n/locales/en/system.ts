@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/system';
-
 export default {
   'sys.backup_error_proxy_unsupported': 'Remote backup cannot use the selected network route. Change the network setting or destination.',
   'warmup.settings': 'Warmup settings',
@@ -346,4 +343,4 @@ export default {
   "sys.backup_rule_met": "(met)",
   "sys.backup_rule_broken": "(does not match)",
   "sys.backup_error_disk_space": "Not enough free disk space. Free some space and try again.",
-} satisfies Translation<typeof source>;
+};

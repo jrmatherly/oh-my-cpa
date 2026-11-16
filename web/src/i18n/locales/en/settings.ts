@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/settings';
-
 export default {
   'omc.section_proxy': 'Network proxy',
   'omc.proxy_address_desc': 'OMC, CPA and the updater must be able to reach this address.',
@@ -269,4 +266,4 @@ export default {
   'omc.retention_confirm_title': 'Shorten retention?',
   'omc.retention_confirm_records': 'Request records older than {days} days are deleted in about a minute; lengthening retention later does not bring them back.',
   'omc.retention_changed': 'Another console changed the retention. It has been refreshed; choose again.',
-} satisfies Translation<typeof source>;
+};

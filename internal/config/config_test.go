@@ -351,6 +351,18 @@ func TestLoadReadsTheConsoleDefaultLanguage(t *testing.T) {
 	if cfg.DefaultLanguage != "en" {
 		t.Fatalf("configured default language = %q, want en", cfg.DefaultLanguage)
 	}
+
+	// A deployment that pinned a language this fork dropped still starts, unpinned.
+	for _, retired := range []string{"zh", "zh-Hant", "ms"} {
+		t.Setenv(DefaultLanguageEnv, retired)
+		cfg, err = Load()
+		if err != nil {
+			t.Fatalf("a retired pin %q stopped start-up: %v", retired, err)
+		}
+		if cfg.DefaultLanguage != "" {
+			t.Fatalf("retired pin %q = %q, want unpinned", retired, cfg.DefaultLanguage)
+		}
+	}
 }
 
 // A configured language the console cannot read is an operator mistake the page would show to every

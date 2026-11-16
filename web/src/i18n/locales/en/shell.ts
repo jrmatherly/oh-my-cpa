@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/shell';
-
 export default {
   'route_error.diagnostics': 'Error diagnostics',
   'route_error.copy': 'Copy diagnostics',
@@ -203,4 +200,4 @@ export default {
   'common.add_value': 'Add “{value}”',
   'common.done': 'Done',
   'nav.model_square': 'Model Square',
-} satisfies Translation<typeof source>;
+};

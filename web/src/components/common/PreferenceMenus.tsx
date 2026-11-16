@@ -38,7 +38,7 @@ export const PreferenceMenus: React.FC = () => {
         icon={MODE_ICONS[modePreference]}
         onClick={cycleModePreference}
       />
-      <DropdownMenu>
+      {LANGUAGES.length > 1 && <DropdownMenu>
         <DropdownMenuTrigger
           render={
             <HeaderAction
@@ -65,7 +65,7 @@ export const PreferenceMenus: React.FC = () => {
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>}
     </>
   );
 };

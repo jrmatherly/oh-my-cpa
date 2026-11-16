@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/pricing';
-
 export default {
   'pricing.editor.restore_shared': 'Use shared price',
   'pricing.editor.restore_confirm': 'Remove this channel’s custom price for {model} and use the shared price?',
@@ -235,4 +232,4 @@ export default {
   'pricing.candidate.listed': 'OpenRouter now lists {id}',
   'pricing.channels.col.own_prices': 'Own prices',
   'pricing.channels.own_prices': '{n} models',
-} satisfies Translation<typeof source>;
+};

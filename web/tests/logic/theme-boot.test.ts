@@ -5,9 +5,8 @@
  * bundle downloads, the document stands on screen alone. It has to be painted in the mode this
  * browser last chose, or a resumed dark console flashes white. `web/index.html` therefore carries
  * the two shipped page grounds and a script that reads the stored theme before anything else loads.
- * This holds both to the theme module, so the document cannot drift into a copy of it. The language
- * boot beside the theme boot is held to `i18n/language.ts` the same way. The same holds for the
- * stylesheet's corner scale and its edges, at the end of this file.
+ * This holds both to the theme module, so the document cannot drift into a copy of it. The same
+ * holds for the stylesheet's corner scale and its edges, at the end of this file.
  */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -15,7 +14,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { test } from 'vitest';
-import { DEFAULT_LANG, LANG_KEY, LANGUAGES, languageLocale } from '../../src/i18n/language.ts';
 import {
   ACCENT_LABEL_CONTRAST_FLOOR,
   BUILT_IN_PALETTES,
@@ -133,54 +131,6 @@ test('an unreadable preference leaves the shipped ground rather than taking the 
   assert.equal(groundedMode('{'), undefined);
   assert.equal(groundedMode(JSON.stringify({ mode: 'purple' })), undefined);
   assert.equal(groundedMode(JSON.stringify({ mode: 'light' }), { storageThrows: true }), undefined);
-});
-
-function langBootScript(): string {
-  const match = /<script id="omc-lang-boot">([\s\S]*?)<\/script>/.exec(indexHTML);
-  assert.ok(match, 'index.html carries no omc-lang-boot script');
-  const code = match[1];
-  assert.ok(code);
-  return code;
-}
-
-function shippedLang(): string {
-  const match = /<html lang="([^"]+)">/.exec(indexHTML);
-  assert.ok(match?.[1], 'index.html declares no document language');
-  return match[1];
-}
-
-/** Runs the document's language boot against the document as shipped, and returns its `lang` afterwards. */
-function bootedLang(stored: string | null, options: { storageThrows?: boolean } = {}): string {
-  const documentElement = { lang: shippedLang() };
-  const window = {
-    localStorage: {
-      getItem(key: string): string | null {
-        assert.equal(key, LANG_KEY, 'the lang boot reads the key the i18n provider stores');
-        if (options.storageThrows) throw new Error('storage is blocked by policy');
-        return stored;
-      },
-    },
-  };
-  new Function('window', 'document', langBootScript())(window, { documentElement });
-  return documentElement.lang;
-}
-
-test('the lang boot sets the document language from the stored preference', () => {
-  for (const language of LANGUAGES) {
-    assert.equal(bootedLang(language.id), language.locale);
-  }
-});
-
-test('the document ships the language a first visit reads', () => {
-  assert.equal(shippedLang(), languageLocale(DEFAULT_LANG));
-});
-
-test('the lang boot leaves the shipped language alone for an unknown or unreadable preference', () => {
-  assert.equal(bootedLang(null), shippedLang());
-  assert.equal(bootedLang('klingon'), shippedLang());
-  // An inherited object key must not read as a language: a plain `locales[stored]` would answer with a function.
-  assert.equal(bootedLang('toString'), shippedLang());
-  assert.equal(bootedLang('en', { storageThrows: true }), shippedLang());
 });
 
 /*

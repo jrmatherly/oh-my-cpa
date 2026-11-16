@@ -1,6 +1,3 @@
-import type { Translation } from '../../catalog';
-import type source from '../zh/agent';
-
 export default {
   'agent.capability.quota_warmup_settings_get': 'Read window warmup tasks and state',
   'agent.capability.quota_warmup_settings_get.description': 'Read all window warmup tasks, recent runs, upcoming timeline and credential catalog.',
@@ -466,4 +463,4 @@ export default {
   'agent.capability.quota_auto_refresh_set.description': 'Set how often credentials are read in the background, and whether a reset quota is read again.',
   'agent.capability.models_list': 'Read connected models',
   'agent.capability.models_list.description': 'Read models advertised by CPA and OpenRouter reference metadata without inference.',
-} satisfies Translation<typeof source>;
+};
