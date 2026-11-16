@@ -7,26 +7,26 @@
   "windows": [
     {
       "id": "weekly",
-      "label": "每周用量上限 (Weekly)",
+      "label": "Weekly usage limit",
       "kind": "weekly",
       "scope": "standard",
       "used_percent": 1,
       "remaining_percent": 99,
       "reset_at_ms": 1785902974000,
-      "reset_label": "08-05 04:09 (581天4小时后恢复)",
+      "reset_label": "08-05 04:09 (in 581d 4h)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     },
     {
       "id": "addl_0_p",
-      "label": "GPT-5.3-Codex-Spark 每周配额",
+      "label": "GPT-5.3-Codex-Spark weekly limit",
       "kind": "model_scoped",
       "scope": "model",
       "model": "GPT-5.3-Codex-Spark",
       "used_percent": 0,
       "remaining_percent": 100,
       "reset_at_ms": 1785903197000,
-      "reset_label": "08-05 04:13 (581天4小时后恢复)",
+      "reset_label": "08-05 04:13 (in 581d 4h)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     }

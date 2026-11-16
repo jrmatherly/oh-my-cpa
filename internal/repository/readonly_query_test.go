@@ -19,7 +19,7 @@ func TestReadOnlyDSNPreservesAbsolutePaths(t *testing.T) {
 		{"unix", "/var/lib/omc/query.db", "file:///var/lib/omc/query.db"},
 		{"windows drive", "C:/Users/runner/query.db", "file:///C:/Users/runner/query.db"},
 		{"lowercase drive", "d:/OMC data/query.db", "file:///d:/OMC%20data/query.db"},
-		{"escaped filename", "C:/OMC 数据/query #100%?.db", "file:///C:/OMC%20%E6%95%B0%E6%8D%AE/query%20%23100%25%3F.db"},
+		{"escaped filename", "C:/OMC Zürich/query #100%?.db", "file:///C:/OMC%20Z%C3%BCrich/query%20%23100%25%3F.db"},
 		{"unix backslash", `/var/lib/omc/query\name.db`, "file:///var/lib/omc/query%5Cname.db"},
 	} {
 		t.Run(example.name, func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestReadOnlyDSNPreservesAbsolutePaths(t *testing.T) {
 
 func TestReadOnlyPoolOpensTheSameFileAndRefusesWrites(t *testing.T) {
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "query 数据 #100%.db"))
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "query Zürich #100%.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

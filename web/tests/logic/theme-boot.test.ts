@@ -306,8 +306,8 @@ test('open theme SDK validates manifests, registers external themes, and falls b
     },
     {
       id: 'plugin:community.nord',
-      label: { en: 'Nord Frost', zh: '极地冰蓝' },
-      description: { en: 'Arctic slate with frost primary', zh: '极地蓝灰与冰霜主色' },
+      label: { en: 'Nord Frost', 'en-GB': 'Nord Frost' },
+      description: { en: 'Arctic slate with frost primary', 'en-GB': 'Arctic slate with frost primary colour' },
       author: 'OMC Studio',
       version: '1.0.0',
     },

@@ -13,7 +13,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 	}
 	if q.ActiveCooldown != nil && q.ActiveCooldown.IsActive {
 		q.Status = "cooldown"
-		reason := "CPA 冷却保护生效中"
+		reason := "CPA cooldown protection is active"
 		if q.ActiveCooldown.Reason != "" {
 			reason = q.ActiveCooldown.Reason
 		}
@@ -32,7 +32,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 			Status:   "idle",
 			Priority: "none",
 			Action:   "none",
-			Reason:   "凭据已禁用",
+			Reason:   "Credential disabled",
 		}
 		return
 	}
@@ -45,7 +45,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 				Status:   "needs_reauth",
 				Priority: "critical",
 				Action:   "reauth",
-				Reason:   "上游认证失败或凭据失效，建议重新配置密钥或登录授权",
+				Reason:   "Upstream authentication failed or the credential expired. Reconfigure the key or sign in again.",
 			}
 			return
 		}
@@ -58,7 +58,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 			Status:   "warning",
 			Priority: "medium",
 			Action:   "refresh",
-			Reason:   "上游刷新超时或响应异常，已保留最近快照，可尝试重新刷新",
+			Reason:   "The upstream refresh timed out or returned an invalid response. The last snapshot is kept; try refreshing again.",
 		}
 		return
 	}
@@ -85,14 +85,14 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 						Status:   "credits_available",
 						Priority: "high",
 						Action:   "redeem_credit",
-						Reason:   "当前窗口配额已耗尽，有可用 Codex 重置积分，可立即重置恢复容量",
+						Reason:   "This window's quota is exhausted. A Codex reset credit is available; reset now to restore capacity.",
 					}
 				} else {
 					q.Recommendation = QuotaRecommendation{
 						Status:   "exhausted",
 						Priority: "medium",
 						Action:   "none",
-						Reason:   "配额已耗尽，请等待重置时间窗口或切换其他可用凭据",
+						Reason:   "Quota exhausted. Wait for the window to reset or switch to another credential.",
 					}
 				}
 				return
@@ -105,14 +105,14 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 						Status:   "credits_available",
 						Priority: "medium",
 						Action:   "redeem_credit",
-						Reason:   "配额余量低于 20%，检测到有可用重置积分储备",
+						Reason:   "Less than 20% of the quota remains. Reset credits are available.",
 					}
 				} else {
 					q.Recommendation = QuotaRecommendation{
 						Status:   "warning",
 						Priority: "low",
 						Action:   "none",
-						Reason:   "配额余量偏低（不足 20%），请注意流量消耗",
+						Reason:   "Quota is running low (under 20% left). Watch usage.",
 					}
 				}
 				return
@@ -123,7 +123,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 				Status:   "healthy",
 				Priority: "none",
 				Action:   "none",
-				Reason:   "配额健康充足，服务运行正常",
+				Reason:   "Quota is healthy and the service is running normally.",
 			}
 			return
 		}
@@ -139,7 +139,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 			Status:   QuotaStatusUnpublished,
 			Priority: "low",
 			Action:   "none",
-			Reason:   "上游未发布配额窗口，读取本身已成功",
+			Reason:   "The upstream publishes no quota windows; the read itself succeeded.",
 		}
 		return
 	}
@@ -149,7 +149,7 @@ func EvaluateStatusAndRecommendation(q *NormalizedQuota, nowMS int64) {
 		Status:   "idle",
 		Priority: "none",
 		Action:   "refresh",
-		Reason:   "暂无实时配额数据，可点击刷新获取上游最新额度",
+		Reason:   "No live quota data yet. Refresh to fetch the latest from upstream.",
 	}
 }
 

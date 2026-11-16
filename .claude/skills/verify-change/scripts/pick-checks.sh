@@ -9,6 +9,7 @@ for arg in "$@"; do
 done
 root=$(git rev-parse --show-toplevel)
 cd "$root"
+git rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "pick-checks: not a commit: $base" >&2; exit 2; }
 
 files=$( { git diff --name-only "$base" --; git ls-files --others --exclude-standard; } | sort -u )
 [ -z "$files" ] && { echo "No changed files relative to $base." >&2; exit 0; }
@@ -43,7 +44,8 @@ changed '^\.github/workflows/' && add "pnpm verify:workflow:lint"
 changed '^(internal/api|internal/demo)/' && add "pnpm check:demo"
 changed '^internal/api/' && add "pnpm check:openapi"
 
-[ ${#cmds[@]} -eq 0 ] && { echo "No repository check maps to these files; review them by hand."; exit 0; }
+# The fork is English only; this fails on any Chinese character outside its allow list.
+add "pnpm check:english"
 
 printf '%s\n' "${cmds[@]}"
 if [ "$run" -eq 1 ]; then

@@ -61,7 +61,7 @@ func TestMigrationsAndResourceOverride(t *testing.T) {
 	if len(resources) != 1 {
 		t.Fatalf("stored resources = %d, want 1", len(resources))
 	}
-	name := "DeepSeek 官方主线路"
+	name := "DeepSeek official route"
 	icon := "deepseek"
 	color := "#1E88E5"
 	status := domain.ResourceStatusClaimed

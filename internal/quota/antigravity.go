@@ -77,17 +77,17 @@ func translateAntigravityBucketLabel(groupName, bucketName, window string) strin
 	}
 	switch normalizeAntigravityWindow(window) {
 	case "month", "monthly", "1mo", "1month", "1 month", "calendar month":
-		windowLabel = "每月限制 (Monthly)"
+		windowLabel = "Monthly limit"
 	default:
 		switch parseAntigravityWindowHours(window) {
 		case 5:
-			windowLabel = "5小时限制 (5-Hour)"
+			windowLabel = "5-hour limit"
 		case 24:
-			windowLabel = "每日限制 (Daily)"
+			windowLabel = "Daily limit"
 		case 168:
-			windowLabel = "每周限制 (Weekly)"
+			windowLabel = "Weekly limit"
 		case 720:
-			windowLabel = "每月限制 (Monthly)"
+			windowLabel = "Monthly limit"
 		}
 	}
 
@@ -297,7 +297,7 @@ func ResolveAntigravityPlan(planType string) *QuotaPlan {
 		}
 		return &QuotaPlan{
 			PlanType:  "unknown",
-			PlanLabel: "未知套餐",
+			PlanLabel: "Unknown plan",
 			Tier:      "unknown",
 		}
 	}

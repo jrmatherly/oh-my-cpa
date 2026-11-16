@@ -2,26 +2,20 @@
  * The console's reading-language registry.
  *
  * Kept in its own module because language identity is read by non-React code too:
- * the token display layer, the heatmap's date formatter, the HTML `lang`
- * attribute, and the catalogs. A registry buried in the React provider would force
- * those modules to import a component file just to answer "is this language
- * Chinese?".
+ * the heatmap's date formatter, the HTML `lang` attribute, and the catalogs. A registry
+ * buried in the React provider would force those modules to import a component file just
+ * to read a locale tag.
  *
  * `name` is the language's **endonym** - its own name in its own script - and is
  * deliberately not translated. A switcher that renamed a language to its English
  * name would be unusable by exactly the reader who needs it: someone who
  * cannot read the console's current language cannot recognize their own behind a
  * translation of it, and would have no way back out. `id` and `code` are likewise
- * stable in every reading, which is what lets the header's trigger - a flag and a
- * two-glyph code - be the same width in every language.
+ * stable in every reading.
  *
  * `locale` is the BCP 47 tag used for `Intl` and `document.documentElement.lang`.
  * It is separate from `id` because a stored id is a stable internal key, not a
- * locale tag: `zh` means Simplified Chinese in every existing browser profile, so
- * an id never changes once shipped even when its locale tag is refined.
- *
- * Adding a row here is the first step of adding a language; the compiler then
- * names every other place that must learn about it (`resources.ts`).
+ * locale tag.
  */
 export interface LanguageOption {
   readonly id: string;
@@ -31,7 +25,7 @@ export interface LanguageOption {
 }
 
 // This fork reads English only. The registry, the provider and the catalog loader stay as upstream
-// built them, so a language is still one row here plus its catalog.
+// built them to keep merges small. Do not add a row: english-only.sh removes any other catalog.
 export const LANGUAGES = [
   { id: 'en', name: 'English', code: 'EN', locale: 'en' },
 ] as const satisfies readonly LanguageOption[];
@@ -84,17 +78,6 @@ export function resolveInitialLang(
   if (isLang(stored)) return stored;
   if (isLang(configuredDefault)) return configuredDefault;
   return matchBrowserLanguage(browserLanguages) ?? DEFAULT_LANG;
-}
-
-/**
- * Whether a reading language uses Chinese numeric scales.
- *
- * Both Chinese scripts share 万/亿 as words, so the answer follows the locale's
- * language subtag rather than a list of ids: a later Chinese variant reads its own
- * unit style without being added here.
- */
-export function isChineseLanguage(lang: Lang): boolean {
-  return languageLocale(lang).startsWith('zh');
 }
 
 /** The BCP 47 tag for a reading language, for Intl and the document element. */

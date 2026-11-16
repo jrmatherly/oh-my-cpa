@@ -10,7 +10,7 @@
       "used_percent": 69.5,
       "remaining_percent": 30.5,
       "reset_at_ms": 4094152234000,
-      "reset_label": "已恢复",
+      "reset_label": "Recovered",
       "period_hours": 5,
       "reset_accuracy": "exact"
     },
@@ -22,7 +22,7 @@
       "used_percent": 25.290000000000003,
       "remaining_percent": 74.71,
       "reset_at_ms": 4096310400000,
-      "reset_label": "10-22 00:00 (21天后恢复)",
+      "reset_label": "10-22 00:00 (in 21d)",
       "period_hours": 720,
       "reset_accuracy": "exact"
     }

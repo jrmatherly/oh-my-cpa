@@ -57,7 +57,7 @@ export interface BuiltInFont {
  * Mono SC, its CJK glyphs from Google Fonts (`theme/cjkFont.ts`), installed copies, then
  * the platform's faces.
  */
-export const SARASA_STACK = '"Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "更纱黑体 SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+export const SARASA_STACK = '"Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
 
 /** Each platform's interface face, then each platform's Chinese face before the generic. */
 const SYSTEM_SANS_STACK = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", Roboto, "Helvetica Neue", Arial, sans-serif';

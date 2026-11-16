@@ -247,8 +247,8 @@ func TestOAuthStatusFailureMessage(t *testing.T) {
 		},
 		{
 			name:     "bounded Unicode reason",
-			upstream: map[string]string{"status": "error", "error": strings.Repeat("套餐缺失", 100)},
-			status:   "error", message: strings.Repeat("套餐缺失", 75),
+			upstream: map[string]string{"status": "error", "error": strings.Repeat("€→", 200)},
+			status:   "error", message: strings.Repeat("€→", 150),
 		},
 		{
 			name:     "redaction precedes truncation",

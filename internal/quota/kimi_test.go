@@ -431,7 +431,7 @@ func TestParseKimiPlanNameProjectsOnlyVerifiedSanitizedNames(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{strings.Repeat("a", 300), strings.Repeat("套餐", 100), strings.Repeat("a", 255) + "套餐"} {
+	for _, name := range []string{strings.Repeat("a", 300), strings.Repeat("€€", 100), strings.Repeat("a", 255) + "€€"} {
 		raw, err := json.Marshal(map[string]string{"user_id": "fixture-user", "user_level_name": name})
 		if err != nil {
 			t.Fatal(err)

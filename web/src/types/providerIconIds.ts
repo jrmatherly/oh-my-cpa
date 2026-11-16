@@ -80,7 +80,7 @@ const TOC_CANDIDATES: TocCandidate[] = (() => {
   for (const item of LOBE_ICON_CATALOG) {
     // 1. Exact ID (e.g. Minimax, OpenCode, DeepSeek) has highest priority
     add(item.id, item.id, 2);
-    // 2. Title, docsUrl, and parenthesized Chinese/alias names from fullTitle
+    // 2. Title, docsUrl, and parenthesized alias names from fullTitle
     add(item.title, item.id, 1);
     add(item.docsUrl, item.id, 1);
     if (item.fullTitle) {
@@ -100,28 +100,6 @@ const COMMON_ALIASES: Record<string, string> = {
   'gpt': 'OpenAI',
   'chatgpt': 'OpenAI',
   'glm': 'Zhipu',
-  '智谱': 'Zhipu',
-  '通义': 'Qwen',
-  '千问': 'Qwen',
-  '百炼': 'Bailian',
-  '月之暗面': 'Moonshot',
-  '海螺': 'Minimax',
-  '阶跃': 'Stepfun',
-  '跃问': 'Stepfun',
-  '百川': 'Baichuan',
-  '硅基': 'SiliconCloud',
-  '豆包': 'Doubao',
-  '火山': 'Volcengine',
-  '混元': 'Hunyuan',
-  '腾讯': 'Tencent',
-  '讯飞': 'Spark',
-  '星火': 'Spark',
-  '零一': 'ZeroOne',
-  '百度': 'Baidu',
-  '文心': 'Wenxin',
-  '商汤': 'SenseNova',
-  '日日新': 'SenseNova',
-  '深度求索': 'DeepSeek',
   'llama': 'Meta',
   'google': 'Gemini',
   'anthropic': 'Claude',

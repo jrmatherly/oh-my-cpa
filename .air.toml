@@ -1,6 +1,6 @@
-# Air 热重载配置：`pnpm dev:api`（仅后端）或 `pnpm dev`（后端 + 前端）。
-# 后端自己读取 .env，这里不需要注入环境变量。CPA 不由 Air 启动——
-# 请自行运行 `pnpm cpa:start` 或使用你自己的 CPA。
+# Air hot-reload configuration for `pnpm dev:api` (backend only) or `pnpm dev` (backend and
+# frontend). The backend reads .env itself, so nothing is injected here. Air does not start
+# CPA: run `pnpm cpa:start` or use your own CPA.
 root = "."
 testdata_dir = "tmp"
 tmp_dir = "tmp/air"

@@ -28,7 +28,7 @@
   "windows": [
     {
       "id": "ag_Harbor_bucket_0_0",
-      "label": "Harbor · 5小时限制 (5-Hour)",
+      "label": "Harbor · 5-hour limit",
       "scope": "group",
       "used_percent": 20,
       "remaining_percent": 80,

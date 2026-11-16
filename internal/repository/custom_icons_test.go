@@ -100,7 +100,7 @@ func TestCustomIconValidationAndLimit(t *testing.T) {
 	}
 	defer database.Close()
 	repo := New(database)
-	for _, name := range []string{"", strings.Repeat("界", 81)} {
+	for _, name := range []string{"", strings.Repeat("€", 81)} {
 		if _, err := repo.CreateCustomIcon(ctx, name, iconTestData()); !errors.Is(err, ErrCustomIconName) {
 			t.Fatalf("%v", err)
 		}

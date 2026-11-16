@@ -128,7 +128,7 @@ func TestBuildModelUsageDoesNotFoldWhenTheTopNIsNotExceeded(t *testing.T) {
 // would be reserved - and a deployment may legitimately serve a model whose name collides with
 // whatever that label is. A name-based test would merge real traffic into the remainder.
 func TestBuildModelUsageKeepsAFoldedNameDistinctFromARealModel(t *testing.T) {
-	rows := []repository.UsageModelBucketRow{modelRow("其他模型", 0, 9_000)}
+	rows := []repository.UsageModelBucketRow{modelRow("Other models", 0, 9_000)}
 	for index := 0; index < dashboardModelTopN; index++ {
 		rows = append(rows, modelRow("model-"+string(rune('a'+index)), 0, int64(1000-index)))
 	}
@@ -141,7 +141,7 @@ func TestBuildModelUsageKeepsAFoldedNameDistinctFromARealModel(t *testing.T) {
 			continue
 		}
 		named++
-		if group.Model == "其他模型" && group.Tokens != 9_000 {
+		if group.Model == "Other models" && group.Tokens != 9_000 {
 			t.Fatalf("the real model's traffic was altered: %d tokens, want 9000", group.Tokens)
 		}
 	}
@@ -153,7 +153,7 @@ func TestBuildModelUsageKeepsAFoldedNameDistinctFromARealModel(t *testing.T) {
 	}
 	// The highest-volume model is the one whose name collides with the label, so it must rank
 	// first rather than being mistaken for the remainder.
-	if usage.groups[0].Folded || usage.groups[0].Model != "其他模型" {
+	if usage.groups[0].Folded || usage.groups[0].Model != "Other models" {
 		t.Fatalf("first group = %#v, want the real model ranked first", usage.groups[0])
 	}
 }

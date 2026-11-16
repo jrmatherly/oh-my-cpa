@@ -189,13 +189,13 @@ func parseWindowDurationHours(seconds float64) float64 {
 func standardWindowIdentity(winSec float64, slotID, slotLabel string) (id, label, kind string) {
 	switch {
 	case winSec >= FiveHourSeconds-600 && winSec <= FiveHourSeconds+600:
-		return "five_hour", "5小时用量上限 (5-Hour)", "five_hour"
+		return "five_hour", "5-hour usage limit", "five_hour"
 	case winSec >= DailySeconds-3600 && winSec <= DailySeconds+3600:
-		return "daily", "每日用量上限 (Daily)", "daily"
+		return "daily", "Daily usage limit", "daily"
 	case winSec >= WeeklySeconds-3600 && winSec <= WeeklySeconds+3600:
-		return "weekly", "每周用量上限 (Weekly)", "weekly"
+		return "weekly", "Weekly usage limit", "weekly"
 	case winSec >= MonthlySeconds-86400 && winSec <= MonthlySeconds+86400:
-		return "monthly", "月度用量上限 (Monthly)", "monthly"
+		return "monthly", "Monthly usage limit", "monthly"
 	default:
 		return slotID, slotLabel, "custom"
 	}
@@ -210,44 +210,44 @@ func windowPeriodName(seconds float64) string {
 	case seconds <= 0:
 		return ""
 	case seconds >= FiveHourSeconds-600 && seconds <= FiveHourSeconds+600:
-		return "5小时"
+		return "5-hour"
 	case seconds >= DailySeconds-3600 && seconds <= DailySeconds+3600:
-		return "每日"
+		return "daily"
 	case seconds >= WeeklySeconds-3600 && seconds <= WeeklySeconds+3600:
-		return "每周"
+		return "weekly"
 	case seconds >= MonthlySeconds-86400 && seconds <= MonthlySeconds+86400:
-		return "每月"
+		return "monthly"
 	case seconds < 3600:
-		// Below an hour the hour figure rounds to zero, and "0小时" is not a period: a
+		// Below an hour the hour figure rounds to zero, and "0-hour" is not a period: a
 		// provider that meters a short window would have it described as no window at all.
-		return fmt.Sprintf("%g分钟", math.Round(seconds/60))
+		return fmt.Sprintf("%g-minute", math.Round(seconds/60))
 	default:
-		return fmt.Sprintf("%g小时", parseWindowDurationHours(seconds))
+		return fmt.Sprintf("%g-hour", parseWindowDurationHours(seconds))
 	}
 }
 
 func formatDurationShort(duration time.Duration) string {
 	if duration <= 0 {
-		return "刚刚"
+		return "just now"
 	}
 	totalMinutes := int(math.Ceil(duration.Minutes()))
 	if totalMinutes < 60 {
-		return fmt.Sprintf("%d分钟", totalMinutes)
+		return fmt.Sprintf("%dm", totalMinutes)
 	}
 	hours := totalMinutes / 60
 	mins := totalMinutes % 60
 	if hours < 24 {
 		if mins > 0 {
-			return fmt.Sprintf("%d小时%d分", hours, mins)
+			return fmt.Sprintf("%dh %dm", hours, mins)
 		}
-		return fmt.Sprintf("%d小时", hours)
+		return fmt.Sprintf("%dh", hours)
 	}
 	days := hours / 24
 	remHours := hours % 24
 	if remHours > 0 {
-		return fmt.Sprintf("%d天%d小时", days, remHours)
+		return fmt.Sprintf("%dd %dh", days, remHours)
 	}
-	return fmt.Sprintf("%d天", days)
+	return fmt.Sprintf("%dd", days)
 }
 
 func formatResetInstant(resetAtMS int64, nowMS int64) string {
@@ -257,13 +257,13 @@ func formatResetInstant(resetAtMS int64, nowMS int64) string {
 	resetTime := time.UnixMilli(resetAtMS)
 	diff := time.Duration(resetAtMS-nowMS) * time.Millisecond
 	if diff <= 0 {
-		return "已恢复"
+		return "Recovered"
 	}
 	rel := formatDurationShort(diff)
 	if diff < 24*time.Hour {
-		return fmt.Sprintf("%s (%s后恢复)", resetTime.Format("15:04"), rel)
+		return fmt.Sprintf("%s (in %s)", resetTime.Format("15:04"), rel)
 	}
-	return fmt.Sprintf("%s (%s后恢复)", resetTime.Format("01-02 15:04"), rel)
+	return fmt.Sprintf("%s (in %s)", resetTime.Format("01-02 15:04"), rel)
 }
 
 // RawCodexSubscriptionPayload is the response of the subscription endpoint
@@ -314,7 +314,7 @@ func resolveCodexPlanTier(planType string) (tier string, label string) {
 		if norm != "" {
 			return "standard", strings.ToUpper(norm[:1]) + norm[1:]
 		}
-		return "unknown", "未知套餐"
+		return "unknown", "Unknown plan"
 	}
 }
 
@@ -376,9 +376,9 @@ func ParseCodexUsage(raw []byte, nowMS int64) (*QuotaPlan, []QuotaWindow, *Codex
 		// either duplicate that claim or overstate semantics this parser cannot verify.
 		diff := time.Duration(exp-nowMS) * time.Millisecond
 		if diff > 0 {
-			expiresLabel = formatDurationShort(diff) + "后到期"
+			expiresLabel = "expires in " + formatDurationShort(diff)
 		} else {
-			expiresLabel = "已到期"
+			expiresLabel = "expired"
 		}
 	}
 
@@ -515,18 +515,18 @@ func ParseCodexUsage(raw []byte, nowMS int64) (*QuotaPlan, []QuotaWindow, *Codex
 			// The limit is named after the model, and the period comes from what upstream
 			// metered: the same model can be limited over five hours or over a week.
 			if period := windowPeriodName(winSec); period != "" {
-				label = fmt.Sprintf("%s %s配额", defaultLabel, period)
+				label = fmt.Sprintf("%s %s limit", defaultLabel, period)
 			}
 		} else if scope == "code_review" {
 			// When the payload omits the window size the period cannot be read, so the slot
 			// named by the id is the only description left; the label keeps that wording
 			// rather than losing its period entirely.
 			if period := windowPeriodName(winSec); period != "" {
-				label = fmt.Sprintf("%s %s配额", defaultLabel, period)
+				label = fmt.Sprintf("%s %s limit", defaultLabel, period)
 			} else if strings.HasSuffix(id, "_5h") {
-				label = fmt.Sprintf("%s 5小时配额", defaultLabel)
+				label = fmt.Sprintf("%s 5-hour limit", defaultLabel)
 			} else {
-				label = fmt.Sprintf("%s 每周配额", defaultLabel)
+				label = fmt.Sprintf("%s weekly limit", defaultLabel)
 			}
 		}
 
@@ -570,8 +570,8 @@ func ParseCodexUsage(raw []byte, nowMS int64) (*QuotaPlan, []QuotaWindow, *Codex
 		}
 
 		flags := exhaustedFlags(rateLimit, primary, secondary)
-		addWindow(primary, "five_hour", "5小时用量上限 (5-Hour)", "standard", "", flags[0])
-		addWindow(secondary, "weekly", "每周用量上限 (Weekly)", "standard", "", flags[1])
+		addWindow(primary, "five_hour", "5-hour usage limit", "standard", "", flags[0])
+		addWindow(secondary, "weekly", "Weekly usage limit", "standard", "", flags[1])
 	}
 
 	codeReview := payload.CodeReviewRateLimit
@@ -588,8 +588,8 @@ func ParseCodexUsage(raw []byte, nowMS int64) (*QuotaPlan, []QuotaWindow, *Codex
 			crSecondary = codeReview.SecondaryWinAlt
 		}
 		flags := exhaustedFlags(codeReview, crPrimary, crSecondary)
-		addWindow(crPrimary, "code_review_5h", "代码审查", "code_review", "", flags[0])
-		addWindow(crSecondary, "code_review_weekly", "代码审查", "code_review", "", flags[1])
+		addWindow(crPrimary, "code_review_5h", "Code review", "code_review", "", flags[0])
+		addWindow(crSecondary, "code_review_weekly", "Code review", "code_review", "", flags[1])
 	}
 
 	// Additional rate limits (e.g. GPT-5.3-Codex-Spark, o1, etc.)

@@ -7,13 +7,13 @@
   "windows": [
     {
       "id": "seven_day_fable",
-      "label": "Fable 每周用量",
+      "label": "Fable weekly usage",
       "scope": "model",
       "model": "fable",
       "used_percent": 40,
       "remaining_percent": 60,
       "reset_at_ms": 1792454400000,
-      "reset_label": "10-20 00:00 (4天后恢复)",
+      "reset_label": "10-20 00:00 (in 4d)",
       "period_hours": 168,
       "reset_accuracy": "exact",
       "model_families": [

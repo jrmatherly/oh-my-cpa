@@ -103,12 +103,12 @@ test('source characters come from web/src text files and the HTML shell only', (
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'font-shards-'));
   try {
     fs.mkdirSync(path.join(directory, 'web', 'src', 'i18n'), { recursive: true });
-    fs.writeFileSync(path.join(directory, 'web', 'src', 'i18n', 'index.tsx'), "'操练场'");
-    fs.writeFileSync(path.join(directory, 'web', 'src', 'logo.svg'), '<text>图</text>');
-    fs.writeFileSync(path.join(directory, 'web', 'index.html'), '<title>广</title>');
+    fs.writeFileSync(path.join(directory, 'web', 'src', 'i18n', 'index.tsx'), "'Ωψ€'");
+    fs.writeFileSync(path.join(directory, 'web', 'src', 'logo.svg'), '<text>Ж</text>');
+    fs.writeFileSync(path.join(directory, 'web', 'index.html'), '<title>§</title>');
     const characters = collectSourceCharacters(directory);
-    assert.ok(['操', '练', '场', '广'].every((character) => characters.has(character)));
-    assert.equal(characters.has('图'), false);
+    assert.ok(['Ω', 'ψ', '€', '§'].every((character) => characters.has(character)));
+    assert.equal(characters.has('Ж'), false);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

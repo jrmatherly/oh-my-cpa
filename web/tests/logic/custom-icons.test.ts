@@ -27,10 +27,10 @@ test('custom references cannot collide with catalog marks or escape a URL segmen
 test('custom icon search preserves stable identities and uses the display name', () => {
   const icons = [
     { id: 'one', name: 'Team Relay' },
-    { id: 'two', name: '个人图标' },
+    { id: 'two', name: 'Personal Icon' },
   ] as CustomIcon[];
   assert.deepEqual(filterCustomIcons(icons, '  TEAM  '), [icons[0]]);
-  assert.deepEqual(filterCustomIcons(icons, '个人'), [icons[1]]);
+  assert.deepEqual(filterCustomIcons(icons, 'personal'), [icons[1]]);
   assert.deepEqual(filterCustomIcons(icons, ''), icons);
 });
 test('failed preference writes keep the icon picker open', () => {

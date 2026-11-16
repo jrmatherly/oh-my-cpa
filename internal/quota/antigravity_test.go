@@ -23,11 +23,11 @@ func TestAntigravityCommonWindowIdentifiers(t *testing.T) {
 		label       string
 		hours       float64
 	}{
-		{[]string{"5h", "5hour", "5hours", "5 hour", "5_hours", "5-hours", "five_hour", "five-hours", " FIVE  HOURS "}, "5小时限制 (5-Hour)", 5},
-		{[]string{"24h", "24hour", "24_hours", "24-hour", "1d", "day", "DAILY"}, "每日限制 (Daily)", 24},
-		{[]string{"7d", "7days", "7_days", "7-day", "1w", "week", "WEEKLY"}, "每周限制 (Weekly)", 168},
-		{[]string{"30d", "30days", "30_days", "30-day"}, "每月限制 (Monthly)", 720},
-		{[]string{"month", "MONTHLY", "1mo", "1month", "1_month", "calendar-month"}, "每月限制 (Monthly)", 0},
+		{[]string{"5h", "5hour", "5hours", "5 hour", "5_hours", "5-hours", "five_hour", "five-hours", " FIVE  HOURS "}, "5-hour limit", 5},
+		{[]string{"24h", "24hour", "24_hours", "24-hour", "1d", "day", "DAILY"}, "Daily limit", 24},
+		{[]string{"7d", "7days", "7_days", "7-day", "1w", "week", "WEEKLY"}, "Weekly limit", 168},
+		{[]string{"30d", "30days", "30_days", "30-day"}, "Monthly limit", 720},
+		{[]string{"month", "MONTHLY", "1mo", "1month", "1_month", "calendar-month"}, "Monthly limit", 0},
 	} {
 		for _, identifier := range scenario.identifiers {
 			t.Run(identifier, func(t *testing.T) {
@@ -46,9 +46,9 @@ func TestAntigravityCommonWindowIdentifiers(t *testing.T) {
 // part of the name, and a name that says nothing falls back to the window.
 func TestAntigravityBucketLabelsFollowRenamedBuckets(t *testing.T) {
 	for _, scenario := range []struct{ name, window, want string }{
-		{"Five Hour Limit Remaining", "5h", "Gemini Models · 5小时限制 (5-Hour)"},
-		{"Weekly Limit - Remaining", "weekly", "Gemini Models · 每周限制 (Weekly)"},
-		{"Quota", "5h", "Gemini Models · 5小时限制 (5-Hour)"},
+		{"Five Hour Limit Remaining", "5h", "Gemini Models · 5-hour limit"},
+		{"Weekly Limit - Remaining", "weekly", "Gemini Models · Weekly limit"},
+		{"Quota", "5h", "Gemini Models · 5-hour limit"},
 		{"Burst Remaining", "unreported", "Gemini Models · Burst"},
 		{"Quota", "bimonthly", "Gemini Models · Quota"},
 	} {
@@ -76,8 +76,8 @@ func TestAntigravityBucketLabelsFollowRenamedBuckets(t *testing.T) {
 			hours     float64
 		}{
 			{"ag_Gift plans_bucket_0_0", "Gift plans · ZCODE WEEKEND BUILD · glm-5.3-flash", 0},
-			{"ag_Gemini Models_bucket_1_0", "Gemini Models · 5小时限制 (5-Hour)", 5},
-			{"ag_Gemini Models_bucket_1_1", "Gemini Models · 每周限制 (Weekly)", 168},
+			{"ag_Gemini Models_bucket_1_0", "Gemini Models · 5-hour limit", 5},
+			{"ag_Gemini Models_bucket_1_1", "Gemini Models · Weekly limit", 168},
 		}
 		if len(windows) != len(want) {
 			t.Fatalf("windows = %d, want %d", len(windows), len(want))

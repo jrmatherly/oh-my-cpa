@@ -33,9 +33,9 @@ test('timezone', () => {
   assert.equal(formatTimeZoneOffset('Asia/Kathmandu', instant), 'UTC+5:45');
   assert.equal(formatTimeZoneOffset('America/New_York', instant), 'UTC-5');
   assert.equal(formatTimeZoneOffset('America/New_York', Date.parse('2026-07-01T00:00:00Z')), 'UTC-4');
-  const options = timeZoneOptions('Asia/Kuala_Lumpur', '', '服务器时区', instant);
+  const options = timeZoneOptions('Asia/Kuala_Lumpur', '', 'server time zone', instant);
   assert.equal(options[0].value, 'Asia/Kuala_Lumpur');
-  assert.equal(options[0].label, 'Asia/Kuala_Lumpur (UTC+8) (服务器时区)');
+  assert.equal(options[0].label, 'Asia/Kuala_Lumpur (UTC+8) (server time zone)');
   assert.equal(options.filter((option) => option.value === 'Asia/Kuala_Lumpur').length, 1);
   assert.ok(options.every((option) => option.label.includes('(UTC')));
 

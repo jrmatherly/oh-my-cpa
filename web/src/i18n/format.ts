@@ -9,8 +9,7 @@ import type { MessageVars } from './catalog';
  * - `{name}` is replaced by the variable's value as given.
  * - `{name, plural, one {# request} other {# requests}}` is the ICU plural form. The branch is
  *   chosen by the reading language's own plural rules (`Intl.PluralRules`), so English writes
- *   `one` and `other` while Chinese and Malay - which do not inflect for number - write the plain
- *   sentence and never need the form. `#` is the count, grouped for the reading language; any
+ *   `one` and `other`. `#` is the count, grouped for the reading language; any
  *   other `{placeholder}` inside a branch is filled as usual. A category the rules pick but the
  *   message omits falls back to `other`.
  *

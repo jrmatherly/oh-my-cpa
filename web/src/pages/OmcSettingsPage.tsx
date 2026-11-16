@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Segmented } from '@/components/ui/segmented';
 import { Switch } from '../components/common/Switch';
 import { PlusOutlined } from '../components/icons';
-import { isChineseLanguage, useT, useI18n, LANGUAGES } from '../i18n';
+import { useT, useI18n, LANGUAGES } from '../i18n';
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -151,12 +151,9 @@ export const OmcSettingsPage: React.FC = () => {
   const isNarrow = useIsNarrowViewport();
   const reducedMotion = useReducedMotionPreference();
 
-  // The Chinese scale is words, so it is listed only when the console registers a Chinese
-  // reading language, which this fork does not.
-  const tokenStyleOptions = TOKEN_NUMBER_STYLES.filter((value) => value !== 'zh' || LANGUAGES.some((language) => isChineseLanguage(language.id))).map((value: TokenNumberStyle) => ({
+  const tokenStyleOptions = TOKEN_NUMBER_STYLES.map((value: TokenNumberStyle) => ({
     value,
-    label: value === 'zh' ? t('omc.token_style_zh') : value === 'full' ? t('omc.token_style_full') : t('omc.token_style_en'),
-    disabled: value === 'zh' && !isChineseLanguage(lang),
+    label: value === 'full' ? t('omc.token_style_full') : t('omc.token_style_en'),
   }));
 
   // The preview note appears only when the console is showing a mode other than the one in force.
@@ -277,9 +274,7 @@ export const OmcSettingsPage: React.FC = () => {
               block={isNarrow}
               // Each option carries its language's endonym rather than a translated name: a
               // reader who cannot read the console's current language has to be able to find
-              // their own here. The endonym is also what keeps this row inside its card on a
-              // phone - a translated "Simplified Chinese" measured wider than the track the
-              // narrow-layout rule hands this picker.
+              // their own here.
             />
           }
         />}

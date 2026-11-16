@@ -15,6 +15,7 @@ import { SERVED_ELSEWHERE_RANGES, parseUnicodeRange as generatorParseUnicodeRang
 import { CJK_STYLESHEET_URL, SERVED_RANGES, facesForText, narrowUnicodeRange, parseCJKFaces } from '../../src/theme/cjkFont.ts';
 import { isOptional } from '../../../scripts/acceptance/browser-guard.mjs';
 
+// The texts below are CJK code points, written as \u escapes to keep the source English only.
 const SHARDS = [
   { name: '000', unicodeRange: 'U+20-7E,U+4EEA' },
   { name: '001', unicodeRange: 'U+7EC3,U+5E7F-5E80' },
@@ -26,8 +27,8 @@ test('a range list parses single code points and spans', () => {
 });
 
 test('only the shards holding a character of the text are chosen, in manifest order', () => {
-  assert.deepEqual(shardsForText('练 OK', SHARDS).map((shard) => shard.name), ['000', '001']);
-  assert.deepEqual(shardsForText('龘广', SHARDS).map((shard) => shard.name), ['001', '002']);
+  assert.deepEqual(shardsForText('\u7EC3 OK', SHARDS).map((shard) => shard.name), ['000', '001']);
+  assert.deepEqual(shardsForText('\u9F98\u5E7F', SHARDS).map((shard) => shard.name), ['001', '002']);
 });
 
 test('characters no shard holds choose nothing', () => {
@@ -59,8 +60,8 @@ test('the CJK faces keep only the ranges the bundle leaves out, in their own wei
 test('an export embeds the CJK faces its text needs in every weight', () => {
   const face = (weight: number, unicodeRange: string) => ({ weight, url: `https://fonts.gstatic.com/s/${weight}-${unicodeRange}.woff2`, unicodeRange });
   const faces = [face(400, 'U+4E00'), face(400, 'U+4E01'), face(600, 'U+4E00'), face(600, 'U+4E01'), face(700, 'U+4E00')];
-  assert.deepEqual(facesForText('一', faces).map((chosen) => chosen.weight), [400, 600, 700]);
-  assert.deepEqual(facesForText('丁', faces).map((chosen) => `${chosen.weight} ${chosen.unicodeRange}`), ['400 U+4E01', '600 U+4E01']);
+  assert.deepEqual(facesForText('\u4E00', faces).map((chosen) => chosen.weight), [400, 600, 700]);
+  assert.deepEqual(facesForText('\u4E01', faces).map((chosen) => `${chosen.weight} ${chosen.unicodeRange}`), ['400 U+4E01', '600 U+4E01']);
 });
 
 test('the browser checks exempt only the console\'s own CJK stylesheet request', () => {

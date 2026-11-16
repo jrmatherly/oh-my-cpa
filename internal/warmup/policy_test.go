@@ -199,7 +199,7 @@ func TestWindowRolloverWithFutureResetAndSlidingZeroUsage(t *testing.T) {
 		SnapshotAt: "2026-11-13T12:27:35.000Z",
 		Windows: []QuotaWindow{{
 			ID:          "ag_Gemini Models_gemini-5h",
-			Label:       "Gemini Models · 5小时限制 (5-Hour)",
+			Label:       "Gemini Models · 5-hour limit",
 			UsedPercent: &zero,
 			ResetsAt:    "2026-11-13T17:27:35.000Z",
 			PeriodHours: 5,
@@ -229,7 +229,7 @@ func TestWindowRolloverWithFutureResetAndSlidingZeroUsage(t *testing.T) {
 		SnapshotAt: "2026-11-13T12:27:35.000Z",
 		Windows: []QuotaWindow{{
 			ID:          "ag_Gemini Models_gemini-5h",
-			Label:       "Gemini Models · 5小时限制 (5-Hour)",
+			Label:       "Gemini Models · 5-hour limit",
 			UsedPercent: &positive,
 			ResetsAt:    "2026-11-13T17:27:35.000Z",
 			PeriodHours: 5,

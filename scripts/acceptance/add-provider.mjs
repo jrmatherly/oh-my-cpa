@@ -10,12 +10,12 @@ export async function runAddProviderAcceptance({ appURL, page, check, checkEvent
   await page.locator('.providers-page').first().waitFor({ state: 'visible', timeout: 15_000 });
   const writesBefore = fakeCpa.requests.filter((request) => request.method !== 'GET').length;
 
-  await page.getByRole('button', { name: /添加提供商|Add Provider/ }).first().click();
-  await page.getByRole('combobox', { name: /驱动类型 \/ 协议|Driver \/ Protocol/ }).waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByPlaceholder(/DeepSeek 官方主线路|DeepSeek Official/).fill(PROVIDER_NAME);
+  await page.getByRole('button', { name: /Add Provider/ }).first().click();
+  await page.getByRole('combobox', { name: /Driver \/ Protocol/ }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByPlaceholder(/DeepSeek Official/).fill(PROVIDER_NAME);
   await page.getByPlaceholder(/api\.deepseek\.com\/v1/).fill(PROVIDER_BASE_URL);
-  await page.getByPlaceholder(/请输入上游提供商 API 密钥|Enter upstream provider API key/).first().fill('acceptance-relay-key-0001');
-  await page.getByRole('button', { name: /^(保存|Save)$/ }).click();
+  await page.getByPlaceholder(/Enter upstream provider API key/).first().fill('acceptance-relay-key-0001');
+  await page.getByRole('button', { name: /^Save$/ }).click();
 
   await checkEventually(
     'saving a new provider writes CPA configuration',

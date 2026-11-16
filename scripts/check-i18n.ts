@@ -1,19 +1,17 @@
 /**
  * The translation gate: structural and formatting checks for the i18n catalogs.
  *
- * The compiler already proves the per-file key sets (`satisfies Translation<typeof source>`). What
- * this automated gate verifies:
+ * This fork reads English only, and the English catalog is the typed source of every message id.
+ * What this automated gate verifies:
  *
- * - The registry, locale directories and language-switcher flags strictly agree;
+ * - The registry and the locale directories agree, so a catalog directory other than `en` fails;
  * - No id is defined in multiple domain files (preventing silent overwrite during catalog assembly);
  * - Balanced braces, valid ICU plural structures (mandatory `other` branch, valid category names);
- * - Each translation reads the exact same placeholders as its source sentence;
  * - Empty, whitespace-padded, or structurally malformed translation values are rejected;
  * - Every key in the source catalog is referenced somewhere in codebase or through a computed prefix;
  * - Every registered Agent capability has localized copy.
- *
- * Whether a sentence reads naturally is a linguistic question requiring native review: `--report`
- * lists entries that share verbatim strings with their source language for targeted human audit.
+ * - No `.ts` or `.tsx` source file under web/src outside the catalog holds a Chinese character
+ *   (`pnpm check:english` covers every other tracked file).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,7 +53,7 @@ function sourceFiles(directory: string): string[] {
   return files;
 }
 
-/** Strips comments so a key or a Chinese word mentioned in prose does not count as code. */
+/** Strips comments so a key mentioned in prose does not count as code. */
 function withoutComments(text: string): string {
   // Newlines inside a block comment are kept, so a reported line number is still the file's.
   return text
@@ -110,9 +108,8 @@ function validateTemplateFormat(template: string): string | undefined {
   return undefined;
 }
 
-export async function checkCatalogs(): Promise<{ problems: Problem[]; report: string[] }> {
+export async function checkCatalogs(): Promise<{ problems: Problem[] }> {
   const problems: Problem[] = [];
-  const report: string[] = [];
   const fail = (kind: string, message: string) => problems.push({ kind, message });
 
   // Registry, directories and flags.
@@ -186,23 +183,6 @@ export async function checkCatalogs(): Promise<{ problems: Problem[]; report: st
     }
   }
 
-  // A Chinese catalog written in the other script. Copying a sentence from `zh` into `zh-Hant`
-  // leaves a Simplified character in Hong Kong copy - the failure this catalog is most exposed to,
-  // and the one a reader notices first. Only characters whose two forms are never interchangeable
-  // are listed: the shared glyphs (端, 印) and the context-dependent ones (後/后, 裡/里) would
-  // produce false positives, and a gate that cries wolf is a gate people turn off.
-  for (const [lang, wrongScript, name] of [
-    ['zh-Hant', SIMPLIFIED_ONLY, 'Simplified'],
-    ['zh', TRADITIONAL_ONLY, 'Traditional'],
-  ] as const) {
-    const catalog = catalogs.get(lang);
-    if (!catalog) continue;
-    for (const character of wrongScript) {
-      const key = Object.keys(catalog).find((id) => catalog[id].includes(character));
-      if (key) fail('script', `${lang}: "${key}" uses ${character}, ${name} script, in a catalog written the other way`);
-    }
-  }
-
   // Every id is referenced, by its literal or by a computed prefix such as `insights.metric.${...}`.
   const code = sourceFiles(path.join(ROOT, 'web', 'src')).map((file) => withoutComments(fs.readFileSync(file, 'utf8'))).join('\n');
   const literals = new Set(code.match(/['"`][A-Za-z0-9_.-]+['"`]/g)?.map((literal) => literal.slice(1, -1)) ?? []);
@@ -255,79 +235,29 @@ export async function checkCatalogs(): Promise<{ problems: Problem[]; report: st
       continue;
     }
     for (const [key, value] of Object.entries(catalog)) {
-      if (value.includes(rejected)) fail('glossary', `${lang}: "${key}" writes ${rejected}; GLOSSARY.md says ${preferred}`);
+      if (value.toLowerCase().includes(rejected.toLowerCase())) fail('glossary', `${lang}: "${key}" writes ${rejected}; GLOSSARY.md says ${preferred}`);
     }
   }
 
-  // Copy that never reached the catalogs. A Chinese caption in a component reads as Chinese to
-  // every reader, whatever language they chose, which is the one failure the catalog checks cannot
-  // see. Files that name their language or a font in Chinese are listed here rather than exempted
-  // wholesale.
+  // This fork reads English only, so no source file here may hold a Chinese character, in code or
+  // in a comment. A label that has to match Chinese data is written with escapes.
   const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
-  // Words that are data rather than copy: the language registry's endonyms, font family names, the
-  // 亿/万 a compact Chinese number ends in, the Chinese provider names CPA reports (matched, never
-  // shown), the period words a quota label is parsed for, and the date strings the demo recorder
-  // writes into its own fixture.
-  const ALLOWED_COPY = new Set([
-    'src/i18n/language.ts',
-    'src/types/fonts.ts',
-    'src/types/tokenDisplay.ts',
-    'src/types/providerIconIds.ts',
-    'src/pages/oauthManagement/credentialSections.ts',
-    'src/demo/recordingTemplate.ts',
-  ]);
   for (const file of sourceFiles(path.join(ROOT, 'web', 'src'))) {
     const relative = path.relative(path.join(ROOT, 'web'), file).split(path.sep).join('/');
-    if (ALLOWED_COPY.has(relative)) continue;
-    const lines = withoutComments(fs.readFileSync(file, 'utf8')).split('\n');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
     for (const [index, line] of lines.entries()) {
-      if (CJK.test(line)) fail('hardcoded', `${relative}:${index + 1} holds Chinese text outside the catalogs`);
+      if (CJK.test(line)) fail('hardcoded', `${relative}:${index + 1} holds Chinese text`);
     }
   }
 
-  // Review hints: a translation identical to its most likely origin may simply not be translated yet.
-  const origins: Record<string, string> = { 'zh-Hant': 'zh', ms: 'en' };
-  for (const [lang, origin] of Object.entries(origins)) {
-    const catalog = catalogs.get(lang);
-    const base = catalogs.get(origin);
-    if (!catalog || !base) continue;
-    for (const [key, value] of Object.entries(catalog)) {
-      if (value === base[key] && /[A-Za-z\u4e00-\u9fff]{4,}/.test(value.replace(/\{[^}]*\}/g, ''))) report.push(`${lang} = ${origin}\t${key}\t${value}`);
-    }
-  }
-  return { problems, report };
+  return { problems };
 }
 
 const CAPABILITY_PREFIX = 'agent.capability.';
 
-/**
- * Characters whose Simplified and Traditional forms are never interchangeable, paired in both
- * directions. Kept to the words this console actually uses, so the list stays a list of real
- * mistakes rather than a character-set guess.
- */
-const SCRIPT_PAIRS = [
-  ['设', '設'], ['凭', '憑'], ['额', '額'], ['网', '網'], ['钥', '鑰'], ['帐', '帳'], ['载', '載'],
-  ['数', '數'], ['时', '時'], ['击', '擊'], ['试', '試'], ['访', '訪'], ['认', '認'], ['证', '證'],
-  ['输', '輸'], ['缓', '緩'], ['务', '務'], ['员', '員'], ['询', '詢'], ['择', '擇'], ['删', '刪'],
-  ['该', '該'], ['处', '處'], ['关', '關'], ['闭', '閉'], ['审', '審'], ['记', '記'], ['层', '層'],
-  ['导', '導'], ['与', '與'], ['个', '個'], ['为', '為'], ['从', '從'], ['变', '變'], ['发', '發'],
-  ['后', '後'], ['们', '們'], ['这', '這'], ['来', '來'], ['对', '對'], ['开', '開'], ['进', '進'],
-  ['条', '條'], ['请', '請'], ['页', '頁'], ['项', '項'], ['备', '備'], ['总', '總'], ['统', '統'],
-  ['计', '計'], ['费', '費'], ['价', '價'], ['权', '權'], ['户', '戶'], ['应', '應'], ['态', '態'],
-  ['选', '選'], ['类', '類'], ['单', '單'], ['带', '帶'], ['库', '庫'], ['环', '環'], ['转', '轉'],
-  ['无', '無'], ['确', '確'], ['仅', '僅'], ['让', '讓'], ['够', '夠'], ['体', '體'], ['现', '現'],
-  ['间', '間'], ['问', '問'], ['题', '題'], ['点', '點'], ['线', '線'], ['组', '組'], ['织', '織'],
-  ['节', '節'], ['检', '檢'], ['测', '測'], ['验', '驗'], ['据', '據'], ['录', '錄'], ['标', '標'],
-  ['识', '識'], ['别', '別'],
-] as const;
-const SIMPLIFIED_ONLY = SCRIPT_PAIRS.map(([simplified]) => simplified).join('');
-const TRADITIONAL_ONLY = SCRIPT_PAIRS.map(([, traditional]) => traditional).join('');
-
-
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { problems, report } = await checkCatalogs();
+  const { problems } = await checkCatalogs();
   for (const problem of problems) console.error(`${problem.kind.toUpperCase()}: ${problem.message}`);
-  if (process.argv.includes('--report')) for (const line of report) console.log(line);
   console.log(problems.length === 0 ? `i18n: ${LANGUAGES.length} languages consistent` : `i18n: ${problems.length} problems`);
   if (problems.length > 0) process.exitCode = 1;
 }

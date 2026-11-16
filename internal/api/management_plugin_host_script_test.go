@@ -40,7 +40,7 @@ func TestPluginHostScriptPreservesSourceMaps(t *testing.T) {
 		"/*# sourceMappingURL=panel.js.map */",
 		"//# sourceMappingURL=data:application/json;base64,e30=",
 	} {
-		input := "\"use strict\";\r\n// plugin entry: 中文\r\nconst sample='location.pathname'; /* keep this comment */\r\nconst before=1;const route=window.location.pathname;const after=2;\r\n" + sourceMap
+		input := "\"use strict\";\r\n// plugin entry: Zürich €\r\nconst sample='location.pathname'; /* keep this comment */\r\nconst before=1;const route=window.location.pathname;const after=2;\r\n" + sourceMap
 		expected := strings.Replace(input, "window.location.pathname", "window.location._omcPath", 1)
 		output, err := hostPluginScript([]byte(input))
 		if err != nil || string(output) != expected || len(output) != len(input) {

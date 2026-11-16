@@ -22,6 +22,7 @@ import {
 } from '../../src/types/dashboard';
 import { formatCompareWindowBounds } from '../../src/types/insightsFormat';
 import { buildModelTrendTooltipRows } from '../../src/charts/modelTrendData';
+import { DEFAULT_TOKEN_NUMBER_STYLE, parseTokenNumberStyle } from '../../src/types/tokenDisplay';
 import { test } from 'vitest';
 
 test('dashboard providers', () => {
@@ -965,26 +966,6 @@ test('model trend tooltip honors the console token unit style', () => {
     { key: 'total', name: 'Total', value: '5.7M tokens', isTotal: true },
   ]);
 
-  const chinese = buildModelTrendTooltipRows({
-    row,
-    domain,
-    range,
-    labelOf,
-    totalLabel: '合计',
-    tokenUnitLabel: 'tokens',
-    tokenStyle: 'zh',
-  });
-  assert.deepEqual(
-    chinese.map((entry) => [entry.key, entry.value]),
-    [
-      ['model:gemini-4-carbon', '470.2万'],
-      ['model:gemini-3.8-flash', '97.4万'],
-      ['model:retain', '1.7万'],
-      ['folded', '846'],
-      ['total', '569.5万 tokens'],
-    ],
-  );
-
   const full = buildModelTrendTooltipRows({
     row,
     domain,
@@ -1004,6 +985,14 @@ test('model trend tooltip honors the console token unit style', () => {
       ['total', '5,694,578 tokens'],
     ],
   );
+});
+
+test('a stored token style the console does not offer reads as the default', () => {
+  for (const stored of ['zh', 'klingon', 42, null, undefined]) {
+    assert.equal(parseTokenNumberStyle(stored) ?? DEFAULT_TOKEN_NUMBER_STYLE, 'en-compact');
+  }
+  assert.equal(parseTokenNumberStyle('full'), 'full');
+  assert.equal(parseTokenNumberStyle('en-compact'), 'en-compact');
 });
 
 test('dashboard cost tile caption across estimated, partial and placeholder windows', () => {

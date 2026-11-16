@@ -6,12 +6,9 @@
  * renders them through this module, so one switch changes every readout at
  * once and two surfaces can never disagree about how big "1.2B" is.
  *
- * **Two unit styles, because the operator's language is a fact about the
- * reader, not about the data.** `en-compact` is the international engineering
- * shorthand (300M, 1.2B); `zh` is the numeric scale Chinese financial and
- * technical reading actually uses (300万, 1.2亿). Both round the same way - one
- * decimal, trailing zeros trimmed - so the choice changes the words, not the
- * precision.
+ * **Two styles.** `en-compact` is the international engineering shorthand
+ * (300M, 1.2B), one decimal with trailing zeros trimmed; `full` prints the exact
+ * count with digit separators.
  *
  * The layer also owns the *full* form: tooltips and accessible names print the
  * exact count with separators, because a rounded value scanned in a chart is
@@ -20,17 +17,9 @@
  */
 
 import type { RollingReadout } from './rollingNumber';
-import { isChineseLanguage, type Lang } from '../i18n/language';
 
-/**
- * The stored preference values. `en-compact` is the default.
- *
- * The Chinese scale is a *language*, not just a notation: 亿 and 万 are words, so
- * it is meaningful only beside Chinese copy. `full` is language-neutral - grouped
- * digits with no unit word - which is why it is the one style that reads the same
- * in every console.
- */
-export const TOKEN_NUMBER_STYLES = ['en-compact', 'zh', 'full'] as const;
+/** The stored preference values. `en-compact` is the default. */
+export const TOKEN_NUMBER_STYLES = ['en-compact', 'full'] as const;
 export type TokenNumberStyle = (typeof TOKEN_NUMBER_STYLES)[number];
 
 export const DEFAULT_TOKEN_NUMBER_STYLE: TokenNumberStyle = 'en-compact';
@@ -55,8 +44,9 @@ export function parseRequestModelIcons(raw: unknown): boolean | undefined {
  * parseTokenNumberStyle validates a stored preference.
  *
  * The value comes back from a JSON document the browser wrote, so it is input,
- * not state: anything unknown falls back to the default instead of rendering
- * in a style the formatter does not implement.
+ * not state: anything unknown, including a retired style a browser stored
+ * earlier, falls back to the default instead of rendering in a style the
+ * formatter does not implement.
  */
 export function parseTokenNumberStyle(raw: unknown): TokenNumberStyle | undefined {
   return typeof raw === 'string' && (TOKEN_NUMBER_STYLES as readonly string[]).includes(raw)
@@ -87,61 +77,7 @@ const COMPACT_EN = new Intl.NumberFormat('en', { notation: 'compact', maximumFra
  */
 const COMPACT_RATE = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 });
 
-/**
- * The Chinese scale's steps, largest first. A value is divided by the largest
- * step it reaches, which keeps every readout to one unit word: 1.2万 rather
- * than 1.2万3千, because the latter is a reconstruction, not a reading.
- *
- * One step below 万 the reading continues in bare digits: a value like 999
- * gains nothing from "0.09万", and "999" is what the compact form already
- * prints.
- */
-const ZH_STEPS: Array<{ limit: number; divisor: number; suffix: string }> = [
-  { limit: 100_000_000, divisor: 100_000_000, suffix: '亿' },
-  { limit: 10_000, divisor: 10_000, suffix: '万' },
-];
-
-/**
- * zhParts splits a token count into the number and the unit word the Chinese scale prints.
- *
- * `formatZh` and the animated readout both read the split, so a tile cannot round
- * differently from the text it stands in for.
- */
-function zhParts(tokens: number): { number: number; suffix: string } {
-  if (tokens < 10_000) return { number: Math.round(tokens), suffix: '' };
-  for (const step of ZH_STEPS) {
-    if (tokens < step.limit) continue;
-    // One decimal, trailing zeros trimmed: 300万, 1.2亿, not 300.0万.
-    return { number: Math.round((tokens / step.divisor) * 10) / 10, suffix: step.suffix };
-  }
-  // Unreachable: the loop covers every value >= 10_000.
-  return { number: Math.round(tokens), suffix: '' };
-}
-
-function formatZh(tokens: number): string {
-  const { number, suffix } = zhParts(tokens);
-  return Number.isInteger(number) ? `${number}${suffix}` : `${number.toFixed(1)}${suffix}`;
-}
-
 const FULL = new Intl.NumberFormat('en');
-
-/**
- * resolveTokenNumberStyle picks the style a surface actually renders in.
- *
- * A stored `zh` resolves back to the compact form whenever the reading language is
- * not Chinese, because a Malay console printing `12亿` beside a Malay legend would
- * mix two languages in one reading. The compact form follows the interface's reading language.
- *
- * The *stored* value is deliberately left alone: it is the operator's choice, and
- * switching the console back to Chinese must restore it rather than silently
- * rewriting what they picked. Only the reading changes.
- *
- * `full` is language-neutral, so it renders as itself in every console.
- */
-export function resolveTokenNumberStyle(style: TokenNumberStyle, lang: Lang): TokenNumberStyle {
-  if (style === 'zh' && !isChineseLanguage(lang)) return DEFAULT_TOKEN_NUMBER_STYLE;
-  return style;
-}
 
 /**
  * formatTokens renders a token count in the chosen unit style.
@@ -152,7 +88,6 @@ export function resolveTokenNumberStyle(style: TokenNumberStyle, lang: Lang): To
 export function formatTokens(tokens: number, style: TokenNumberStyle): string {
   if (!Number.isFinite(tokens)) return '—';
   if (style === 'full') return FULL.format(tokens);
-  if (style === 'zh') return formatZh(tokens);
   return COMPACT_EN.format(tokens);
 }
 
@@ -200,28 +135,21 @@ export function resolveCountFlowReadout(value: number | null | undefined): Rolli
 /**
  * resolveTokenFlowReadout is `formatTokens` as an animated readout.
  *
- * The unit word travels beside the number rather than inside it because two of the
- * three styles change it mid-scale - `en-compact` and `zh` both print a different
- * unit at a different magnitude, and that swap is what tells a surface the reading
- * changed scale rather than size.
+ * The unit word travels beside the number rather than inside it because
+ * `en-compact` prints a different unit at a different magnitude, and that swap is
+ * what tells a surface the reading changed scale rather than size.
  */
 export function resolveTokenFlowReadout(tokens: number, style: TokenNumberStyle): RollingReadout | undefined {
   if (!Number.isFinite(tokens)) return undefined;
   if (style === 'full') return resolveCountFlowReadout(tokens);
-  if (style === 'zh') {
-    // Below 万 the printed form continues in bare digits, so grouping stays off
-    // with it: "9999" is the reading, not "9,999".
-    return { ...zhParts(tokens), format: { useGrouping: false, maximumFractionDigits: 1 } };
-  }
   return { ...splitFormatted(COMPACT_EN, tokens), format: { maximumFractionDigits: 1 } };
 }
 
 /**
  * resolveTokenRateFlowReadout is the animated form of a token *rate* - tokens per minute.
  *
- * A rate keeps the compact style in every console language: the unit-word styles
- * describe a total, and `12万` beside a per-minute label would read as a quantity of
- * minutes rather than a rate.
+ * A rate keeps the compact style, with two decimals, whatever the token style:
+ * the token style describes a total, not a rate.
  */
 export function resolveTokenRateFlowReadout(value: number | null | undefined): RollingReadout | undefined {
   if (value === null || value === undefined || !Number.isFinite(value)) return undefined;

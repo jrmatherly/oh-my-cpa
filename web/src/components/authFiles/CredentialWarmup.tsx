@@ -301,7 +301,7 @@ function TaskEditorModal({
         {draft.trigger.kind === 'window' && (
           <div className={styles['field']}>
             <span className={styles['field-label']}>{t('warmup.window_select')}</span>
-            {/* A grouped window names its model group too ("5小时限制" in "Gemini Models"), so the
+            {/* A grouped window names its model group too ("5-hour limit" in "Gemini Models"), so the
                 options do not fit one row at any dialog width: laid out as a row each one was
                 truncated to its middle, which left two families' five-hour windows reading alike. */}
             <Segmented

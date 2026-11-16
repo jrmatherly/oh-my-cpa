@@ -394,7 +394,7 @@ try {
     () => fakeCpa.requests.filter(request => request.path === '/v8/management/plugins/store').length > storeReadsBefore);
   await updateAction.click();
   const updateDialog = page.getByRole('dialog');
-  await updateDialog.getByRole('button', { name: /^(更新|Update)$/ }).click();
+  await updateDialog.getByRole('button', { name: /^Update$/ }).click();
   await checkEventually('updating a plugin withdraws its navigation reminder', () => pluginReminder.count().then(count => count === 0));
   await checkEventually('updated installed rows show the new version', async () =>
     await updateAction.count() === 0 && (await loggerRow.textContent()).includes('v1.1.0'));

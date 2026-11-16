@@ -192,14 +192,14 @@ func TestResponsesStreamProjection(t *testing.T) {
 		"data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\"}}\n\n" +
 		"data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"thinking\"}\n\n" +
 		"data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\"}}\n\n" +
-		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"你好\",\"api_key\":\"do-not-forward\"}\n\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Zürich €\",\"api_key\":\"do-not-forward\"}\n\n" +
 		"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"total_tokens\":6}}}\n\n"
 	events, err := streamEndpoint(t, EndpointResponses, "/v1/responses", body, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	encoded := mustJSON(t, events)
-	if len(events) != 4 || events[0].Type != "thought" || events[1].Content != "你好" || events[2].Type != "usage" || *events[2].Usage.TotalTokens != 6 || events[3].Type != "done" || events[3].FinishReason != "stop" {
+	if len(events) != 4 || events[0].Type != "thought" || events[1].Content != "Zürich €" || events[2].Type != "usage" || *events[2].Usage.TotalTokens != 6 || events[3].Type != "done" || events[3].FinishReason != "stop" {
 		t.Fatalf("unexpected stream %s", encoded)
 	}
 	for name, test := range map[string]struct{ body, code, finish string }{
@@ -289,7 +289,7 @@ func TestMessagesStreamProjection(t *testing.T) {
 		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"do-not-forward\"}}\n\n" +
 		"data: {\"type\":\"ping\"}\n\n" +
 		"data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\"}}\n\n" +
-		"data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"你好\"}}\n\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Zürich €\"}}\n\n" +
 		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n" +
 		"data: {\"type\":\"message_stop\"}\n\n"
 	events, err := streamEndpoint(t, EndpointMessages, "/v1/messages", body, func(request *http.Request) {
@@ -301,7 +301,7 @@ func TestMessagesStreamProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded := mustJSON(t, events)
-	if len(events) != 4 || events[0].Type != "thought" || events[1].Content != "你好" || *events[2].Usage.PromptTokens != 14 || *events[2].Usage.CompletionTokens != 2 || *events[2].Usage.TotalTokens != 16 ||
+	if len(events) != 4 || events[0].Type != "thought" || events[1].Content != "Zürich €" || *events[2].Usage.PromptTokens != 14 || *events[2].Usage.CompletionTokens != 2 || *events[2].Usage.TotalTokens != 16 ||
 		events[3].Type != "done" || events[3].FinishReason != "stop" || strings.Contains(encoded, "do-not-forward") {
 		t.Fatalf("unexpected stream %s", encoded)
 	}

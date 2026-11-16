@@ -35,7 +35,6 @@ type PromptContext struct {
 // with the instruction that makes an answer read the way the pages beside it do.
 var TOKEN_STYLES = map[string]string{
 	"en-compact": "Shorten token counts as the console does: K, M and B with at most one decimal (3.4M tokens).",
-	"zh":         "Shorten token counts as the console does, on the Chinese scale: \u4e07 and \u4ebf with at most one decimal (340\u4e07 tokens).",
 	"full":       "Write token counts in full with grouped digits (3,412,870 tokens), as the console does.",
 }
 

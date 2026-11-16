@@ -7,23 +7,23 @@
   "windows": [
     {
       "id": "five_hour",
-      "label": "5小时滚动用量 (5-Hour)",
+      "label": "5-hour rolling usage",
       "scope": "standard",
       "used_percent": 10,
       "remaining_percent": 90,
       "reset_at_ms": 1792152000000,
-      "reset_label": "12:00 (12小时后恢复)",
+      "reset_label": "12:00 (in 12h)",
       "period_hours": 5,
       "reset_accuracy": "exact"
     },
     {
       "id": "seven_day_cowork",
-      "label": "Cowork 协作每周用量",
+      "label": "Cowork weekly usage",
       "scope": "standard",
       "used_percent": 5,
       "remaining_percent": 95,
       "reset_at_ms": 1792454400000,
-      "reset_label": "10-20 00:00 (4天后恢复)",
+      "reset_label": "10-20 00:00 (in 4d)",
       "period_hours": 168,
       "reset_accuracy": "exact"
     }

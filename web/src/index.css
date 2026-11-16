@@ -114,7 +114,7 @@
 :root {
   /* The two typographic roles, both the bundled Sarasa stack by default; an operator's choice
      (OMC Settings → Appearance) is written over both on the root element by `theme/fontLibrary.ts`. */
-  --font-ui: "Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "更纱黑体 SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-ui: "Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-family: var(--font-ui);
   line-height: 1.5;
   font-weight: 400;
@@ -132,7 +132,7 @@
      palette resolves to. */
   --elevated: #212123;
   --selected-inset: #2e2e36;
-  --font-mono: "Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "更纱黑体 SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-mono: "Sarasa Mono SC", "OMC Noto Sans SC", "Sarasa UI SC", "Sarasa Term SC", "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --fg: #e3e3e4;
   --fg-2: #a7a7ab;
   --muted: #7b7b7f;
@@ -2533,7 +2533,7 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 /* At the shell's narrow width the toolbar stacks: the title row above, the search and its tools
    below. The title and the status pills wrap rather than share one squeezed line, and the title does
    not shrink below its own text. It was shrinking to its min-content width, which for a CJK title
-   is one character - the measured defect was "配置面板" printed as four stacked glyphs beside the
+   is one character - the measured defect was a four-character title printed as four stacked glyphs beside the
    mode picker, because a flex item may shrink below its content and a title has no break
    opportunity to offer in exchange. The rule follows the shell's breakpoint, not the phone's: the
    sidebar leaves at 900px, and a tablet-width window met the defect with the desktop toolbar. */

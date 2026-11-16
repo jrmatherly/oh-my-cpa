@@ -532,18 +532,18 @@ describe('SummaryStrip', () => {
   it('renders total and status items with status dots and dividers', () => {
     const { container } = render(
       <SummaryStrip
-        total="共 6 个"
+        total="6 total"
         totalTestId="summary-total"
         items={[
-          { label: '正常 4 个', tone: 'healthy', testId: 'healthy-item' },
-          { label: '需要关注 2', tone: 'attention', testId: 'attention-item' },
+          { label: '4 healthy', tone: 'healthy', testId: 'healthy-item' },
+          { label: '2 need attention', tone: 'attention', testId: 'attention-item' },
         ]}
       />,
     );
 
-    expect(screen.getByTestId('summary-total').textContent).toBe('共 6 个');
-    expect(screen.getByTestId('healthy-item').textContent).toBe('正常 4 个');
-    expect(screen.getByTestId('attention-item').textContent).toBe('需要关注 2');
+    expect(screen.getByTestId('summary-total').textContent).toBe('6 total');
+    expect(screen.getByTestId('healthy-item').textContent).toBe('4 healthy');
+    expect(screen.getByTestId('attention-item').textContent).toBe('2 need attention');
 
     // Dividers between total and items
     const dividers = container.querySelectorAll('[class*="summary-divider"]');
@@ -559,16 +559,16 @@ describe('SummaryStrip', () => {
   it('renders subcomponents and preserves custom test IDs', () => {
     render(
       <SummaryStrip>
-        <SummaryStrip.Total testId="keys-count">共 1 个密钥</SummaryStrip.Total>
+        <SummaryStrip.Total testId="keys-count">1 key</SummaryStrip.Total>
         <SummaryStrip.Divider />
         <SummaryStrip.Item tone="healthy" testId="active-key">
-          24 小时内 1 个在用
+          1 in use in 24 hours
         </SummaryStrip.Item>
       </SummaryStrip>,
     );
 
-    expect(screen.getByTestId('keys-count').textContent).toBe('共 1 个密钥');
-    expect(screen.getByTestId('active-key').textContent).toBe('24 小时内 1 个在用');
+    expect(screen.getByTestId('keys-count').textContent).toBe('1 key');
+    expect(screen.getByTestId('active-key').textContent).toBe('1 in use in 24 hours');
     expect(screen.getByTestId('active-key').querySelector('[class*="status-dot"]')).not.toBeNull();
   });
 });
@@ -701,31 +701,31 @@ describe('RemoteImage', () => {
 
 describe('PageHeader', () => {
   it('renders a text subtitle in a paragraph element', () => {
-    render(<PageHeader title="AI 提供商" subtitle="5 个提供商，8 个模型" />);
-    const heading = screen.getByRole('heading', { level: 1, name: 'AI 提供商' });
+    render(<PageHeader title="AI providers" subtitle="5 providers, 8 models" />);
+    const heading = screen.getByRole('heading', { level: 1, name: 'AI providers' });
     expect(heading).toBeTruthy();
 
     const subtitle = document.querySelector('.terminal-subtitle');
     expect(subtitle?.tagName.toLowerCase()).toBe('p');
-    expect(subtitle?.textContent).toBe('5 个提供商，8 个模型');
+    expect(subtitle?.textContent).toBe('5 providers, 8 models');
   });
 
   it('renders a SummaryStrip child under the title without paragraph wrapping', () => {
     const { container } = render(
-      <PageHeader title="OAuth 管理">
-        <SummaryStrip total="共 6 个" items={[{ label: '正常 4 个', tone: 'healthy' }]} />
+      <PageHeader title="OAuth management">
+        <SummaryStrip total="6 total" items={[{ label: '4 healthy', tone: 'healthy' }]} />
       </PageHeader>,
     );
 
-    expect(screen.getByRole('heading', { level: 1, name: 'OAuth 管理' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'OAuth management' })).toBeTruthy();
     expect(container.querySelector('p.terminal-subtitle')).toBeNull();
     expect(container.querySelector('[class*="summary-strip"]')).not.toBeNull();
-    expect(screen.getByText('共 6 个')).toBeTruthy();
+    expect(screen.getByText('6 total')).toBeTruthy();
   });
 
   it('renders a rich subtitle node in a div', () => {
     const { container } = render(
-      <PageHeader title="OAuth 管理" subtitle={<SummaryStrip total="共 6 个" />} />,
+      <PageHeader title="OAuth management" subtitle={<SummaryStrip total="6 total" />} />,
     );
 
     const subtitle = container.querySelector('.terminal-subtitle');

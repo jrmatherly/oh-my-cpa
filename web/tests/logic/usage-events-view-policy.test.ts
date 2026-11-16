@@ -513,7 +513,7 @@ test('a completed refresh re-reads every surface the pull could have changed', (
 const chipBase = {
   credentialNames: new Map<string, string | undefined>([['auth-a', 'team.json']]),
   callerFacets: [
-    { value: 'fp-1', requests: 3, alias: '验收专用密钥', mask: 'sk-1234••••7890' },
+    { value: 'fp-1', requests: 3, alias: 'Acceptance-only key', mask: 'sk-1234••••7890' },
     { value: 'fp-2', requests: 1, mask: 'sk-abcd••••wxyz' },
     { value: 'fp-3', requests: 1 },
   ],
@@ -529,7 +529,7 @@ test('a credential chip shows the file name rather than the stored fingerprint',
 });
 
 test('a caller chip prefers the alias, then the mask, then the raw fingerprint', () => {
-  assert.equal(chipDisplayValue({ ...chipBase, key: 'api_key', value: 'fp-1' }), '验收专用密钥');
+  assert.equal(chipDisplayValue({ ...chipBase, key: 'api_key', value: 'fp-1' }), 'Acceptance-only key');
   assert.equal(chipDisplayValue({ ...chipBase, key: 'api_key', value: 'fp-2' }), 'sk-abcd••••wxyz');
   // A key with neither falls back to the value it filters on, so the chip can
   // still be removed.

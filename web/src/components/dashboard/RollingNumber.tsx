@@ -48,7 +48,7 @@ interface RollingNumberProps {
  *
  * Two behaviours are deliberate rather than inherited:
  *
- * - **A unit change prints in place.** Currency changes replace the leading mark; `en-compact` and `zh` print a different unit word at a
+ * - **A unit change prints in place.** Currency changes replace the leading mark; `en-compact` prints a different unit word at a
  *   different magnitude, and a tile sliding from `1.2B` to `900M` would otherwise roll 1.2 into 900
  *   while the unit swapped underneath - digits that never described the window on their own. The
  *   frame where the unit word changes is therefore not animated; the next same-unit change sweeps

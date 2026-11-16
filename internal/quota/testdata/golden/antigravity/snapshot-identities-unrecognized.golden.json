@@ -29,7 +29,7 @@
     },
     {
       "id": "ag_Plugin_upstream-day",
-      "label": "Plugin · 每日限制 (Daily)",
+      "label": "Plugin · Daily limit",
       "scope": "group",
       "used_percent": 50,
       "remaining_percent": 50,

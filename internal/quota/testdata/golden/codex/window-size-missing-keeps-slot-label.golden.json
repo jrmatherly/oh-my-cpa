@@ -7,7 +7,7 @@
   "windows": [
     {
       "id": "code_review_5h",
-      "label": "代码审查 5小时配额",
+      "label": "Code review 5-hour limit",
       "kind": "custom",
       "scope": "code_review",
       "used_percent": 5,
@@ -16,7 +16,7 @@
     },
     {
       "id": "code_review_weekly",
-      "label": "代码审查 每周配额",
+      "label": "Code review weekly limit",
       "kind": "custom",
       "scope": "code_review",
       "used_percent": 9,

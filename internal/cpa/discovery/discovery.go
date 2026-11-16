@@ -333,7 +333,7 @@ func sourceSuggestion(name, baseURL string) string {
 	case name != "":
 		return strings.TrimSpace(name)
 	default:
-		return "未知来源"
+		return "Unknown source"
 	}
 }
 

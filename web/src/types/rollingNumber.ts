@@ -10,7 +10,7 @@
  * so the animated digits *are* the printed digits rather than a second rounding
  * rule that can drift from the first.
  *
- * `suffix` is the unit word (`B`, `万`, `%`). It doubles as the change detector: a
+ * `suffix` is the unit word (`K`, `B`, `%`). It doubles as the change detector: a
  * value sliding from one unit into the next is a change of scale, not of magnitude,
  * and rolling 1.2 into 9000 while the unit word swaps under it would show digits
  * that never described the window. `RollingNumber` watches it and prints that one

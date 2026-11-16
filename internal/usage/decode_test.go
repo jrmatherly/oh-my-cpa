@@ -125,12 +125,12 @@ func TestStructuredUsageBoundsAndInvalidCounters(t *testing.T) {
 	for index := 0; index < 25; index++ {
 		counters[fmt.Sprintf("tool-%02d", index)] = int64(index)
 	}
-	counters[strings.Repeat("界", 100)] = 0
+	counters[strings.Repeat("€", 100)] = 0
 	iterations := make([]IterationUsageDetails, MaxStructuredUsageIterations+5)
 	negative, zero := int64(-1), int64(0)
 	infinity := math.Inf(1)
 	source := &StructuredUsageDetails{
-		Speed:             strings.Repeat("界", MaxStructuredUsageStringRunes+10),
+		Speed:             strings.Repeat("€", MaxStructuredUsageStringRunes+10),
 		WebSearchRequests: &zero,
 		ToolUsageDetails:  &ToolUsageDetails{Extra: counters, WebFetchCalls: &negative},
 		MediaCounts:       &MediaUsageCounts{AudioSeconds: &infinity},
