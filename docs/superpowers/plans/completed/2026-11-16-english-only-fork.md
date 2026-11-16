@@ -75,8 +75,8 @@ Known traps, still true:
 
 ## Open questions
 
-- Fork migration numbering. Upstream holds migrations through 066. Read
-  `internal/repository/db.go` before the fork adds its first migration.
+- Fork migration numbering. The engine is read and each scheme's cost is recorded in
+  `.claude/rules/migrations.md`; the owner settles it at the fork's first migration.
 
 ## Decided
 

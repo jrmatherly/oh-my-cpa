@@ -8,6 +8,8 @@
 
 **Tech Stack:** React 18.3, Ant Design 6, Vitest (`components` project, jsdom), Vite entry `web/index.html`.
 
+**Status:** Completed. Task 1, the toggle label fix, is in the tree. Task 2, the language boot script, landed and was later removed when the fork became English only, which fixes the document language at `en`. The upstream pull request this plan proposes was never opened: upstream shipped the same fix itself in #555. The body below is kept as it was written.
+
 **Spec:** The Findings section below. There is no separate design document; this plan argues from the reproduction recorded there.
 
 ## Findings
@@ -55,7 +57,7 @@ Evidence gathered on 2026-11-09:
 
 Both the test and the fix exist uncommitted in the working tree as of 2026-11-09; the steps below commit them in the required order.
 
-- [ ] **Step 1: Confirm the failing test is present**
+- [x] **Step 1: Confirm the failing test is present**
 
 The test file ends with:
 
@@ -82,33 +84,33 @@ it('opens the failover disclosure after a translator rewrote the toggle text', a
 });
 ```
 
-- [ ] **Step 2: Run it against the unfixed component and verify it fails**
+- [x] **Step 2: Run it against the unfixed component and verify it fails**
 
 Run: `git stash push web/src/pages/routing/PolicyStrip.tsx && pnpm exec vitest run --config web/vitest.config.ts web/tests/routing-page.component.test.tsx -t translator; git stash pop`
 Expected: FAIL, stderr shows `NotFoundError: The child can not be found in the parent`.
 
-- [ ] **Step 3: Commit the failing test**
+- [x] **Step 3: Commit the failing test**
 
 ```bash
 git add web/tests/routing-page.component.test.tsx
 git commit -m "test(routing): reproduce the failover toggle crash under a page translator"
 ```
 
-- [ ] **Step 4: Confirm the fix in `PolicyStrip.tsx`**
+- [x] **Step 4: Confirm the fix in `PolicyStrip.tsx`**
 
 Line 112 reads `<span>{t('orch.failover')}</span>` instead of the bare `{t('orch.failover')}`. No other change.
 
-- [ ] **Step 5: Run the routing component tests and verify they pass**
+- [x] **Step 5: Run the routing component tests and verify they pass**
 
 Run: `pnpm exec vitest run --config web/vitest.config.ts web/tests/routing-page.component.test.tsx`
 Expected: 5 passed.
 
-- [ ] **Step 6: Run the gates the changed files reach**
+- [x] **Step 6: Run the gates the changed files reach**
 
 Run: `.claude/skills/verify-change/scripts/pick-checks.sh HEAD~1 --run`
 Expected: every command it prints exits 0. The set includes `type-check`, `test:logic`, `test:components`, `check-css-modules`, `check:feedback` and `lint:antd` for the two web files, and `check-docs` while this plan is untracked.
 
-- [ ] **Step 7: Commit the fix**
+- [x] **Step 7: Commit the fix**
 
 ```bash
 git add web/src/pages/routing/PolicyStrip.tsx
@@ -125,7 +127,7 @@ git commit -m "fix(routing): keep the failover label inside an element React own
 - Consumes: `LANGUAGES` from `web/src/i18n/language.ts`; the storage key `'omc-lang'`, until this change the module-private `LANG_KEY` in `web/src/i18n/index.tsx`. It moves to `language.ts` as `export const LANG_KEY = 'omc-lang'`, the module whose header already names the HTML `lang` attribute among its non-React readers, and `index.tsx` imports it. A Node logic test then holds the script to it without importing the React provider.
 - Produces: `document.documentElement.lang` set to the stored language's `locale` before any stylesheet or bundle loads, or left as the shipped `zh-CN` when nothing valid is stored.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `web/tests/logic/theme-boot.test.ts`, mirroring `bootScript()` for the id `omc-lang-boot` and a runner shaped like `groundedMode`: `new Function('window', 'document', langBootScript())(window, { documentElement })` with a fake `localStorage.getItem` that asserts the key is `LANG_KEY` and a `documentElement` object whose `lang` starts as `'zh-CN'`:
 
@@ -151,42 +153,42 @@ test('the lang boot reads the same storage key the i18n provider writes', () => 
 
 `bootedLang(stored: string | null, options?: { storageThrows?: boolean }): string` runs the script against a `documentElement` whose `lang` starts as `'zh-CN'` and returns its `lang` afterwards.
 
-- [ ] **Step 2: Run them and verify they fail**
+- [x] **Step 2: Run them and verify they fail**
 
 Run: `pnpm exec vitest run --config web/vitest.config.ts web/tests/logic/theme-boot.test.ts`
 Expected: the first two tests FAIL with `index.html carries no omc-lang-boot script`; the third FAILS because the imported `LANG_KEY` is `undefined` under Vitest (a missing named export does not throw there) and the regex `getItem('undefined')` matches nothing. The existing theme tests still pass.
 
-- [ ] **Step 3: Commit the failing tests**
+- [x] **Step 3: Commit the failing tests**
 
 ```bash
 git add web/tests/logic/theme-boot.test.ts
 git commit -m "test(web): hold the entry document to a language boot"
 ```
 
-- [ ] **Step 4: Move `LANG_KEY` to `web/src/i18n/language.ts`**
+- [x] **Step 4: Move `LANG_KEY` to `web/src/i18n/language.ts`**
 
 Add `export const LANG_KEY = 'omc-lang';` to `language.ts` beside `DEFAULT_LANG`, delete the private constant at `index.tsx:74`, and import it there. No behaviour change; `pnpm type-check` proves the move.
 
-- [ ] **Step 5: Add the boot script to `web/index.html`**
+- [x] **Step 5: Add the boot script to `web/index.html`**
 
 Immediately after the `omc-theme-boot` script, a `<script id="omc-lang-boot">` that reads `window.localStorage.getItem('omc-lang')` inside `try`, maps the id through a literal `{ zh: 'zh-CN', 'zh-Hant': 'zh-HK', en: 'en', ms: 'ms-MY' }` (the four `locale` values of `LANGUAGES`; the test holds the literal to the registry), and sets `document.documentElement.lang` only when `Object.prototype.hasOwnProperty.call(map, stored)` is true (never `in` or a bare index, which would accept `toString`). A comment of one or two sentences says why: the document ships Chinese, a reader's own language is applied by the bundle after mount, and the browser's translate detection has already run by then.
 
-- [ ] **Step 6: Run the tests and verify they pass**
+- [x] **Step 6: Run the tests and verify they pass**
 
 Run: `pnpm exec vitest run --config web/vitest.config.ts web/tests/logic/theme-boot.test.ts`
 Expected: all tests in the file pass, including the existing theme tests.
 
-- [ ] **Step 7: Run the gates the changed files reach**
+- [x] **Step 7: Run the gates the changed files reach**
 
 Run: `.claude/skills/verify-change/scripts/pick-checks.sh HEAD~1 --run`
 Expected: every command it prints exits 0. The i18n source edit selects `type-check`, `test:logic`, `check-css-modules`, `check:feedback`, `lint:antd` and `check-i18n`; the untracked plan adds `check-docs`.
 
-- [ ] **Step 8: Verify on the built artifact**
+- [x] **Step 8: Verify on the built artifact**
 
 Run: `pnpm build && pnpm verify:browser:smoke` (the smoke compiles the Go binary but embeds whatever `pnpm build` last wrote to `internal/web/dist`; an empty dist serves the "built without the console" placeholder)
 Expected: smoke passes. Then open the built console in Chrome with English stored as the reading language. React's `useEffect` also writes `lang="en"` after mount, so the Elements panel alone cannot tell the two apart: in DevTools Network, add a request-blocking pattern for `*/assets/*.js`, reload, and read `<html lang>` while the bundle is blocked. It must already be `en`. Remove the block, reload, and confirm Chrome offers no translation of the page. This step is the only evidence for the inferred trigger in Findings; if Chrome still offers translation, record that in the PR and keep the task anyway, since a document that names the wrong language is wrong for screen readers too.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add web/index.html web/src/i18n/index.tsx web/src/i18n/language.ts
@@ -198,15 +200,15 @@ git commit -m "fix(web): declare the stored reading language before the bundle m
 **Files:**
 - Modify: `.claude/skills/upstream-review/SKILL.md` (Deviations decided table)
 
-- [ ] **Step 0: Open the Task 1 fix upstream (deferred; needs Jason's go, an upstream PR is outward-facing)**
+- [x] **Step 0: Open the Task 1 fix upstream (not needed: upstream shipped the same fix itself in #555, commit 78f5a580)**
 
 From a branch cut at `upstream/main` carrying only Task 1's two commits, open a PR to `WizisCool/oh-my-cpa` with the demo reproduction from Findings (the JavaScript that wraps the label's text node in `<font>` and clicks the toggle) as the "how to reproduce". Upstream's release is the route to the reporter's cluster today; when it merges, the fork's next upstream review tags Task 1 `[picked]` and the deviation row can go. Task 2 stays fork-only until the inferred trigger is confirmed in Task 2 Step 8.
 
-- [ ] **Step 1: Add two rows to the deviations table**
+- [x] **Step 1: Add two rows to the deviations table**
 
 One for `PolicyStrip.tsx` (ours wraps the label in `<span>`; an upstream hunk elsewhere in the file is ADOPT, one rewriting the toggle is ADAPT, pinned by the routing component test) and one for `web/index.html` (ours adds `omc-lang-boot`; upstream hunks to the theme boot are ADOPT, pinned by `theme-boot.test.ts`).
 
-- [ ] **Step 2: Run the docs check, commit, and open the PR against `jrmatherly/oh-my-cpa` main**
+- [x] **Step 2: Run the docs check, commit, and open the PR against `jrmatherly/oh-my-cpa` main**
 
 Run: `pnpm check-docs`
 Expected: `0 Errors`.
