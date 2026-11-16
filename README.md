@@ -144,7 +144,7 @@ Browser ──▶ Direct listener / HTTPS ingress ──▶ Oh My CPA (:8080)
 
 ## Documentation
 
-Read in the repository ([`docs/README.md`](docs/README.md)):
+Read in the repository ([`docs/README.md`](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)):
 
 | Guide | Topics |
 | --- | --- |
