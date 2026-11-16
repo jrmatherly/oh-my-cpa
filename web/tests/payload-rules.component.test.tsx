@@ -915,7 +915,7 @@ requests:
       expect((screen.getByTestId('payload-replace-to-0-0') as HTMLTextAreaElement).value).toBe('newB');
 
       // Completing composition must commit into Rule A (now card 1), not Rule B (card 0).
-      // The CJK text a pinyin input method composes for "zhong", escaped to keep the source English only.
+      // The CJK text the input method holds when the composition ends, escaped to keep the source English only.
       typeComposing(movedToInputA, '\u4E2D\u6587\u65B0\u503C', true);
       fireEvent.compositionEnd(movedToInputA);
 
