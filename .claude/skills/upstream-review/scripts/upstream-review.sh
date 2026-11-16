@@ -91,12 +91,12 @@ pick_end() {
   END="$TIP"; END_LABEL="tip"
   [ "${USE_TIP:-0}" = 1 ] && return 0
   local tag
-  tag="$(g for-each-ref --sort=-creatordate --format='%(refname)' "$TAGNS/v*" |
-    while read -r ref; do
+  # Process substitution, not a pipe: breaking early would SIGPIPE for-each-ref and pipefail would exit 141.
+  tag="$(while read -r ref; do
       g merge-base --is-ancestor "$ref" "$TIP" || continue
       g merge-base --is-ancestor "$ref" "$WATERMARK" && continue
       echo "$ref"; break
-    done)"
+    done < <(g for-each-ref --sort=-creatordate --format='%(refname)' "$TAGNS/v*"))"
   [ -n "$tag" ] || return 0
   # Peel an annotated tag so END is the commit the listing, the log and --advance all name.
   END="$(g rev-parse "$tag^{commit}")"; END_LABEL="release ${tag#"$TAGNS"/}"
