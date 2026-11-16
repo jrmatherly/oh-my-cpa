@@ -32,7 +32,7 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: The shortest sequence that triggers the problem. State whether it also reproduces on the [live demo](https://omc-demo.junze.dev).
+      description: The shortest sequence that triggers the problem.
       placeholder: |
         1. Open …
         2. Click …
@@ -65,7 +65,6 @@ body:
         - Added to an existing CPA Compose file
         - Standalone container
         - Built from source
-        - Live demo only
         - Other (describe below)
     validations:
       required: true

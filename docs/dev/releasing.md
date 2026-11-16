@@ -32,11 +32,8 @@ maintainer procedure and recovery requirements.
 
 The job-scoped `GITHUB_TOKEN` pushes the image and creates the release; no registry
 token or personal token is needed. Keep the repository and the container package
-public for unauthenticated installations: GitHub creates a package private, so set
-its visibility to public once in the package's settings. Do it during the first
-release, as soon as the `publish` job is green: the `release` job makes the version
-visible to update checks minutes later, and a pull fails until the package is
-public. Confirm with `docker logout ghcr.io` followed by a pull of the released tag.
+public for unauthenticated installations. Confirm after a release with
+`docker logout ghcr.io` followed by a pull of the released tag.
 `latest` exists only after the `promote` job, so the default Compose image and the
 updater install command fail until then; announce a release once `promote` is green.
 The console's updater pulls without credentials and cannot update from a private

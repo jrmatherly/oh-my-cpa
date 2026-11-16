@@ -21,17 +21,14 @@ Management · Routing · Observability · Agent & MCP
 
 <br />
 
-**[Live Demo](https://omc-demo.junze.dev)** ·
 **[Documentation](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)** ·
-**[API Reference](https://omc.junze.dev/api-reference/)** ·
+**[API Reference](docs/openapi/swagger.json)** ·
 [Quick Start](#quick-start) ·
 [Features](#features)
 
 <br />
 
-<a href="https://omc-demo.junze.dev">
-  <img src="docs/images/readme/hero-split.en.webp" alt="The Oh My CPA dashboard, half in the light theme and half in the dark theme" width="100%">
-</a>
+<img src="docs/images/readme/hero-split.en.webp" alt="The Oh My CPA dashboard, half in the light theme and half in the dark theme" width="100%">
 
 </div>
 
@@ -45,7 +42,7 @@ quota window warmup, and built-in Agent/MCP workflows—protected by AES-GCM enc
 audit logging, and automatic pre-write configuration backups.
 
 > [!TIP]
-> Explore the **[Live Demo](https://omc-demo.junze.dev)**, browse the **[Documentation](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)**, or inspect the **[API Reference](https://omc.junze.dev/api-reference/)**.
+> Browse the **[Documentation](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)** or inspect the **[API Reference](docs/openapi/swagger.json)**.
 
 ## Highlights
 
@@ -154,7 +151,7 @@ Read in the repository ([`docs/README.md`](https://github.com/jrmatherly/oh-my-c
 | [Operations](docs/operations.md) | Ports and storage, updates, [backup and restore](docs/ops/sqlite-operations.md), keys and time zone |
 | Features | [Agent and MCP](docs/features/agent.md), [routing](docs/features/routing.md), [quota and warmup](docs/features/quota.md), [pricing](docs/pricing.md), [playground](docs/features/playground.md), [plugins](docs/features/plugins.md) |
 | Reference | [Environment variables](docs/reference/environment.md), [CPA v8 contract](docs/cpa-v8-compat.md), [agent capabilities](docs/agent-capabilities.md) |
-| [API Reference](https://omc.junze.dev/api-reference/) | Interactive Swagger 2.0 / OpenAPI documentation |
+| [API Reference](docs/openapi/swagger.json) | Swagger 2.0 / OpenAPI specification |
 | [Contributor Guides](CONTRIBUTING.md) | [Architecture](docs/dev/architecture.md) · [Design](docs/dev/design.md) · [Testing](docs/dev/testing.md) · [Releasing](docs/dev/releasing.md) · [Demo Ops](docs/ops/cloudflare-demo.md) |
 
 ## Contributing

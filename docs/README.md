@@ -2,7 +2,7 @@
 
 This directory holds the repository's canonical technical, operational, and release
 documentation. Curated operator and integration guides are compiled into the Fumadocs
-documentation site published at `https://omc.junze.dev/docs/`.
+documentation site built from [`deploy/site/docs`](../deploy/site/docs).
 
 ## Directory layout
 
