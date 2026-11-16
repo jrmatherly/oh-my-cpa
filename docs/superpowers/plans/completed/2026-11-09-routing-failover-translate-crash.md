@@ -200,7 +200,7 @@ git commit -m "fix(web): declare the stored reading language before the bundle m
 **Files:**
 - Modify: `.claude/skills/upstream-review/SKILL.md` (Deviations decided table)
 
-- [x] **Step 0: Open the Task 1 fix upstream (deferred; needs Jason's go, an upstream PR is outward-facing)**
+- [x] **Step 0: Open the Task 1 fix upstream (not needed: upstream shipped the same fix itself in #555, commit 78f5a580)**
 
 From a branch cut at `upstream/main` carrying only Task 1's two commits, open a PR to `WizisCool/oh-my-cpa` with the demo reproduction from Findings (the JavaScript that wraps the label's text node in `<font>` and clicks the toggle) as the "how to reproduce". Upstream's release is the route to the reporter's cluster today; when it merges, the fork's next upstream review tags Task 1 `[picked]` and the deviation row can go. Task 2 stays fork-only until the inferred trigger is confirmed in Task 2 Step 8.
 
