@@ -79,7 +79,7 @@ export function getAppConfig(): AppConfig {
 }
 
 export function resolveApiDocsUrl(basePath: string): string {
-  // When mounted under `/demo`, resolve `/api-reference/` on the same origin so both
-  // `omc.junze.dev/demo/` and local `deploy/site` previews open their own API reference.
-  return basePath === '/demo' ? '/api-reference/' : 'https://omc.junze.dev/api-reference/';
+  // Mounted under `/demo`, the staged site serves its own `/api-reference/` on the same origin.
+  // A demonstration served anywhere else has no site beside it and opens the fork's specification.
+  return basePath === '/demo' ? '/api-reference/' : 'https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/openapi/swagger.json';
 }

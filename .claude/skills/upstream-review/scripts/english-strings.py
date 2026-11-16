@@ -15,20 +15,26 @@ escapes where a test has to feed Chinese data to a parser.
 Usage: english-strings.py [--check]   (--check changes nothing; either form exits 1 while
 Chinese remains outside ALLOWED)
 """
+import codecs
 import json
 import pathlib
 import re
 import subprocess
 import sys
 
-ROOT = pathlib.Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
+ROOT = pathlib.Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], encoding="utf-8").strip())
 # Files that may hold Chinese: this one, whose phrase table names what it rewrites.
 ALLOWED = [
     re.compile(r"^\.claude/skills/upstream-review/scripts/english-strings\.py$"),
 ]
-# CJK ideographs with Extension A and the compatibility block, plus CJK and full-width
-# punctuation, so a half-rewritten phrase that keeps its brackets or comma still fails.
-HAN = re.compile(r"[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]")
+# Chinese ideographs with every extension and the compatibility blocks, radicals, bopomofo and
+# strokes, plus CJK and full-width punctuation (kana and Hangul are not Chinese and pass), so a half-rewritten phrase that keeps its
+# brackets or comma still fails.
+HAN = re.compile(
+    r"[\u2e80-\u2fdf\u3000-\u303f\u3100-\u312f\u31a0-\u31ef\u3400-\u4dbf\u4e00-\u9fff"
+    r"\uf900-\ufaff\uff00-\uffef\U00020000-\U0003ffff]"
+)
+UTF16_BOMS = (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
 
 # Whole phrases, longest first so a phrase is never rewritten through one of its parts.
 PHRASES = {
@@ -140,6 +146,7 @@ def self_check() -> None:
         assert got == wanted, f"rewrite({source!r}) = {got!r}, want {wanted!r}"
         assert rewrite(got) == got, f"rewrite is not idempotent on {source!r}"
     assert HAN.search(rewrite("每日限额")), "the gate no longer sees an untranslated phrase"
+    assert HAN.search("\U00020000"), "the gate no longer sees an ideograph outside the basic plane"
 
 
 def main() -> int:
@@ -148,7 +155,8 @@ def main() -> int:
     self_check()
     check = "--check" in sys.argv[1:]
     # -z: git quotes a path with non-ASCII characters otherwise, and a quoted path is not a file.
-    files = subprocess.check_output(["git", "ls-files", "-z"], text=True, cwd=ROOT).split("\0")
+    # Paths are decoded as UTF-8 whatever the locale, or a Chinese file name reads as mojibake.
+    files = subprocess.check_output(["git", "ls-files", "-z"], encoding="utf-8", cwd=ROOT).split("\0")
     changed, unknown = strip_recordings(check), []
     for name in filter(None, files):
         path = ROOT / name
@@ -157,6 +165,11 @@ def main() -> int:
         if HAN.search(name):
             unknown.append((0, name + "  (the file name)"))
         raw = path.read_bytes()
+        if raw.startswith(UTF16_BOMS):
+            # UTF-16 text is full of NUL bytes, so it would pass below as binary.
+            if HAN.search(raw.decode("utf-16", errors="replace")):
+                unknown.append((0, name + "  (UTF-16, rewrite it by hand as UTF-8)"))
+            continue
         if b"\0" in raw:
             continue  # binary
         try:

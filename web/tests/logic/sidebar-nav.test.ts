@@ -262,7 +262,7 @@ test('sidebar nav', () => {
   // ── demo header API documentation target ────────────────────────────────────
 
   assert.equal(resolveApiDocsUrl('/demo'), '/api-reference/');
-  assert.equal(resolveApiDocsUrl(''), 'https://omc.junze.dev/api-reference/');
-  assert.equal(resolveApiDocsUrl('/'), 'https://omc.junze.dev/api-reference/');
-  assert.equal(resolveApiDocsUrl('/omc'), 'https://omc.junze.dev/api-reference/');
+  assert.equal(resolveApiDocsUrl(''), 'https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/openapi/swagger.json');
+  assert.equal(resolveApiDocsUrl('/'), 'https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/openapi/swagger.json');
+  assert.equal(resolveApiDocsUrl('/omc'), 'https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/openapi/swagger.json');
 });

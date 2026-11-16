@@ -71,21 +71,23 @@ Known traps, still true:
 - Done: the first real upstream sync, logged in `.upstream-review/reviews/2026-11-16-review.md`. Two
   paths no real merge has exercised yet: `english-only.sh` taking upstream's side of a conflicted
   English catalog, and a `PHRASES` rewrite.
-- Decide whether to drop the unused `@fumadocs/language` from `deploy/site/docs/package.json`. Removing it
-  re-resolved `mdast-util-from-markdown` and a `fumadocs-mdx` peer in `pnpm-lock.yaml`, so phase 3 left it.
+- Done: the unused `@fumadocs/language` is gone from `deploy/site/docs/package.json`.
 
 ## Open questions
 
 - Fork migration numbering. Upstream holds migrations through 066. Read
   `internal/repository/db.go` before the fork adds its first migration.
 - Fork release tag scheme. Read `scripts/release-identity.mjs` before the first fork release.
-- Whether to harden the gate. `english-strings.py` skips a text file that holds a NUL byte or is
-  UTF-16 as binary, mis-decodes a Chinese file name under a non-UTF-8 locale, and its `HAN` class
-  misses rare CJK ranges. No tracked file does any of these today. Read the script's scan loop.
-- Whether the gate should cover built output. The staged site's API reference ships Scalar's own
-  bundle, which carries its Chinese locale table; the gate reads tracked files only. Stage the site
-  (`node scripts/build-site.mjs --from-built-docs --skip-demo`) and scan
-  `tmp/site/dist/api-reference/scalar.*.js`.
+
+## Decided
+
+- The container package needed no visibility change: the first release created it public.
+- The gate reads UTF-16 files that start with a byte order mark, decodes file names as UTF-8 under any locale, and its `HAN` class
+  covers the ideograph extensions, radicals, bopomofo and strokes.
+- The gate does not cover built output. Scalar's standalone bundle holds 9,404 characters the gate
+  matches: its own Chinese locale table, and an HTML entity table packed into CJK code points that
+  is not text. No scan of that file can pass without rewriting a third party's minified bundle, the
+  fork deploys no site, and the console does not serve the bundle.
 
 ## How the deviation is kept
 
