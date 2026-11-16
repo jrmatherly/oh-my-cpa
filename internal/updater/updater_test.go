@@ -489,6 +489,9 @@ func TestParseReferenceAndPinning(t *testing.T) {
 		{"registry.example:5000/team/app:edge", "registry.example:5000/team/app", "edge", false},
 		{"wiziscool/oh-my-cpa@" + TEST_DIGEST, "wiziscool/oh-my-cpa", "latest", true},
 		{"wiziscool/oh-my-cpa:latest@" + TEST_DIGEST, "wiziscool/oh-my-cpa", "latest", true},
+		// The fork's image carries a registry host, which is part of the repository.
+		{"ghcr.io/jrmatherly/oh-my-cpa:latest", "ghcr.io/jrmatherly/oh-my-cpa", "latest", false},
+		{"ghcr.io/jrmatherly/oh-my-cpa@" + TEST_DIGEST, "ghcr.io/jrmatherly/oh-my-cpa", "latest", true},
 	}
 	for _, testCase := range cases {
 		reference := ParseReference(testCase.raw)
@@ -498,6 +501,12 @@ func TestParseReferenceAndPinning(t *testing.T) {
 	}
 	if CanonicalRepository("docker.io/Wiziscool/oh-my-cpa") != OMC_REPOSITORY {
 		t.Errorf("Docker Hub spellings must compare equal")
+	}
+	// A signed manifest is matched to the running image by this comparison, so a
+	// same-named repository on another registry must never compare equal.
+	if CanonicalRepository("ghcr.io/JRMatherly/oh-my-cpa") != "ghcr.io/jrmatherly/oh-my-cpa" ||
+		CanonicalRepository("ghcr.io/jrmatherly/oh-my-cpa") == CanonicalRepository("jrmatherly/oh-my-cpa") {
+		t.Errorf("a registry host must survive canonicalisation")
 	}
 }
 

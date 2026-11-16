@@ -33,11 +33,14 @@ maintainer procedure and recovery requirements.
 The job-scoped `GITHUB_TOKEN` pushes the image and creates the release; no registry
 token or personal token is needed. Keep the repository and the container package
 public for unauthenticated installations: GitHub creates a package private, so set
-its visibility to public once in the package's settings, after the first release
-pushes it, and confirm with `docker logout ghcr.io` followed by a pull of the
-released tag. The console's updater pulls without credentials and cannot update
-from a private package. Never
-paste secret values into issues, logs, source or chat.
+its visibility to public once in the package's settings. Do it during the first
+release, as soon as the `publish` job is green: the `release` job makes the version
+visible to update checks minutes later, and a pull fails until the package is
+public. Confirm with `docker logout ghcr.io` followed by a pull of the released tag.
+`latest` exists only after the `promote` job, so the default Compose image and the
+updater install command fail until then; announce a release once `promote` is green.
+The console's updater pulls without credentials and cannot update from a private
+package. Never paste secret values into issues, logs, source or chat.
 
 Generate the release signing key once on a trusted machine:
 
@@ -129,6 +132,11 @@ fails, fix the cause; do not bypass it. If an image upload succeeded but attachm
 failed, retry the failed release job for the same verified source. The GitHub release
 stays draft and update checks ignore it until attachments finish. If only `latest`
 promotion failed, versioned pulls still work; retry promotion rather than republishing.
+Retry with "Re-run failed jobs" on the same run. A new dispatch rebuilds the image,
+which can change its digest, and then replaces the manifest on a release that may
+already be public. If signing fails, the versioned image tags are already pushed
+and no release exists: fix the key, then delete those package versions before the
+next attempt.
 
 Manual workflow dispatch can recover an existing tag. It resolves and verifies that
 tag's immutable source, regardless of the dispatch branch. A runner/workflow-only

@@ -124,3 +124,13 @@ Only if you **replace your Compose file** with a newly downloaded `compose.full.
 
 Native executables upgrade by replacing the binary; see
 [Upgrading a native install](native.md#upgrading-a-native-install).
+
+## Moving from the upstream image
+
+A deployment that runs `wiziscool/oh-my-cpa` is not updated to this fork from the
+console: the updater applies a release only to the image repository the console already
+runs, and trusts this fork's signing key alone. Change the image by hand once. Set
+`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:latest` in `.env` (or change the `image:` line
+in a Compose file you maintain), then run `docker compose pull && docker compose up -d`.
+A deployment whose updater was added with `updater install` runs that command again
+from the new image. Data, ports and settings are kept.
