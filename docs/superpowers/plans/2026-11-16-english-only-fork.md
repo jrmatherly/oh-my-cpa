@@ -35,7 +35,7 @@ of these is wrong.
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
 | 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
 | 3 | Docs, README, screenshots, public site, issue templates | Merged, pull request 6 (`9c1471eb`) |
-| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items merged, pull request 7 (`46baa5c2`); the upstream sync to `7d6e67a2` is its own pull request |
+| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items merged, pull request 7 (`46baa5c2`); the upstream sync to `7d6e67a2` is pull request 8 |
 
 ### Phase 3: docs and the public site
 
