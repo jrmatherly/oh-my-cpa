@@ -28,8 +28,8 @@ export function projectLobeIconCatalog(tableOfContents, hasAsset) {
     .map(entry => ({
       id: entry.id,
       // The source names many brands twice, as "Qwen (<Chinese name>)", and a few only in
-      // Chinese. This fork reads English only: the parenthetical is dropped, and a Chinese-only
-      // title falls back to the full title.
+      // Chinese. This fork reads English only: the parenthetical is dropped, and a title holding
+      // Chinese falls back to the full title, or to the id when nothing else is left.
       title: CHINESE.test(entry.title) ? withoutChinese(entry.fullTitle) || entry.id : entry.title,
       fullTitle: withoutChinese(entry.fullTitle) || entry.id,
       docsUrl: entry.docsUrl,

@@ -457,7 +457,7 @@ func TestUnifiedProviderArchitectureClaudeCodexGemini(t *testing.T) {
 	client, baseURL, _ := startProviderTestServer(t)
 
 	// 1. Verify Claude provider displays key entries and can be updated with custom name & new key
-	updateClaude := `{"family":"claude","name":"Claude 3.5 relay","base_url":"https://api.anthropic.com","keys":[{"api_key":"sk-ant-new-secret-5678","proxy_url":"http://127.0.0.1:7890","weight":3}],"prefix":"fast"}`
+	updateClaude := `{"family":"claude","name":"Claude 3.5 Zürich","base_url":"https://api.anthropic.com","keys":[{"api_key":"sk-ant-new-secret-5678","proxy_url":"http://127.0.0.1:7890","weight":3}],"prefix":"fast"}`
 	resp, payload := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/providers/claude-0", updateClaude)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("update claude provider status = %d body %s", resp.StatusCode, payload)
@@ -483,8 +483,8 @@ func TestUnifiedProviderArchitectureClaudeCodexGemini(t *testing.T) {
 	if foundClaude == nil {
 		t.Fatalf("claude-0 provider not found in list")
 	}
-	if foundClaude.Name != "Claude 3.5 relay" {
-		t.Fatalf("expected custom name Claude 3.5 relay, got %q", foundClaude.Name)
+	if foundClaude.Name != "Claude 3.5 Zürich" {
+		t.Fatalf("expected custom name Claude 3.5 Zürich, got %q", foundClaude.Name)
 	}
 	if len(foundClaude.KeyEntries) != 1 {
 		t.Fatalf("expected 1 key entry for claude, got %d", len(foundClaude.KeyEntries))

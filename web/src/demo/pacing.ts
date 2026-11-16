@@ -43,7 +43,7 @@ export function recordingLanguage(_language: string | undefined): RecordingLangu
   return 'en';
 }
 
-/** Answer text per frame. */
+/** Characters of answer text written per frame. */
 export function answerChunkSize(_language: RecordingLanguage): number {
   return 9;
 }

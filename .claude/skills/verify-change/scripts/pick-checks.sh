@@ -9,6 +9,7 @@ for arg in "$@"; do
 done
 root=$(git rev-parse --show-toplevel)
 cd "$root"
+git rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "pick-checks: not a commit: $base" >&2; exit 2; }
 
 files=$( { git diff --name-only "$base" --; git ls-files --others --exclude-standard; } | sort -u )
 [ -z "$files" ] && { echo "No changed files relative to $base." >&2; exit 0; }

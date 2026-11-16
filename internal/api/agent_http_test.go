@@ -178,7 +178,7 @@ func TestAgentRunSpeaksAGUI(t *testing.T) {
 	if strings.Contains(string(payload), "RUN_STARTED") || !strings.Contains(string(payload), `"type":"RUN_ERROR"`) || !strings.Contains(string(payload), `"code":"agent_revision_conflict"`) {
 		t.Fatalf("stale run stream %s", payload)
 	}
-	// A token style the console no longer offers is refused before the run starts.
+	// A token style the console does not offer is refused before the run starts.
 	response, payload = doJSON(t, fixture.client, "POST", url, `{"threadId":"","runId":"r1","protocolVersion":"1.0","messages":[{"id":"m1","role":"user","content":"hi"}],"context":[{"description":"console_token_style","value":"zh"}],"forwardedProps":{"revision":0,"model":"m","client_key_fingerprint":"f"}}`)
 	if strings.Contains(string(payload), "RUN_STARTED") || !strings.Contains(string(payload), `"code":"invalid_parameters"`) {
 		t.Fatalf("retired token style %d %s", response.StatusCode, payload)

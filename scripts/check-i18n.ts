@@ -4,10 +4,9 @@
  * This fork reads English only, and the English catalog is the typed source of every message id.
  * What this automated gate verifies:
  *
- * - The registry, locale directories and language-switcher flags strictly agree;
+ * - The registry and the locale directories agree, so a catalog directory other than `en` fails;
  * - No id is defined in multiple domain files (preventing silent overwrite during catalog assembly);
  * - Balanced braces, valid ICU plural structures (mandatory `other` branch, valid category names);
- * - Each translation reads the exact same placeholders as its source sentence;
  * - Empty, whitespace-padded, or structurally malformed translation values are rejected;
  * - Every key in the source catalog is referenced somewhere in codebase or through a computed prefix;
  * - Every registered Agent capability has localized copy.

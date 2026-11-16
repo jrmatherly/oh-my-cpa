@@ -49,6 +49,8 @@ func TestWindowPeriodNameKeepsShortWindowsReadable(t *testing.T) {
 		{seconds: 1800, want: "30-minute"},
 		{seconds: FiveHourSeconds, want: "5-hour"},
 		{seconds: DailySeconds, want: "daily"},
+		{seconds: 3 * 3600, want: "3-hour"},
+		{seconds: 5400, want: "1.5-hour"},
 		{seconds: WeeklySeconds, want: "weekly"},
 		{seconds: MonthlySeconds, want: "monthly"},
 		{seconds: 0, want: ""},

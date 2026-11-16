@@ -4,8 +4,7 @@ One word per concept. The console's copy is read by operators who compare two wi
 side, so a concept that changes its name between two screens reads as two different things:
 "supplier" here and "provider" there is a support question, not a style preference.
 
-This fork reads English only, so the table has one language. Upstream's rows for Simplified
-Chinese, Traditional Chinese and Malay went with those catalogs.
+This fork reads English only, so the table has one language.
 
 This file is also executable. A row under **Enforced** names the variant the catalog must not use,
 and `pnpm check-i18n` fails on any occurrence of it, including one inside a longer sentence.

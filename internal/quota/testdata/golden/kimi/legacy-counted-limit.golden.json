@@ -2,7 +2,7 @@
   "windows": [
     {
       "id": "kimi_0",
-      "label": "Daily limit",
+      "label": "Tägliches Limit",
       "kind": "daily",
       "scope": "model",
       "model": "moonshot-v1-8k",

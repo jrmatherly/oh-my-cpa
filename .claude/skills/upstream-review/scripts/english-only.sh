@@ -7,12 +7,15 @@
 # their link to the Chinese source. Run this after `git merge` (conflicts and all) and it
 # converges the tree again. It is idempotent: a second run changes nothing.
 #
-# It does two things, and nothing else (the hand-edited files are in the deviations table):
+# It does three things, and nothing else (the hand-edited files are in the skill's "English only"
+# section):
 #   1. removes the catalogs this fork does not ship;
-#   2. makes each English domain file a plain object, since it is now the source it was checked against.
+#   2. makes each English domain file a plain object, since it is now the source it was checked against;
+#   3. removes the Chinese number style's label from en/settings.ts.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 LOCALES=web/src/i18n/locales
+[ -d "$LOCALES/en" ] || { echo "ERROR: $LOCALES/en not found; upstream moved the catalogs, update this script" >&2; exit 1; }
 
 # Every language directory but English goes, so a language upstream adds later goes too.
 for dir in "$LOCALES"/*/; do
@@ -54,8 +57,10 @@ done
 
 # The Chinese number style is gone from this fork, and its label with it.
 if grep -q "'omc\.token_style_zh':" "$LOCALES/en/settings.ts" 2>/dev/null; then
+  # Staged only when it was already clean, so an unrelated local edit is not swept in.
+  wasClean=0; git diff --quiet -- "$LOCALES/en/settings.ts" && wasClean=1
   perl -ni -e "print unless /'omc\\.token_style_zh':/" "$LOCALES/en/settings.ts"
-  git add -- "$LOCALES/en/settings.ts"
+  [ "$wasClean" = 1 ] && git add -- "$LOCALES/en/settings.ts"
   echo "removed omc.token_style_zh from $LOCALES/en/settings.ts"
 fi
 
@@ -66,7 +71,7 @@ git ls-files -u -- "$LOCALES/en" | awk '{print $4}' | sort -u | while IFS= read 
   echo "removed $file (deleted upstream)"
 done
 
-if grep -rnE "satisfies (Translation|Catalog)|import type .*(catalog|/zh/)" "$LOCALES/en" >/dev/null; then
+if grep -rnE "satisfies|Translation<|\.\./zh" "$LOCALES/en" >/dev/null; then
   echo "ERROR: an English catalog file still refers to the Chinese source" >&2
   exit 1
 fi

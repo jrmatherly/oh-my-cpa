@@ -5,7 +5,7 @@
     "limits": [
       {
         "name": "daily_limit",
-        "title": "Daily limit",
+        "title": "Tägliches Limit",
         "scope": "moonshot-v1-8k",
         "used": 150,
         "limit": 1000,

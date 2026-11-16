@@ -80,7 +80,7 @@ const TOC_CANDIDATES: TocCandidate[] = (() => {
   for (const item of LOBE_ICON_CATALOG) {
     // 1. Exact ID (e.g. Minimax, OpenCode, DeepSeek) has highest priority
     add(item.id, item.id, 2);
-    // 2. Title, docsUrl, and parenthesized Chinese/alias names from fullTitle
+    // 2. Title, docsUrl, and parenthesized alias names from fullTitle
     add(item.title, item.id, 1);
     add(item.docsUrl, item.id, 1);
     if (item.fullTitle) {

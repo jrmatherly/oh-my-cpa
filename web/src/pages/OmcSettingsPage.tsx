@@ -274,9 +274,7 @@ export const OmcSettingsPage: React.FC = () => {
               block={isNarrow}
               // Each option carries its language's endonym rather than a translated name: a
               // reader who cannot read the console's current language has to be able to find
-              // their own here. The endonym is also what keeps this row inside its card on a
-              // phone - a translated "Simplified Chinese" measured wider than the track the
-              // narrow-layout rule hands this picker.
+              // their own here.
             />
           }
         />}

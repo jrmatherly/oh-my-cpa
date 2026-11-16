@@ -22,8 +22,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
-# Files that may hold Chinese. This table is one. The rest are the docs and the public site,
-# which the docs phase of the English-only work removes; delete their rows with it.
+# Files that may hold Chinese. This table is one. The rest are the docs, both READMEs, the public
+# site and its two build scripts, and the issue templates, which the docs phase of the
+# English-only work cleans; delete their rows with it.
 ALLOWED = [
     re.compile(r"^\.claude/skills/upstream-review/scripts/english-strings\.py$"),
     re.compile(r"^docs/"),
@@ -32,7 +33,9 @@ ALLOWED = [
     re.compile(r"^scripts/(sync-docs-site|render-social-cards)\.mjs$"),
     re.compile(r"^\.github/ISSUE_TEMPLATE/"),
 ]
-HAN = re.compile(r"[一-鿿]")
+# CJK ideographs with Extension A and the compatibility block, plus CJK and full-width
+# punctuation, so a half-rewritten phrase that keeps its brackets or comma still fails.
+HAN = re.compile(r"[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]")
 
 # Whole phrases, longest first so a phrase is never rewritten through one of its parts.
 PHRASES = {
@@ -113,6 +116,8 @@ def strip_recordings(check: bool) -> list:
             continue
         text = path.read_text(encoding="utf-8")
         new = RECORDED_CHINESE.sub("", text)
+        if '"zh":' in new:
+            sys.exit(f"{name}: a \"zh\" entry is not in the shape this script strips; strip it by hand")
         if new == text:
             continue
         json.loads(new)
@@ -122,18 +127,49 @@ def strip_recordings(check: bool) -> list:
     return changed
 
 
+# What the table and the patterns must produce. Checked on every run, so a reordered pattern or a
+# gate that stopped seeing Chinese fails here instead of passing quietly.
+EXPECTED = {
+    "02:46 (2小时47分后恢复)": "02:46 (in 2h 47m)",
+    "01-05 15:06 (4天15小时后恢复)": "01-05 15:06 (in 4d 15h)",
+    "3天4小时后到期": "expires in 3d 4h",
+    "GPT-5.3-Codex-Spark 5小时配额": "GPT-5.3-Codex-Spark 5-hour limit",
+    "X 1.5小时配额": "X 1.5-hour limit",
+    "X 45分钟配额": "X 45-minute limit",
+    "Sonnet 每周用量": "Sonnet weekly usage",
+    "每周用量上限 (Weekly)": "Weekly usage limit",
+}
+
+
+def self_check() -> None:
+    for source, wanted in EXPECTED.items():
+        got = rewrite(source)
+        assert got == wanted, f"rewrite({source!r}) = {got!r}, want {wanted!r}"
+        assert rewrite(got) == got, f"rewrite is not idempotent on {source!r}"
+    assert HAN.search(rewrite("每日限额")), "the gate no longer sees an untranslated phrase"
+
+
 def main() -> int:
+    if any(argument != "--check" for argument in sys.argv[1:]):
+        sys.exit(__doc__)
+    self_check()
     check = "--check" in sys.argv[1:]
-    files = subprocess.check_output(["git", "ls-files"], text=True, cwd=ROOT).split("\n")
+    # -z: git quotes a path with non-ASCII characters otherwise, and a quoted path is not a file.
+    files = subprocess.check_output(["git", "ls-files", "-z"], text=True, cwd=ROOT).split("\0")
     changed, unknown = strip_recordings(check), []
     for name in filter(None, files):
         path = ROOT / name
         if not path.is_file() or any(rule.search(name) for rule in ALLOWED):
             continue
+        if HAN.search(name):
+            unknown.append((0, name + "  (the file name)"))
+        raw = path.read_bytes()
+        if b"\0" in raw:
+            continue  # binary
         try:
-            with open(path, encoding="utf-8", newline="") as handle:
-                text = handle.read()
+            text = raw.decode("utf-8")
         except UnicodeDecodeError:
+            unknown.append((0, name + "  (not UTF-8, cannot be checked)"))
             continue
         if not HAN.search(text):
             continue

@@ -987,7 +987,7 @@ test('model trend tooltip honors the console token unit style', () => {
   );
 });
 
-test('a stored token style the console no longer offers reads as the default', () => {
+test('a stored token style the console does not offer reads as the default', () => {
   for (const stored of ['zh', 'klingon', 42, null, undefined]) {
     assert.equal(parseTokenNumberStyle(stored) ?? DEFAULT_TOKEN_NUMBER_STYLE, 'en-compact');
   }

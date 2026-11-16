@@ -87,6 +87,9 @@ jobs:
           pnpm verify:workflow:lint
       - name: Verify pinned toolchain
         run: pnpm verify:toolchain:strict
+      # Fork: this job runs for every change, so Chinese cannot return through a Go-only one.
+      - name: Check the fork is English only
+        run: pnpm check:english
       - name: Check documentation links
         run: pnpm check-docs
       - name: Scan worktree and history

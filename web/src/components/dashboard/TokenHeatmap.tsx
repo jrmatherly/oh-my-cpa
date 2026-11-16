@@ -647,7 +647,7 @@ export const TokenHeatmap: React.FC = React.memo(function TokenHeatmap() {
             </div>
 
             <div className="heatmap-body">
-              {/* The weekday labels are a column of single letters (or two, in Chinese).
+              {/* The weekday labels are a column of single letters.
                   GitHub prints only alternating ones; a full week is what makes the rows
                   readable without counting them. */}
               <div className="heatmap-weekdays" aria-hidden="true">
