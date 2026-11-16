@@ -53,9 +53,8 @@ Plugin-store translations are optional publisher metadata, not a plugin page's
 language or installation identity. The [locale projection](../internal/api/management_plugin_projection.go)
 decodes CPA's HTML entities once before bounding the allowlisted text and validating
 URLs. Consumers still render the decoded values as text. The browser's
-[shared metadata selector](../web/src/types/pluginStoreMetadata.ts) maps OMC's reading
-languages explicitly, keeps Simplified and Traditional Chinese separate, and falls
-back to base metadata per missing field. Cards, catalog-derived installed information,
+[shared metadata selector](../web/src/types/pluginStoreMetadata.ts) selects the
+publisher's English entry and falls back to base metadata per missing field. Cards, catalog-derived installed information,
 confirmation names and search use that selection; IDs, provenance, trust and install
 targets remain independent. Installed names and authors use catalog translations only
 when the catalog source matches the installed copy. Older responses without translations

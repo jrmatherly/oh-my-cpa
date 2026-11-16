@@ -1,4 +1,4 @@
-// Landing page behaviour: theme, language preference, copy buttons, install tabs, and the
+// Landing page behaviour: theme, copy buttons, install tabs, and the
 // scripted stories that replay the console. The page is complete without it: every story is
 // rendered in its finished state, and each block below only replays or enhances that markup.
 (function () {

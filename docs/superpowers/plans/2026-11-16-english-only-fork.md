@@ -34,14 +34,15 @@ of these is wrong.
 | --- | --- | --- |
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
 | 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
-| 3 | Docs, README, screenshots, public site, issue templates | Done on `feat/english-only-docs` |
+| 3 | Docs, README, screenshots, public site, issue templates | Pull request 6 |
 | 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Not started |
 
 ### Phase 3: docs and the public site
 
 Done. `docs/zh/`, `README.zh-CN.md`, the `.zh` screenshots, the two `zh` social cards,
 `scripts/compact-locales.mjs` and the docs app's `LocaleMemory` are deleted, and every file that
-named them is edited. The gate's allow list holds the script alone.
+named them is edited. The gate's allow list holds the script alone, and a scan for Chinese over
+tracked files lists only that script.
 
 The `[lang]` route segment is kept with one language, and so are the `{ en: ... }` records in the
 docs manifest and the landing copy. Page addresses stay `/docs/en/...`, and an upstream change to
@@ -64,9 +65,8 @@ Known traps, still true:
 
 ### Phase 4: final sweep
 
-- `english-strings.py`'s `ALLOWED` holds only the script itself. Done in phase 3.
-- A scan for Chinese over tracked files lists only that script. Done in phase 3.
-- Read the "English only" section of the skill once more against the tree. Every file it names exists.
+- Read the "English only" section of the skill once more against the tree: every file it names exists
+  or is listed there as deleted.
 - Run one real upstream sync through `english-only.sh` then `english-strings.py`. Both have only
   been tested against simulated merges.
 - A retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) is accepted silently. Add one warning log

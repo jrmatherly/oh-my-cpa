@@ -28,6 +28,6 @@ of prose in Git. Instead, `scripts/sync-docs-site.mjs` (invoked automatically by
 `deploy/site/docs/content/docs/`, plus a Markdown copy of every page and `llms.txt` for
 agents:
 
-- Edit English guides in `docs/` (plus [`CONTEXT.md`](../CONTEXT.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md)). `DOCS_SECTIONS` in the sync script owns the site's navigation, titles and descriptions.
+- Edit guides in `docs/` (plus [`CONTEXT.md`](../CONTEXT.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md)). `DOCS_SECTIONS` in the sync script owns the site's navigation, titles and descriptions.
 - Do not hand-edit generated `.mdx` files inside `deploy/site/docs/content/docs/`—they are ignored by Git and regenerated deterministically from the canonical sources above.
 - Run `pnpm check-docs` to verify offline Markdown links and anchor fragments across the repository.
