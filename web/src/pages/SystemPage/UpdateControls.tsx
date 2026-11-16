@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import clsx from 'clsx';
 import { CloudDownloadOutlined, InfoCircleOutlined, LinkOutlined } from '../../components/icons';
 import { ConfirmAction } from '../../components/common/ConfirmAction';
@@ -14,7 +14,7 @@ import styles from '../SystemPage.module.css';
 
 /** Run on the Docker host; `-u 0` because the socket it mounts belongs to root. */
 export const UPDATER_INSTALL_COMMAND = 'docker run --rm --pull always -u 0 -v /var/run/docker.sock:/var/run/docker.sock wiziscool/oh-my-cpa:latest updater install';
-const UPDATER_GUIDE_URL = 'https://github.com/WizisCool/oh-my-cpa/blob/main/docs/install.md#upgrading';
+const UPDATER_GUIDE_URL = 'https://github.com/WizisCool/oh-my-cpa/blob/main/docs/install/upgrade.md#enabling-console-updates-on-an-existing-deployment';
 
 interface UpdateActionProps {
   version: SystemProductVersion;
@@ -44,8 +44,8 @@ export const UpdateAction: React.FC<UpdateActionProps> = ({ version, productTitl
       disabled={isRunning || isHeld || isSubmitting}
     >
       <Button
-        type="primary"
-        size="small"
+        variant="primary"
+        size="sm"
         className={styles['update-action']}
         icon={<CloudDownloadOutlined />}
         loading={isRunning || isSubmitting}

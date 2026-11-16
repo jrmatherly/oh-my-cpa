@@ -25,8 +25,6 @@ func TestSeedQuotaObservationsIncludeScopedAndPreviousCycles(t *testing.T) {
 	if err := json.Unmarshal([]byte(latest["auth-antigravity-01"].WindowsJSON), &windows); err != nil {
 		t.Fatal(err)
 	}
-	// Three families, one bucket each for the weekly-only one: the shape that proves a group's
-	// single reading reaches a column of its own instead of being read as a second plan window.
 	families := make([][]string, 0, len(windows))
 	for _, window := range windows {
 		families = append(families, window.ModelFamilies)
@@ -40,45 +38,51 @@ func TestSeedQuotaObservationsIncludeScopedAndPreviousCycles(t *testing.T) {
 			t.Fatalf("demo antigravity window %d families=%v, want %v", index, family, want[index])
 		}
 	}
-	// A family the capacity estimate cannot classify withholds the whole reading, so the names
-	// must resolve to known capacity families rather than merely being recorded.
 	if _, reason := quota.SelectWindowUsage(windows[len(windows)-1], nil); reason != "" {
 		t.Fatalf("demo weekly-only family is not a known capacity family: %q", reason)
 	}
+
+	primary := latest["auth-codex-01"]
+	observationWindows := []quota.QuotaWindow{}
+	if err := json.Unmarshal([]byte(primary.WindowsJSON), &observationWindows); err != nil {
+		t.Fatal(err)
+	}
+	primaryCycles, err := repo.LoadCapacityCycles(ctx, "auth-codex-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasCapacity := false
+	for _, window := range observationWindows {
+		cap, _ := quota.EstimateWindowCapacity(window, nil, primary.ObservedAtMS, primary.ObservedAtMS, nil, primaryCycles[quota.CapacityWindowKey("codex", window)])
+		hasCapacity = hasCapacity || cap != nil
+	}
+	if !hasCapacity {
+		t.Fatalf("demo direct window capacity missing: %+v", primaryCycles)
+	}
+
 	windows = nil
 	if err := json.Unmarshal([]byte(latest["auth-codex-02"].WindowsJSON), &windows); err != nil {
 		t.Fatal(err)
 	}
-	records, err := repo.GetQuotaSnapshotHistory(ctx, "auth-codex-02", 50)
+	cycles, err := repo.LoadCapacityCycles(ctx, "auth-codex-02")
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := []quota.ObservedWindows{}
-	for _, record := range records {
-		var observed []quota.QuotaWindow
-		if err := json.Unmarshal([]byte(record.WindowsJSON), &observed); err != nil {
-			t.Fatal(err)
-		}
-		history = append(history, quota.ObservedWindows{ObservedAtMS: record.ObservedAtMS, Windows: observed})
+	evidence := cycles[quota.CapacityWindowKey("codex", windows[0])]
+	if len(evidence) != 2 || len(evidence[1].Points) == 0 || evidence[1].Points[0].Requests == 0 {
+		t.Fatalf("demo previous cycle has no recorded evidence: %+v", evidence)
 	}
-	points := quota.CapacityReferencePoints(windows[0], history, latest["auth-codex-02"].ObservedAtMS)
-	if len(points) == 0 {
-		t.Fatal("demo has no historical capacity observation")
-	}
-	previous, observedAtMS := points[0].Window, points[0].ObservedAtMS
-	fromMS, toMS, reason := quota.WindowCycleRange(previous, observedAtMS, observedAtMS)
-	usage, err := repo.QueryCredentialWindowUsage(ctx, "auth-codex-02", fromMS, toMS)
-	if err != nil || reason != "" || usage.Requests == 0 {
-		t.Fatalf("demo previous reading has no real usage: %+v %q %v", usage, reason, err)
+	if cap, reason := quota.EstimateWindowCapacity(windows[0], nil, latest["auth-codex-02"].ObservedAtMS, latest["auth-codex-02"].ObservedAtMS, nil, evidence); cap == nil || reason != "" {
+		t.Fatalf("demo secondary capacity missing: cap=%+v reason=%q", cap, reason)
 	}
 }
 
-func TestSeedQuotaObservationsWrapSnapshotFailure(t *testing.T) {
+func TestSeedQuotaObservationsWrapCancellation(t *testing.T) {
 	repo, now, _ := seededDatabase(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err := seedQuotaObservations(ctx, repo, now)
-	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "save quota snapshot for auth-codex-01") {
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "for auth-codex-01") {
 		t.Fatalf("seed failure must identify the credential and preserve cancellation: %v", err)
 	}
 }

@@ -2,7 +2,8 @@ import type { MessageKey } from '../i18n/catalog';
 import { FilterDisclosure } from '../components/common/FilterDisclosure';
 import React, { useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Select } from 'antd';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PlusOutlined } from '../components/icons';
 import { PageHeader } from '../components/common/PageHeader';
@@ -81,7 +82,10 @@ export const ProvidersPage: React.FC = () => {
     createProviderMutation,
     deleteProviderMutation,
     updateProviderMutation,
-    statusQueue,
+    toggleProviderStatus,
+    busyProviderIds,
+    testingKeyIds,
+    isTestingAllKeys,
     providerDrawerOpen,
     editingProvider,
     formFamily,
@@ -229,13 +233,13 @@ export const ProvidersPage: React.FC = () => {
   const overview = summarizeProviders(
     providerOrder.ordered,
     filters,
-    (provider) => statusQueue.targetFor(provider.id) ?? !provider.disabled,
+    (provider) => !provider.disabled,
     traffic,
   );
   const hasList = !providersLoading && !(providersError && providers.length === 0);
 
   const totalProviders = providers.length;
-  const isProviderEnabled = (p: typeof providers[number]) => statusQueue.targetFor(p.id) ?? !p.disabled;
+  const isProviderEnabled = (p: typeof providers[number]) => !p.disabled;
   const activeCount = providers.filter((p) => isProviderEnabled(p)).length;
   const attentionCount = providers.filter((p) => {
     const enabled = isProviderEnabled(p);
@@ -285,14 +289,14 @@ export const ProvidersPage: React.FC = () => {
         title={t('pro.title')}
         mobileActions={(
           <>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>{t('pro.add_provider')}</Button>
+            <Button variant="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>{t('pro.add_provider')}</Button>
           </>
         )}
         actions={(
           <>
             {/* Creating a provider writes the gateway's configuration, which the demonstration
                 refuses; the drawer still opens so the form can be read. */}
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+            <Button variant="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
               {t('pro.add_provider')}
             </Button>
           </>
@@ -350,7 +354,7 @@ export const ProvidersPage: React.FC = () => {
               ]}
             />
             {isFiltered && (
-              <Button type="link" size="small" onClick={() => setFilters(DEFAULT_PROVIDER_FILTERS)}>
+              <Button variant="link" size="sm" onClick={() => setFilters(DEFAULT_PROVIDER_FILTERS)}>
                 {t('pro.clear_filters')}
               </Button>
             )}
@@ -383,11 +387,21 @@ export const ProvidersPage: React.FC = () => {
         traffic={traffic}
         providerIcons={providerIcons}
         pluginLogos={pluginLogos}
-        statusQueue={statusQueue}
+        toggleProviderStatus={toggleProviderStatus}
+        busyProviderIds={busyProviderIds}
         deleteProviderMutation={deleteProviderMutation}
-        handleOpenEdit={handleOpenEdit}
-        setIconPickerOpen={setIconPickerOpen}
-        setTargetProviderForIcon={setTargetProviderForIcon}
+        handleOpenEdit={(provider) => {
+          if (providerDrawerOpen || iconPickerOpen) return;
+          handleOpenEdit(provider);
+        }}
+        setIconPickerOpen={(open) => {
+          if (open && (providerDrawerOpen || iconPickerOpen)) return;
+          setIconPickerOpen(open);
+        }}
+        setTargetProviderForIcon={(provider) => {
+          if (provider && (providerDrawerOpen || iconPickerOpen)) return;
+          setTargetProviderForIcon(provider);
+        }}
         onRename={renameProvider}
         onMove={providerOrder.loaded ? providerOrder.move : undefined}
       />
@@ -464,6 +478,8 @@ export const ProvidersPage: React.FC = () => {
           setThinkingLevels={setThinkingLevels}
           toggleKeyExpanded={toggleKeyExpanded}
           handleKeyAdd={handleKeyAdd}
+          testingKeyIds={testingKeyIds}
+          isTestingAllKeys={isTestingAllKeys}
           handleTestKey={handleTestKey}
           handleTestAllKeys={handleTestAllKeys}
           handleCloseProviderDrawer={handleCloseProviderDrawer}

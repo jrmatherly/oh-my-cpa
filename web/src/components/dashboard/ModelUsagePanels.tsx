@@ -1,9 +1,12 @@
 import React from 'react';
-import { Segmented } from 'antd';
+import { Segmented } from '@/components/ui/segmented';
 import { clsx } from 'clsx';
+import { Layers } from 'lucide-react';
 import { ParagraphPlaceholder } from '../common/ContentPlaceholder';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { api, ApiError } from '../../api/client';
+import { ApiError } from '../../api/client';
+import { LazyModelTokenTrend } from '../../charts/lazyCharts';
+import { useSwrQuery } from '../../performance/swrContract';
+import { dashboardModelsSwr } from './dashboardQueries';
 import { useT } from '../../i18n';
 import { useOpenPriceEditor } from '../pricing/PricingEditorContext';
 import { seriesColorRange, seriesDomainKey, seriesGroupLabel as groupLabel } from '../../charts/chartTheme';
@@ -17,7 +20,6 @@ import {
   formatTokensFull,
   withGroupBy,
   type DashboardModelUsage,
-  type DashboardModelsResponse,
 } from '../../types/dashboardModels';
 import { formatCurrency } from '../../types/currencyDisplay';
 import { useDisplayCurrency } from '../../types/CurrencyDisplayContext';
@@ -26,16 +28,8 @@ import { LoadFailure } from '../feedback';
 import { Panel } from '../common/Panel';
 import { ChartLegend } from '../common/ChartLegend';
 import { ModelMark } from '../ModelMark';
-import selectionStyles from '../common/selection.module.css';
 import './dashboard.css';
 import { Tooltip } from '../common/Tooltip';
-
-const LazyModelTokenTrend = React.lazy(() =>
-  import('../../charts/ModelTokenTrend').then((module) => ({ default: module.ModelTokenTrend }))
-);
-const LazyModelUsageDonut = React.lazy(() =>
-  import('../../charts/ModelUsageDonut').then((module) => ({ default: module.ModelUsageDonut }))
-);
 
 export interface ModelUsagePanelsProps {
   /** The window the page's picker selected, serialized exactly as the KPI tiles serialize it. */
@@ -71,7 +65,7 @@ export interface ModelUsagePanelsProps {
  * answer for exactly the grouping on screen. Switching views re-reads the window's ranking, and each
  * view keeps its own cache entry so the two never patch into each other.
  *
- * **One selection, two views.** The trend's line and the ring's slice are two drawings of one group,
+ * **One selection, two views.** The trend's line and the ranking's row are two drawings of one group,
  * so the focus the operator clicks is one fact rather than two: choosing a model in either card
  * chooses it in both. The selection lives in `ModelSeriesFocusProvider` above the cards because they
  * are placed independently - either can be hidden - so no card may own the selection for the other.
@@ -80,17 +74,10 @@ function useDashboardModels({ query, range, enabled }: ModelUsagePanelsProps) {
   const { modelView } = useTokenDisplayStyle();
   const sliding = isSlidingRange(range);
   const modelsQuery = React.useMemo(() => withGroupBy(query, modelView), [query, modelView]);
-  return useQuery<DashboardModelsResponse>({
-    queryKey: [DASHBOARD_MODELS_QUERY_KEY, modelsQuery],
-    queryFn: () => api.getDashboardModels(modelsQuery),
+  return useSwrQuery(dashboardModelsSwr, modelsQuery, {
     enabled,
     refetchInterval: sliding ? DASHBOARD_MODELS_REFRESH_MS : false,
     refetchOnWindowFocus: sliding,
-    staleTime: DASHBOARD_MODELS_REFRESH_MS / 2,
-    // A refresh that failed keeps the panels the operator is reading: replacing a month of ranking
-    // with an error card because one poll timed out is worse than showing slightly old data.
-    placeholderData: keepPreviousData,
-    meta: { silent: true },
   });
 }
 
@@ -142,7 +129,7 @@ const ModelViewToggle: React.FC = () => {
   return (
     <Segmented
       className="model-view-toggle"
-      size="small"
+      size="sm"
       value={modelView}
       options={[
         { value: 'call', label: t('dash.models.view_call') },
@@ -222,14 +209,18 @@ const ModelSeriesName: React.FC<{
 }> = ({ group, foldedLabel, unnamedLabel }) => {
   const label = groupLabel(group, foldedLabel, unnamedLabel);
   return (
-    <span className="model-series-name" title={label}>
-      {!group.folded && <ModelMark model={group.model} size={16} className="model-series-mark" />}
+    <span className="model-series-name" data-tip={label} data-tip-overflow="">
+      {group.folded ? (
+        <Layers size={16} strokeWidth={1.75} className="model-series-mark model-series-mark-folded" aria-hidden="true" />
+      ) : (
+        <ModelMark model={group.model} size={16} className="model-series-mark" />
+      )}
       <span className="model-series-text">{label}</span>
     </span>
   );
 };
 
-export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = ({ hasViewToggle = false, ...props }) => {
+export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = React.memo(function ModelTrendPanel({ hasViewToggle = false, ...props }) {
   const t = useT();
   const { theme } = useTheme();
   const models = useDashboardModels(props);
@@ -267,15 +258,15 @@ export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = ({ hasViewToggle 
           <p className="empty-copy model-empty">{t('dash.models.empty')}</p>
         ) : (
           <React.Suspense fallback={chartFallback}>
-            <LazyModelTokenTrend groups={groups} focusedKey={focusedKey} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} tokenUnitLabel={t('dash.unit_tokens')} onFocusGroup={toggleSeries} onClearFocus={clearFocus} />
+            <LazyModelTokenTrend groups={groups} focusedKey={focusedKey} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} totalLabel={t('dash.models.total')} tokenUnitLabel={t('dash.unit_tokens')} onFocusGroup={toggleSeries} onClearFocus={clearFocus} />
           </React.Suspense>
         )}
       </ModelPanelBody>
     </Panel>
   );
-};
+});
 
-export const ModelUsagePanel: React.FC<ModelUsagePanelsProps> = (props) => {
+export const ModelUsagePanel: React.FC<ModelUsagePanelsProps> = React.memo(function ModelUsagePanel(props) {
   const t = useT();
   const { theme } = useTheme();
   const { modelView, style: tokenStyle } = useTokenDisplayStyle();
@@ -285,72 +276,140 @@ export const ModelUsagePanel: React.FC<ModelUsagePanelsProps> = (props) => {
   const unnamedLabel = t('dash.models.unnamed');
   const groups = React.useMemo(() => models.data?.models ?? [], [models.data]);
   const total = models.data?.total_tokens ?? 0;
-  const { focusedKey, toggleSeries, clearFocus } = useSeriesFocus(groups, models.data !== undefined);
+  const { focusedKey, toggleSeries } = useSeriesFocus(groups, models.data !== undefined);
   const colors = React.useMemo(() => seriesColorRange(theme.palette, groups), [theme.palette, groups]);
+  // A pointer over a row or a segment marks that group in the bar and washes its row; only a click
+  // dims the rest, and that choice is the one the trend card shares. The mark clears when the pointer
+  // leaves the bar or the list, not between two rows, so crossing a row boundary never flickers.
+  // Mouse only - a tap is a choice. A choice outranks a passing pointer: while a group is chosen the
+  // bar keeps marking it, so reaching for another row on the way to the trend does not unmark it.
+  const [hoveredKey, setHoveredKey] = React.useState<string | null>(null);
+  const markedKey = focusedKey ?? hoveredKey;
+  const onHover = (key: string) => (event: React.PointerEvent) => {
+    if (event.pointerType === 'mouse') setHoveredKey(key);
+  };
+  const clearHover = () => setHoveredKey(null);
 
   return (
     <Panel
       className="dashboard-tile model-usage-card"
-      title={<span className="tile-label">{t('dash.models.usage_title')}</span>}
+      title={
+        <span className="model-usage-title">
+          <span className="tile-label">{t('dash.models.usage_title')}</span>
+          {groups.length > 0 ? <ModelUsageTotal groups={groups} totalTokens={total} /> : null}
+        </span>
+      }
       extra={<ModelViewToggle />}
     >
       <ModelPanelBody models={models}>
         {groups.length === 0 ? (
           <p className="empty-copy model-empty">{t('dash.models.empty')}</p>
         ) : (
-          <div className="model-usage-body">
-            <React.Suspense fallback={chartFallback}>
-              <LazyModelUsageDonut groups={groups} totalTokens={total} focusedKey={focusedKey} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} tokenUnitLabel={t('dash.unit_tokens')} onFocusGroup={toggleSeries} onClearFocus={clearFocus} />
-            </React.Suspense>
+          <>
             {/*
-              The ranked list is the ring's legend, its label column and its values in one. A separate
-              library legend would print the same ranking a second time with no numbers, and a reader
-              comparing two models needs the numbers - a slice's angle is a poor way to compare 5.9%
-              against 4.6%.
+              The card's one drawing: a bar the groups divide between them, so the parts read as parts
+              of one total. Everything under it is text. A segment keeps a dot's width at the smallest
+              shares, and its colour is the one the trend draws the group in.
             */}
-            <ol className="model-usage-list" aria-label={t('dash.models.usage_title')}>
-              {groups.map((group, index) => (
-                // Reading order is name, cost, volume, share - widest to narrowest claim: what
-                // the group is, what it cost, how much it moved, and its slice of the window.
-                // The cost sits beside the name rather than at the far edge because it is the
-                // second thing an operator reads a spend table for, and the share stays last
-                // where it continues the percentage column of the ring beside it.
-                <li className="model-usage-row" key={seriesDomainKey(group)}>
-                  <span className="model-usage-swatch" style={{ background: colors[index] }} aria-hidden="true" />
-                  <span className="model-usage-name">
-                    <button
-                      type="button"
-                      className={clsx('model-usage-name-button', selectionStyles['selection-control'])}
-                      aria-pressed={focusedKey === seriesDomainKey(group)}
-                      data-dimmed={focusedKey !== null && focusedKey !== seriesDomainKey(group)}
-                      title={t(focusedKey === seriesDomainKey(group) ? 'dash.models.clear_series_focus' : 'dash.models.focus_series')}
-                      onClick={() => toggleSeries(seriesDomainKey(group))}
-                    >
-                      <ModelSeriesName group={group} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} />
-                    </button>
-                  </span>
-                  <ModelCost
-                    group={group}
-                    // Only the model view names what a price is keyed on: a call point may be an alias
-                    // whose requests are priced under the upstream model it resolved to.
-                    onPrice={openPriceEditor && modelView === 'model' && !group.folded && group.model ? () => openPriceEditor(group.model) : undefined}
-                  />
+            <div className="model-usage-bar" aria-hidden="true" data-has-mark={markedKey !== null || undefined} onPointerLeave={clearHover}>
+              {groups.map((group, index) =>
+                group.tokens > 0 ? (
                   <span
-                    className="model-usage-tokens"
-                    // The exact count lives in the accessible name: the compact cell is for scanning,
-                    // and the rounding it applies must never be mistaken for the number itself.
-                    title={`${formatTokensFull(group.tokens)} ${t('dash.unit_tokens')}`}
+                    key={seriesDomainKey(group)}
+                    className="model-usage-segment"
+                    data-marked={markedKey === seriesDomainKey(group) || undefined}
+                    style={{ flexGrow: group.tokens, background: colors[index] }}
+                    onPointerEnter={onHover(seriesDomainKey(group))}
+                    onClick={() => toggleSeries(seriesDomainKey(group))}
+                  />
+                ) : null,
+              )}
+            </div>
+            <ol className="model-usage-list" aria-label={t('dash.models.usage_title')} data-has-focus={focusedKey !== null || undefined} onPointerLeave={clearHover}>
+              {groups.map((group, index) => {
+                const key = seriesDomainKey(group);
+                const isFocused = focusedKey === key;
+                return (
+                  // Reading order is name, cost, volume, share - what the group is, what it cost, how
+                  // much it moved, and its slice of the window.
+                  <li
+                    className="model-usage-row"
+                    key={key}
+                    data-hovered={hoveredKey === key || undefined}
+                    data-focused={isFocused || undefined}
+                    onPointerEnter={onHover(key)}
                   >
-                    {formatModelTokens(group.tokens, tokenStyle)}
-                  </span>
-                  <span className="model-usage-share">{formatModelShare(group.tokens, total)}</span>
-                </li>
-              ))}
+                    <span className="model-usage-name">
+                      <span className="model-usage-key" style={{ background: colors[index] }} aria-hidden="true" />
+                      <button type="button" className="model-usage-name-button" aria-pressed={isFocused} onClick={() => toggleSeries(key)}>
+                        <ModelSeriesName group={group} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} />
+                      </button>
+                    </span>
+                    <ModelCost
+                      group={group}
+                      // Only the model view names what a price is keyed on: a call point may be an alias
+                      // whose requests are priced under the upstream model it resolved to.
+                      onPrice={openPriceEditor && modelView === 'model' && !group.folded && group.model ? () => openPriceEditor(group.model) : undefined}
+                    />
+                    <span
+                      className="model-usage-tokens"
+                      // The exact count lives in the accessible name: the compact cell is for scanning,
+                      // and the rounding it applies must never be mistaken for the number itself.
+                      data-tip={`${formatTokensFull(group.tokens)} ${t('dash.unit_tokens')}`}
+                    >
+                      {formatModelTokens(group.tokens, tokenStyle)}
+                    </span>
+                    <span className="model-usage-share">{formatModelShare(group.tokens, total)}</span>
+                  </li>
+                );
+              })}
             </ol>
-          </div>
+          </>
         )}
       </ModelPanelBody>
     </Panel>
+  );
+});
+
+/** Whether a group carries a priced spend - which may be an explicit zero, a free model. */
+function isPriced(group: DashboardModelUsage): group is DashboardModelUsage & { cost_usd: number } {
+  return group.priced_requests > 0 && group.cost_usd != null;
+}
+
+/**
+ * The window's sum in the card's head: every group's volume and, where any of it was priced, the
+ * spend. The spend is summed over the priced requests only, so a window with unpriced traffic shows
+ * it in the quieter ink and names the priced share - the same reading the row's own cost cell gives.
+ */
+const ModelUsageTotal: React.FC<{ groups: readonly DashboardModelUsage[]; totalTokens: number }> = ({ groups, totalTokens }) => {
+  const t = useT();
+  const { style: tokenStyle } = useTokenDisplayStyle();
+  const { currency } = useDisplayCurrency();
+  let cost = 0;
+  let priced = 0;
+  let requests = 0;
+  for (const group of groups) {
+    requests += group.requests;
+    if (!isPriced(group)) continue;
+    cost += group.cost_usd;
+    priced += group.priced_requests;
+  }
+  const isPartial = priced > 0 && priced < requests;
+  return (
+    <span className="model-usage-total" data-tip={`${formatTokensFull(totalTokens)} ${t('dash.unit_tokens')}`}>
+      <span className="model-usage-total-label">{t('dash.models.total')}</span>
+      <b>{formatModelTokens(totalTokens, tokenStyle)}</b>
+      <span className="model-usage-total-unit">{t('dash.unit_tokens')}</span>
+      {priced > 0 ? (
+        <b
+          className={clsx('model-usage-total-cost', isPartial && 'is-partial')}
+          data-tip={isPartial ? t('dash.models.cost_partial', { priced, total: requests }) : undefined}
+        >
+          {formatCurrency(cost, currency)}
+          {isPartial ? <span className="sr-only">{` (${t('dash.models.cost_partial', { priced, total: requests })})`}</span> : null}
+        </b>
+      ) : null}
+    </span>
   );
 };
 
@@ -378,8 +437,8 @@ const ModelCost: React.FC<{ group: DashboardModelUsage; onPrice?: () => void }> 
   // cell opens the price editor for it rather than only explaining the gap.
   if (onPrice) {
     return (
-      <Tooltip title={`${note} · ${t('dash.models.set_price')}`}>
-        <button type="button" className={`${className} model-usage-cost-action`} onClick={onPrice} aria-label={`${note} · ${t('dash.models.set_price')}`}>
+      <Tooltip card={{ notes: [note, t('dash.models.set_price')] }}>
+        <button type="button" className={`${className} model-usage-cost-action`} onClick={onPrice} aria-label={`${text}, ${note}. ${t('dash.models.set_price')}`}>
           {text}
         </button>
       </Tooltip>
@@ -387,7 +446,10 @@ const ModelCost: React.FC<{ group: DashboardModelUsage; onPrice?: () => void }> 
   }
   return (
     <Tooltip title={note}>
-      <span className={className}>{text}</span>
+      <span className={className}>
+        {text}
+        <span className="sr-only">{` (${note})`}</span>
+      </span>
     </Tooltip>
   );
 };

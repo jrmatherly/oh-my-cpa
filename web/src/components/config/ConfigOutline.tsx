@@ -30,7 +30,7 @@ export const ConfigOutline: React.FC<{ entries: ConfigOutlineEntry[] }> = ({ ent
   // A pressed row stays current until the reader scrolls again: a card near the end cannot always be
   // scrolled to the top, and position alone would then name a different card than the one pressed.
   const pressedId = React.useRef<string | null>(null);
-  const isShown = entries.length > 1;
+  const isShown = entries.length > 0;
   // The rows' counts and change marks follow every edit; the measuring only cares which cards exist.
   const cardIds = entries.map((entry) => entry.id).join('\n');
 
@@ -96,7 +96,6 @@ export const ConfigOutline: React.FC<{ entries: ConfigOutlineEntry[] }> = ({ ent
                   type="button"
                   className={`config-outline-link${isCurrent ? ' is-current' : isOnScreen ? ' is-on-screen' : ''}`}
                   aria-current={isCurrent ? 'location' : undefined}
-                  title={entry.label}
                   onPointerEnter={() => markTarget(entry.id, true)}
                   onPointerLeave={() => markTarget(entry.id, false)}
                   onFocus={() => markTarget(entry.id, true)}
@@ -109,7 +108,7 @@ export const ConfigOutline: React.FC<{ entries: ConfigOutlineEntry[] }> = ({ ent
                     target.scrollIntoView({ behavior: isMotionReduced() ? 'auto' : 'smooth', block: 'start' });
                   }}
                 >
-                  <span className="config-outline-label">{entry.label}</span>
+                  <span className="config-outline-label" data-tip={entry.label} data-tip-overflow="">{entry.label}</span>
                   {entry.isDirty && <span className="config-change-dot" role="img" aria-label={t('cfg.source_dirty')} />}
                   <span className="config-outline-count">{entry.count}</span>
                 </button>

@@ -1,14 +1,14 @@
 import { prefixedKey } from '../../i18n/catalog';
 import React from 'react';
 
-import { Button, Table, Typography } from 'antd';
+import { Table } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { NumberInput } from '../common/NumberInput';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
+import dayjs from '../../utils/time';
 
 import { api, apiErrorCode, describeError } from '../../api/client';
 import { useT } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
 import { saveBlob } from '../../utils/download';
 import { formatBytes } from '../../utils/format';
 import type { ConfigBackup } from '../../types/configManagement';
@@ -21,8 +21,6 @@ import { ToolButton } from '../common/ToolButton';
 import { ConfirmAction } from '../common/ConfirmAction';
 import { Tooltip } from '../common/Tooltip';
 import { AppModal } from '../common/AppModal';
-
-const { Text } = Typography;
 
 const BACKUPS_QUERY_KEY = ['management-config-backups'];
 
@@ -47,7 +45,6 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
   const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const isDemo = isDemoMode();
   const [isOpen, setIsOpen] = React.useState(false);
   const [downloadingID, setDownloadingID] = React.useState<number | null>(null);
   const [retentionDraft, setRetentionDraft] = React.useState<number | null>(null);
@@ -118,7 +115,6 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
   const describeReason = (reason: string) => t(prefixedKey('cfg.backups_reason_', reason) ?? 'cfg.backups_reason_other');
 
   const restoreBlockedReason = (backup: ConfigBackup): string | undefined => {
-    if (isDemo) return t('demo.blocked');
     if (backup.layout !== 'v8') return t('cfg.backups_restore_legacy');
     if (isDirty) return t('cfg.backups_restore_dirty');
     return undefined;
@@ -137,27 +133,27 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
         size="large"
         onCancel={() => setIsOpen(false)}
       >
-        <Text type="secondary" className={styles['backups-desc']}>
+        <p className={`m-0 text-fg-2 ${styles['backups-desc']}`}>
           {t('cfg.backups_desc', { legacy: settings?.legacy_retention ?? 10 })}
-        </Text>
+        </p>
         <div className={styles['backups-toolbar']}>
           <div className={styles['backups-retention']}>
-            <Text>{t('cfg.backups_retention')}</Text>
+            <span>{t('cfg.backups_retention')}</span>
             <NumberInput
               size="small"
               min={settings?.retention_min ?? 5}
               max={settings?.retention_max ?? 100}
               precision={0}
               value={retentionValue}
-              disabled={!settings || isDemo}
+              disabled={!settings}
               aria-label={t('cfg.backups_retention')}
               onChange={(value) => setRetentionDraft(typeof value === 'number' ? value : null)}
             />
-            <Text type="secondary">{t('cfg.backups_retention_unit')}</Text>
+            <span className="text-fg-2">{t('cfg.backups_retention_unit')}</span>
             {isRetentionChanged && (
               <Button
-                size="small"
-                type="primary"
+                size="sm"
+                variant="primary"
                 loading={settingsMutation.isPending}
                 onClick={() => retentionDraft !== null && settingsMutation.mutate(retentionDraft)}
               >
@@ -166,11 +162,9 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
             )}
           </div>
           <Button
-            size="small"
+            size="sm"
             icon={<PlusOutlined />}
             loading={createMutation.isPending}
-            disabled={isDemo}
-            title={isDemo ? t('demo.blocked') : undefined}
             onClick={() => createMutation.mutate()}
           >
             {t('cfg.backups_create')}
@@ -222,7 +216,7 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
                       tooltip={blockedReason}
                     >
                       <Button
-                        size="small"
+                        size="sm"
                         icon={<RollbackOutlined />}
                         disabled={Boolean(blockedReason) || (restoreMutation.isPending && restoreMutation.variables?.id !== backup.id)}
                         loading={restoreMutation.isPending && restoreMutation.variables?.id === backup.id}
@@ -230,29 +224,28 @@ export const ConfigBackupsButton: React.FC<ConfigBackupsButtonProps> = ({ isDirt
                         {t('cfg.backups_restore')}
                       </Button>
                     </ConfirmAction>
-                    <Button
-                      size="small"
-                      icon={<DownloadOutlined />}
-                      loading={downloadingID === backup.id}
-                      aria-label={t('cfg.backups_download')}
-                      title={t('cfg.backups_download')}
-                      onClick={() => void downloadBackup(backup)}
-                    />
+                    <Tooltip title={t('cfg.backups_download')}>
+                      <Button
+                        size="sm"
+                        icon={<DownloadOutlined />}
+                        loading={downloadingID === backup.id}
+                        aria-label={t('cfg.backups_download')}
+                        onClick={() => void downloadBackup(backup)}
+                      />
+                    </Tooltip>
                     <ConfirmAction
                       title={t('cfg.backups_delete_confirm')}
                       confirmLabel={t('common.delete')}
                       isDanger
-                      disabled={isDemo}
+                      tooltip={t('common.delete')}
                       onConfirm={() => deleteMutation.mutateAsync(backup).catch(() => undefined)}
                     >
                       <Button
-                        size="small"
+                        size="sm"
                         danger
                         icon={<DeleteOutlined />}
-                        disabled={isDemo}
                         loading={deleteMutation.isPending && deleteMutation.variables?.id === backup.id}
                         aria-label={t('common.delete')}
-                        title={isDemo ? t('demo.blocked') : t('common.delete')}
                       />
                     </ConfirmAction>
                   </span>

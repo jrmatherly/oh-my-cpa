@@ -1,3 +1,8 @@
+.config-shell-band {
+  --config-shell-width: 1168px;
+  width: min(100%, var(--config-shell-width));
+  margin-inline: auto;
+}
 .config-notice { margin-bottom: 16px; }
 .config-sync-badge {
   font-size: var(--text-sm);
@@ -7,26 +12,29 @@
 .config-toolbar-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 .config-search-input {
-  width: 240px;
+  flex: 0 1 280px;
+  width: 280px;
+  min-width: 160px;
 }
-/* Balanced three-track workbench: the section rail, then the settings column, which carries the
-   card nav as its own second track so the nav belongs to the cards rather than to the page margin. */
+/* Balanced workbench: aligned to `.config-shell-band` alongside the toolbar above it. Up to 1416px
+   content width it holds the section rail and the 920px column; from 1416px it carries the card
+   outline as its third track without narrowing the cards column below 920px. */
 .config-workbench {
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
   align-items: start;
   gap: 32px;
-  width: min(100%, 1416px);
-  margin-inline: auto;
 }
 .config-section-nav {
   grid-column: 1;
   position: sticky;
-  top: 68px;
+  top: calc(var(--config-toolbar-height) + 16px);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -68,26 +76,21 @@
 }
 .config-main {
   grid-column: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 920px) 216px;
-  column-gap: 32px;
-  align-items: start;
+  display: block;
+  max-width: 920px;
   min-width: 0;
-}
-.config-main > :not(.config-outline) {
-  grid-column: 1;
 }
 .config-section-header {
   margin-bottom: 20px;
 }
 /* A card the nav jumps to lands this far below the scroller's top, clear of the sticky toolbar. A
-   card its row points at takes the stronger hairline a focused field's enclosure does. */
+   card its row points at takes the stronger ring a focused field's enclosure does. */
 .config-main .settings-group {
-  scroll-margin-top: 96px;
-  transition: border-color var(--motion-fast) var(--ease-standard);
+  scroll-margin-top: calc(var(--config-toolbar-height) + 20px);
+  transition: box-shadow var(--motion-fast) var(--ease-standard);
 }
 .config-main .settings-group[data-outline-target] {
-  border-color: var(--muted);
+  box-shadow: 0 0 0 1px var(--muted), var(--edge-drop);
 }
 /* The card nav mirrors the section rail - the same row height, type and ink washes - so the two
    frame the column as one instrument, first level and second. The trailing count is what sets it
@@ -96,11 +99,12 @@
    carried by ink, since a drawn gauge beside the page's own scrollbar reads as a second one. */
 /* Both rails and the section heading share one top line, at rest and stuck under the toolbar. */
 .config-outline {
+  display: none;
   grid-column: 2;
   grid-row: 1 / span 2;
   position: sticky;
-  top: 68px;
-  max-height: calc(100dvh - 200px);
+  top: calc(var(--config-toolbar-height) + 16px);
+  max-height: calc(100dvh - var(--config-toolbar-height) - 136px);
   overflow-y: auto;
   padding: 2px 0;
   scrollbar-width: none;
@@ -282,32 +286,62 @@
   padding: 20px;
   border-top: 1px solid var(--border-soft);
 }
+.settings-tls-body.is-open > .settings-tls-inner {
+  overflow: visible;
+  animation: tls-fold-clip var(--motion-base) step-end;
+}
+@keyframes tls-fold-clip {
+  from { overflow: hidden; }
+}
 :root[data-reduced-motion='true'] {
   .settings-tls-body { transition: none; }
+  .settings-tls-body.is-open > .settings-tls-inner { animation: none; }
 }
 .config-mono-textarea {
   width: 100%;
   font-family: var(--font-mono);
   font-size: var(--text-md);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
-@media (max-width: 1599px) {
-  .config-workbench {
-    width: min(100%, 1168px);
+@container config-page (min-width: 1416px) {
+  .config-shell-band {
+    --config-shell-width: 1416px;
   }
   .config-main {
-    display: block;
-    max-width: 920px;
+    display: grid;
+    grid-template-columns: minmax(0, 920px) 216px;
+    column-gap: 32px;
+    align-items: start;
+    max-width: none;
+  }
+  .config-main > :not(.config-outline) {
+    grid-column: 1;
   }
   .config-outline {
-    display: none;
+    display: block;
+  }
+}
+@container config-page (max-width: 900px) {
+  .config-toolbar-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .config-toolbar-left {
+    flex-wrap: wrap;
+  }
+  .config-toolbar-actions {
+    width: 100%;
+  }
+  .config-search-input {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 140px;
   }
 }
 @media (max-width: 1100px) {
   .config-workbench {
     grid-template-columns: 200px minmax(0, 1fr);
-    width: 100%;
-    margin-inline: 0;
     gap: 24px;
   }
 }
@@ -326,12 +360,20 @@
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-x: contain;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    border-bottom: var(--hairline) solid var(--border-soft);
   }
   .config-nav-btn {
     width: auto;
     white-space: nowrap;
+  }
+  .config-toolbar-actions {
+    width: 100%;
+  }
+  .config-search-input {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 140px;
   }
   .settings-form-grid {
     grid-template-columns: 1fr;
@@ -344,6 +386,7 @@
     width: 100%;
   }
   .config-search-input {
+    flex: 1 1 100%;
     width: 100%;
   }
 }
@@ -351,38 +394,38 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(100%, 1148px);
-  margin-inline: auto;
   box-sizing: border-box;
 }
 .config-source-toolbar {
+  border: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
   flex-wrap: wrap;
   gap: 10px;
   position: relative;
   z-index: 0;
 }
 .config-editor-wrap {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 0;
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background: var(--bg);
   position: relative;
   overflow: visible;
   z-index: 1;
-  transition: border-color var(--motion-fast) var(--ease-standard);
+  transition: box-shadow var(--motion-fast) var(--ease-standard);
 }
 .config-editor-wrap:focus-within {
-  border-color: var(--muted);
+  box-shadow: 0 0 0 1px var(--muted), var(--edge-drop);
 }
 .config-monaco-shell,
 .config-monaco-shell .monaco-editor {
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 .config-monaco-shell {
   width: 100%;
@@ -415,12 +458,12 @@
   padding: 6px 2px 0;
 }
 .config-source-hint kbd {
+  border: 0;
   padding: 0 4px;
   font: inherit;
   color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: var(--radius-sm);
 }
 /* ── Floating dirty action bar (sticky bottom bar) ──────────────────── */
 .config-dirty-bar-portal {
@@ -431,16 +474,19 @@
   display: flex;
   justify-content: center;
   pointer-events: none;
-  z-index: 1100;
+  /* Page chrome: above the focused editor (900), under every overlay - drawers and dialogs (1000)
+     and the save confirmation it opens itself (1050), which would otherwise slide under the bar. */
+  z-index: 950;
   padding: 0 24px;
   transition: inset-inline-start var(--motion-base) var(--ease-standard);
 }
 .config-dirty-bar {
+  border: 0;
   pointer-events: auto;
   width: min(100%, 720px);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   padding: 10px 18px;
   display: flex;
   align-items: center;
@@ -466,32 +512,6 @@
   font-size: var(--text-sm);
   margin-left: 4px;
 }
-.config-dirty-bar-actions .ant-btn {
-  height: 32px;
-  padding-inline: 14px;
-  font-size: var(--text-md);
-  border-radius: var(--radius-sm);
-}
-.config-dirty-btn-discard {
-  background: transparent !important;
-  border-color: var(--border) !important;
-  color: var(--fg-2) !important;
-}
-.config-dirty-btn-discard:hover {
-  background: var(--hover-inset) !important;
-  border-color: var(--muted) !important;
-  color: var(--fg) !important;
-}
-.config-dirty-btn-save {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: var(--accent-on) !important;
-  font-weight: 500;
-}
-.config-dirty-btn-save:hover {
-  background: var(--accent-hover) !important;
-  border-color: var(--accent-hover) !important;
-}
 .payload-rules-container {
   display: flex;
   flex-direction: column;
@@ -499,29 +519,34 @@
   width: 100%;
 }
 .payload-collapse {
-  background: transparent !important;
-  border: none !important;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: visible;
 }
-.payload-collapse > .ant-collapse-item {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-lg) !important;
-  overflow: hidden;
+.payload-collapse > [data-slot="accordion-item"] {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-edge);
+  overflow: visible;
 }
-.payload-collapse > .ant-collapse-item > .ant-collapse-header {
-  padding: 14px 18px !important;
-  align-items: center !important;
-  color: var(--fg) !important;
+.payload-collapse > [data-slot="accordion-item"] [data-slot="accordion-trigger"] {
+  padding: 14px 18px;
+  border-radius: inherit;
 }
-.payload-collapse > .ant-collapse-item > .ant-collapse-content {
-  background: var(--bg) !important;
-  border-top: 1px solid var(--border-soft) !important;
+.payload-collapse > [data-slot="accordion-item"][data-open] [data-slot="accordion-trigger"] {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
-.payload-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
-  padding: 16px !important;
+.payload-collapse > [data-slot="accordion-item"] > [data-slot="accordion-panel"] {
+  background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+  border-end-start-radius: inherit;
+  border-end-end-radius: inherit;
+}
+.payload-collapse > [data-slot="accordion-item"] > [data-slot="accordion-panel"] > div {
+  padding: 16px;
 }
 .payload-panel-header {
   display: flex;
@@ -554,7 +579,7 @@
   gap: 14px;
   padding: 32px 20px;
   border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--surface);
   text-align: center;
 }
@@ -564,8 +589,9 @@
   gap: 14px;
 }
 .payload-rule-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 0;
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background: var(--surface);
   padding: 14px 16px;
   display: flex;
@@ -677,6 +703,119 @@
   gap: 8px;
   align-items: center;
 }
+.string-map-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  gap: 8px;
+}
+.string-map-editor.has-rows {
+  align-items: stretch;
+}
+.string-map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.string-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+.string-map-arrow {
+  color: var(--meta);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1;
+  user-select: none;
+}
+.string-map-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.string-map-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  line-height: 1.4;
+}
+.pattern-rules-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  gap: 8px;
+}
+.pattern-rules-editor.has-rows {
+  align-items: stretch;
+}
+.pattern-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.pattern-rule-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+.pattern-rule-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pattern-rules-arrow {
+  color: var(--meta);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1;
+  user-select: none;
+}
+.pattern-rules-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.pattern-rules-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .string-map-editor {
+    align-items: flex-start;
+  }
+  .pattern-rules-editor {
+    align-items: flex-start;
+  }
+  .pattern-rule-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .pattern-rule-pattern {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .pattern-rule-actions {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .pattern-rules-arrow {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: center;
+  }
+  .pattern-rule-replacement {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}
 @media (max-width: 640px) {
   .config-dirty-bar-portal {
     inset-inline-start: 0;
@@ -684,6 +823,7 @@
     padding: 0 12px;
   }
   .config-dirty-bar {
+    border: 0;
     padding: 8px 12px;
     flex-wrap: wrap;
     gap: 10px;
@@ -742,13 +882,13 @@
   .config-source-container { gap: 8px; }
   .config-source-toolbar { padding: 4px 0; border: 0; background: transparent; gap: 8px; }
   .config-source-actions { gap: 4px; width: 100%; }
-  .config-source-actions > .ant-btn { padding-inline: 8px; min-height: 40px; }
+  .config-source-actions > [data-slot="button"] { padding-inline: 8px; min-height: 40px; }
   .config-monaco-shell { height: var(--source-available-height, 440px); }
   .config-monaco-loading { min-height: 0; height: 100%; padding: 12px; }
   .config-source-hint { display: none; }
   .config-dirty-bar-portal { inset-inline: 0; padding-inline: 12px; bottom: max(12px, env(safe-area-inset-bottom)); }
-  .config-dirty-bar { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+  .config-dirty-bar { border: 0; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
   .config-dirty-bar-left { gap: 8px; min-width: 0; flex-wrap: wrap; }
   .config-dirty-bar-actions { margin-inline-start: auto; }
-  .config-dirty-bar-actions .ant-btn { min-height: 40px; }
+  .config-dirty-bar-actions [data-slot="button"] { min-height: 40px; }
 }

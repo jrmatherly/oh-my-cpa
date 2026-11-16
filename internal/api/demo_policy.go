@@ -132,6 +132,10 @@ var demoPolicy = []demoPolicyRule{
 	// sign-in card uses. They are verdicts on API paths, so they resolve before the
 	// `/api/*` fallback refuses an unclassified one.
 	{http.MethodGet, "/api/healthz", demoAllow, ""},
+	// State coordination SSE streams answer 204 in demo mode rather than holding a stream open.
+	{http.MethodGet, "/api/events", demoAllow, ""},
+	{http.MethodGet, "/api/v1/events", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/state", demoAllow, ""},
 	{http.MethodPost, "/api/auth/login", demoAllow, ""},
 	{http.MethodGet, "/api/auth/session", demoAllow, ""},
 	{http.MethodPost, "/api/auth/logout", demoAllow, ""},
@@ -182,6 +186,8 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodPut, "/api/v1/pricing/models/{model}", demoAllow, ""},
 	{http.MethodDelete, "/api/v1/pricing/models/{model}", demoAllow, ""},
 	{http.MethodPost, "/api/v1/pricing/models/{model}/dismiss-candidate", demoAllow, ""},
+	{http.MethodPost, "/api/v1/pricing/models/{model}/price-unpriced", demoAllow, ""},
+	{http.MethodPost, "/api/v1/pricing/price-unpriced", demoAllow, ""},
 	{http.MethodPut, "/api/v1/pricing/channels/{channel}", demoAllow, ""},
 	{http.MethodDelete, "/api/v1/pricing/channels/{channel}", demoAllow, ""},
 	{http.MethodPut, "/api/v1/pricing/sync-schedule", demoAllow, ""},
@@ -247,10 +253,12 @@ var demoPolicy = []demoPolicyRule{
 
 	// Configuration and capability reads. The console renders them; nothing here
 	// writes to the gateway.
+	{http.MethodGet, "/api/v1/management/outbound-proxy", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config/source", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config/backups", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/providers", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/identity-directory", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/routing", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/routing/models", demoAllow, ""},
 
@@ -275,6 +283,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodGet, "/api/v1/management/oauth/status", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/quota", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/quota/{authIndex}", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/quota/{authIndex}/capacity", demoAllow, ""},
 	{http.MethodPost, "/api/v1/management/quota/refresh", demoAllow, ""},
 
 	// A manual capture pass is answered locally: it reports a pass that found an
@@ -347,6 +356,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodGet, "/api/v1/plugin-host/v1/models", demoRefuse, "plugin pages are disabled: plugins execute inside the gateway"},
 
 	// Gateway configuration and credential state.
+	{http.MethodPut, "/api/v1/management/outbound-proxy", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPatch, "/api/v1/management/config", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPatch, "/api/v1/management/routing", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodGet, "/api/v1/management/config/backups/{id}", demoRefuse, "configuration backups hold the gateway's secrets"},
@@ -357,6 +367,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodPut, "/api/v1/management/config/source", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPut, "/api/v1/management/config/{key}", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPost, "/api/v1/management/api-keys", demoRefuse, "changing gateway key material is disabled"},
+	{http.MethodPut, "/api/v1/management/api-keys/{index}", demoRefuse, "changing gateway key material is disabled"},
 	{http.MethodDelete, "/api/v1/management/api-keys/{index}", demoRefuse, "changing gateway key material is disabled"},
 	{http.MethodPost, "/api/v1/management/providers", demoRefuse, "changing provider configuration is disabled"},
 	{http.MethodPut, "/api/v1/management/providers/{id}", demoRefuse, "changing provider configuration is disabled"},

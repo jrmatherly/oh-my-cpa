@@ -1,5 +1,9 @@
-import React, { useMemo, useState } from 'react';
-import { Button, Checkbox, Input } from 'antd';
+import React, { useId, useMemo, useState } from 'react';
+import { MetaLine } from '../common/MetaLine';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapse } from '@/components/ui/accordion';
 import { CloseOutlined, PlusOutlined } from '../icons';
 import { useT, type TFunc } from '../../i18n';
 import type { ManagementOAuthProviderModel } from '../../types/managementOAuthModelAlias';
@@ -11,16 +15,16 @@ import {
   OAUTH_EXCLUDED_MODEL_RULE_LIMIT,
   setExcludedModelRule,
   validateExcludedModelRule,
+  type ExcludedActiveRule,
   type ExcludedCatalogModel,
   type ExcludedModelRuleError,
-  type ExcludedRuleSummary,
 } from './oauthExcludedModelLogic';
 import styles from './OAuthModelRulesDrawer.module.css';
 import { SearchInput } from '../common/SearchInput';
 import { FilterItem, FilterTransition } from '../../motion/filter';
-import { SectionHeading } from '../common/SectionHeading';
 import { Toolbar } from '../common/Toolbar';
-import { Meter } from '../common/Meter';
+import { ReorderHandle, RowReorder, useReorderRow } from '../common/RowReorder';
+import { moveKey, type DropSide } from '../../types/displayOrder';
 
 export type OAuthModelCatalogState = 'loading' | 'ready' | 'unavailable' | 'error';
 
@@ -32,6 +36,11 @@ interface OAuthExcludedModelsPanelProps {
   catalogError?: unknown;
   onRetryCatalog: () => void;
   isDisabled: boolean;
+  /**
+   * Whose list this is: a provider's defaults, inherited by credentials without a list of their
+   * own, or one credential's own list, which replaces those defaults.
+   */
+  scope?: 'provider' | 'credential';
 }
 
 function ruleErrorMessage(error: ExcludedModelRuleError, t: TFunc): string {
@@ -49,13 +58,46 @@ function ruleErrorMessage(error: ExcludedModelRuleError, t: TFunc): string {
   }
 }
 
-function typedRuleMeta(entry: ExcludedRuleSummary, hasCatalog: boolean, t: TFunc): string | undefined {
-  if (!hasCatalog) return undefined;
-  if (!entry.isWildcard) return t('af.excluded_rule_not_listed');
-  return entry.matchCount > 0
-    ? t('af.excluded_rule_matches', { n: entry.matchCount })
-    : t('af.excluded_rule_matches_none');
+function activeRuleMeta(entry: ExcludedActiveRule, hasCatalog: boolean, t: TFunc): string | undefined {
+  if (entry.isWildcard) {
+    if (!hasCatalog) return undefined;
+    return entry.matchCount > 0
+      ? t('af.excluded_rule_matches', { n: entry.matchCount })
+      : t('af.excluded_rule_matches_none');
+  }
+  if (hasCatalog && !entry.inCatalog) return t('af.excluded_rule_not_listed');
+  return entry.displayName;
 }
+
+const ExcludedRuleRow: React.FC<{
+  entry: ExcludedActiveRule;
+  meta?: string;
+  isDisabled: boolean;
+  onRemove: (rule: string) => void;
+}> = ({ entry, meta, isDisabled, onRemove }) => {
+  const t = useT();
+  const { row, handle } = useReorderRow(entry.rule);
+  return (
+    <li {...row} className={styles['row']} data-rule={entry.rule}>
+      <div className={styles['row-main']}>
+        <ReorderHandle {...handle} name={entry.rule} variant="inline" />
+        <span className={styles['row-copy']}>
+          <span className={styles['row-id']}>{entry.rule}</span>
+          {meta && <span className={styles['row-meta']}>{meta}</span>}
+        </span>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={styles['row-action']}
+        icon={<CloseOutlined />}
+        aria-label={t('af.excluded_rule_remove', { rule: entry.rule })}
+        disabled={isDisabled}
+        onClick={() => onRemove(entry.rule)}
+      />
+    </li>
+  );
+};
 
 function catalogModelMeta(model: ExcludedCatalogModel, t: TFunc): string | undefined {
   if (!model.patternRule) return undefined;
@@ -72,17 +114,35 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
   catalogError,
   onRetryCatalog,
   isDisabled,
+  scope = 'provider',
 }) => {
+  const summaryKey = scope === 'credential' ? 'af.excluded_summary_models_credential' : 'af.excluded_summary_models';
   const t = useT();
+  const hintId = useId();
   const [ruleInput, setRuleInput] = useState('');
   const [ruleError, setRuleError] = useState<ExcludedModelRuleError>();
   const [query, setQuery] = useState('');
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
   const view = useMemo(() => describeExcludedModels(rules, catalog), [rules, catalog]);
   const visibleModels = useMemo(() => filterCatalogModels(view.models, query), [view.models, query]);
   const hasCatalog = catalogState === 'ready' && view.totalCount > 0;
   const selectableVisible = visibleModels.filter((model) => !model.isExcluded);
   const exactVisible = visibleModels.filter((model) => model.isExactlyExcluded);
+  const orderedRules = useMemo(() => view.activeRules.map((entry) => entry.rule), [view.activeRules]);
+
+  const handleMoveRule = (key: string, target: string, side: DropSide) => {
+    const next = moveKey(orderedRules, key, target, side);
+    if (next !== orderedRules) onChange([...next]);
+  };
+
+  const handleStepRule = (key: string, direction: -1 | 1) => {
+    const index = orderedRules.indexOf(key);
+    const neighbour = orderedRules[index + direction];
+    if (index >= 0 && neighbour !== undefined) {
+      handleMoveRule(key, neighbour, direction < 0 ? 'before' : 'after');
+    }
+  };
 
   const addTypedRule = () => {
     const error = validateExcludedModelRule(ruleInput, rules);
@@ -112,28 +172,20 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
 
 
   return (
-    <div className={styles['pane']} data-testid="oauth-excluded-models-panel">
-      <div className={styles['summary']}>
+    <div className={styles['excluded-box']} data-testid="oauth-excluded-models-panel">
+      <div className={styles['excluded-header']}>
         <span className={styles['summary-count']} data-testid="oauth-excluded-models-summary">
           {hasCatalog
-            ? t('af.excluded_summary_models', { excluded: view.excludedCount, total: view.totalCount })
-            : t('af.excluded_summary_rules', { n: rules.length })}
+            ? t(summaryKey, { excluded: view.excludedCount, total: view.totalCount })
+            : t('af.excluded_summary_rules', { n: view.activeRules.length })}
         </span>
-        {hasCatalog && (
-          <Meter
-            value={view.excludedCount}
-            max={view.totalCount}
-            label={t('af.excluded_summary_models', { excluded: view.excludedCount, total: view.totalCount })}
-          />
-        )}
       </div>
 
-      {view.isEverythingExcluded && (
-        <Notice tone="warning" title={t('af.excluded_all_title')} description={t('af.excluded_all_desc')} />
-      )}
+      {view.isEverythingExcluded && (scope === 'credential'
+        ? <Notice tone="warning" title={t('af.excluded_all_title_credential')} />
+        : <Notice tone="warning" title={t('af.excluded_all_title')} description={t('af.excluded_all_desc')} />)}
 
-      <section className={styles['section']} aria-labelledby="oauth-excluded-rules-heading">
-        <SectionHeading level="label" id="oauth-excluded-rules-heading" title={t('af.excluded_rules_title')} />
+      <div className={styles['section']}>
         <div className={styles['rule-entry']}>
           <Input
             className={styles['rule-input']}
@@ -142,7 +194,7 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
             status={ruleError ? 'error' : undefined}
             placeholder={t('af.excluded_rule_placeholder')}
             aria-label={t('af.excluded_rules_title')}
-            aria-describedby="oauth-excluded-rules-hint"
+            aria-describedby={hintId}
             disabled={isDisabled}
             onChange={(event) => {
               setRuleInput(event.target.value);
@@ -159,36 +211,48 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
             {t('af.excluded_rule_add')}
           </Button>
         </div>
-        <p id="oauth-excluded-rules-hint" className={ruleError ? styles['field-error'] : styles['hint']} role={ruleError ? 'alert' : undefined}>
+        <p id={hintId} className={ruleError ? styles['field-error'] : styles['hint']} role={ruleError ? 'alert' : undefined}>
           {ruleError ? ruleErrorMessage(ruleError, t) : t('af.excluded_rule_hint')}
         </p>
-        {view.typedRules.length > 0 && (
-          <ul className={styles['rows']} data-testid="oauth-excluded-models-typed-rules">
-            {view.typedRules.map((entry) => {
-              const meta = typedRuleMeta(entry, hasCatalog, t);
-              return (
-                <li key={entry.rule} className={styles['row']} data-rule={entry.rule}>
-                  <span className={styles['row-copy']}>
-                    <span className={styles['row-id']}>{entry.rule}</span>
-                    {meta && <span className={styles['row-meta']}>{meta}</span>}
-                  </span>
-                  <Button
-                    type="text"
-                    className={styles['row-action']}
-                    icon={<CloseOutlined />}
-                    aria-label={t('af.excluded_rule_remove', { rule: entry.rule })}
-                    disabled={isDisabled}
-                    onClick={() => onChange(setExcludedModelRule(rules, entry.rule, false))}
-                  />
-                </li>
-              );
-            })}
-          </ul>
+        {view.activeRules.length > 0 && (
+          <RowReorder
+            items={orderedRules}
+            isEnabled={!isDisabled && orderedRules.length > 1}
+            onMove={handleMoveRule}
+            onStep={handleStepRule}
+          >
+            <ul className={styles['rows']} data-testid="oauth-excluded-models-typed-rules">
+              {view.activeRules.map((entry) => (
+                <ExcludedRuleRow
+                  key={entry.rule}
+                  entry={entry}
+                  meta={activeRuleMeta(entry, hasCatalog, t)}
+                  isDisabled={isDisabled}
+                  onRemove={(rule) => onChange(setExcludedModelRule(rules, rule, false))}
+                />
+              ))}
+            </ul>
+          </RowReorder>
         )}
-      </section>
+      </div>
 
-      <section className={styles['section']} aria-labelledby="oauth-excluded-catalog-heading">
-        <SectionHeading level="label" id="oauth-excluded-catalog-heading" title={t('af.excluded_catalog_title')} />
+      {/* The catalogue folds: a provider can list hundreds of models, and the summary above already
+          says how many are excluded. It starts folded and opens on the reader's click. */}
+      <Collapse
+        ghost
+        className={styles['catalog-fold']}
+        activeKey={isCatalogOpen ? ['catalog'] : []}
+        onChange={(keys) => setIsCatalogOpen(keys.includes('catalog'))}
+        items={[{
+          key: 'catalog',
+          label: (
+            <span className={styles['catalog-fold-label']} data-testid="oauth-excluded-models-catalog-toggle">
+              {t('af.excluded_catalog_title')}
+              {hasCatalog && <span className={styles['catalog-fold-count']}>{view.totalCount}</span>}
+            </span>
+          ),
+          children: (
+            <div className={styles['section']}>
         {catalogState === 'loading' && <p className={styles['hint']}>{t('af.rules_catalog_loading')}</p>}
         {catalogState === 'error' && (
           <LoadFailure title={t('af.rules_catalog_failed')} error={catalogError} onRetry={onRetryCatalog} />
@@ -228,21 +292,22 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
                           className={styles['row-check']}
                           checked={model.isExcluded}
                           disabled={isDisabled || isHeldByPattern}
-                          onChange={(event) => {
-                            if (event.target.checked && rules.length >= OAUTH_EXCLUDED_MODEL_RULE_LIMIT) {
+                          onCheckedChange={(checked) => {
+                            if (checked && rules.length >= OAUTH_EXCLUDED_MODEL_RULE_LIMIT) {
                               setRuleError('too_many');
                               return;
                             }
                             setRuleError(undefined);
-                            onChange(setExcludedModelRule(rules, model.id, event.target.checked));
+                            onChange(setExcludedModelRule(rules, model.id, checked));
                           }}
                         >
                           <span className={styles['row-copy']}>
                             <span className={styles['row-id']}>{model.id}</span>
                             {(model.displayName || meta) && (
-                              <span className={styles['row-meta']}>
-                                {[model.displayName, meta].filter(Boolean).join(' · ')}
-                              </span>
+                              <MetaLine className={styles['row-meta']}>
+                                {model.displayName}
+                                {meta}
+                              </MetaLine>
                             )}
                           </span>
                         </Checkbox>
@@ -254,7 +319,10 @@ export const OAuthExcludedModelsPanel: React.FC<OAuthExcludedModelsPanelProps> =
             )}
           </>
         )}
-      </section>
+            </div>
+          ),
+        }]}
+      />
     </div>
   );
 };

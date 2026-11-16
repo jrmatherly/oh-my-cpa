@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/oh-my-cpa/oh-my-cpa/internal/outbound"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/release"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/repository"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/security"
@@ -45,9 +46,9 @@ const (
 
 const (
 	updateJobPollInterval = 2 * time.Second
-	// updateJobWatchLimit bounds how long a finished job is waited for before its
-	// outcome goes unrecorded; a replacement's own health timeout is three minutes.
-	updateJobWatchLimit = 15 * time.Minute
+	// The image-download deadline allows thirty minutes; leave time for container
+	// health checks and handover before ending outcome observation.
+	updateJobWatchLimit = 45 * time.Minute
 )
 
 // SystemUpdaterDTO is what the System Information page needs to offer an update.
@@ -168,9 +169,23 @@ func (h *Handler) updaterStatus(ctx context.Context) (SystemUpdaterDTO, *updater
 	return dto, &status
 }
 
+// SystemUpdaterApplyRequestDTO specifies the product to upgrade via the updater sidecar.
+type SystemUpdaterApplyRequestDTO struct {
+	Product string `json:"product"`
+}
+
 // getSystemUpdater reports whether updates can be applied from the console and how
 // the running or last one is going. It always answers 200: an absent sidecar is a
 // state of the deployment, not a failure of this request.
+//
+// @Summary Get container updater status
+// @Description Return updater sidecar availability, updatable product states, and active or recent update job progress.
+// @Tags System
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} SystemUpdaterDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Router /v1/management/system/updater [get]
 func (h *Handler) getSystemUpdater(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	dto, _ := h.updaterStatus(request.Context())
@@ -180,18 +195,26 @@ func (h *Handler) getSystemUpdater(writer http.ResponseWriter, request *http.Req
 // postSystemUpdaterApply asks the sidecar to replace one product with its newest
 // release.
 //
-// The audit record is written before the sidecar is asked, and a failure to write it
-// refuses the update: replacing the gateway or the console is the most consequential
-// thing this console can do to its own deployment, and it must not happen unrecorded.
-// The record says "admitted", which is all this request can know - the outcome is
-// recorded when the job finishes, by a process that for a console update is not this
-// one.
+// @Summary Apply a container update
+// @Description Request the updater sidecar to pull and replace the OMC or CPA container using signed manifests where required.
+// @Tags System
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body SystemUpdaterApplyRequestDTO true "Product to update"
+// @Success 202 {object} SystemUpdaterDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 403 {object} ErrorResponseDTO
+// @Failure 409 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/system/updater/apply [post]
 func (h *Handler) postSystemUpdaterApply(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	ctx := request.Context()
-	var body struct {
-		Product string `json:"product"`
-	}
+	var body SystemUpdaterApplyRequestDTO
 	if err := json.NewDecoder(io.LimitReader(request.Body, 4<<10)).Decode(&body); err != nil {
 		writeError(writer, http.StatusBadRequest, "invalid request body")
 		return
@@ -205,7 +228,7 @@ func (h *Handler) postSystemUpdaterApply(writer http.ResponseWriter, request *ht
 		writeJSON(writer, status, map[string]string{"error": message, "code": code})
 	}
 
-	dto, _ := h.updaterStatus(ctx)
+	dto, sidecar := h.updaterStatus(ctx)
 	if dto.State != updaterReady {
 		refuse(http.StatusConflict, "rejected", "updater_"+dto.State, "updates cannot be applied from the console in this deployment")
 		return
@@ -218,6 +241,27 @@ func (h *Handler) postSystemUpdaterApply(writer http.ResponseWriter, request *ht
 	}
 
 	update := updater.UpdateRequest{Product: body.Product}
+
+	settings, _, err := (repository.OutboundProxyStore{Repo: h.repo, Cipher: h.cipher}).Load(ctx)
+	if err != nil || outbound.Validate(settings) != nil {
+		refuse(http.StatusServiceUnavailable, "failure", "outbound_proxy_unavailable", "outbound network settings could not be read")
+		return
+	}
+	switch settings.Mode {
+	case outbound.ModeProxy:
+		if sidecar == nil || !sidecar.ProxyPullSupported {
+			refuse(http.StatusConflict, "rejected", "image_pull_proxy_unsupported", "the updater must be upgraded to support proxy image downloads")
+			return
+		}
+		update.ProxyURL = settings.URL
+	case outbound.ModeDirect:
+		if sidecar == nil || !sidecar.DirectPullSupported {
+			refuse(http.StatusConflict, "rejected", "image_pull_proxy_unsupported", "the updater must be upgraded to support direct image downloads")
+			return
+		}
+		update.ProxyURL = updater.DirectImageRoute
+	}
+
 	details := map[string]any{}
 	if body.Product == release.ProductOMC {
 		// The console is only ever moved to the release the page is offering, and only

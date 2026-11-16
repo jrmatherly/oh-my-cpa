@@ -1,8 +1,8 @@
 .provider-list { min-width: 0; }
 /* Nine columns of facts share the content column, so cells sit 12px from their neighbours rather
    than the console's 16px: at 16px the row was wider than the frame and cut the actions off. */
-.provider-list :global(.data-table .ant-table-wrapper .ant-table-thead > tr > th),
-.provider-list :global(.data-table .ant-table-wrapper .ant-table-tbody > tr > td) { padding-inline: 12px; }
+.provider-list :global(.data-table [data-slot='table-head']),
+.provider-list :global(.data-table [data-slot='table-cell']) { padding-inline: 12px; }
 
 .provider-identity {
   display: flex;
@@ -86,17 +86,13 @@
 
 .protocol-tag {
   gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  font-weight: 500;
 }
 
 /* The family's brand colour arrives as `--family-color`; the tint is mixed over the page so the
    tag sits on the active palette's surface in either mode, and carries no edge of its own. */
 .protocol-tag-branded {
-  border-color: transparent;
+  --tag-tone: var(--family-color);
   background: color-mix(in srgb, var(--family-color) 10%, var(--bg));
-  color: var(--family-color);
 }
 
 /* One line, cut at its end: an address broken mid-host reads as two addresses, and the tooltip
@@ -116,10 +112,11 @@
   padding: 0 6px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg-2) 10%, transparent);
   color: var(--fg-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  line-height: 16px;
+  line-height: 18px;
 }
 
 .muted {
@@ -133,37 +130,6 @@
   gap: 4px;
 }
 
-/* ── traffic over the page's window ─────────────────────────────────────────── */
-.traffic {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.traffic-line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.traffic-requests {
-  color: var(--fg);
-  font-size: var(--text-sm);
-}
-
-.traffic-rate {
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.traffic-meter {
-  width: 100%;
-}
-
 /* The band's three tones, as the dashboard paints them; neutral is a window with nothing to judge. */
 .tone-success { color: var(--success); }
 .tone-warn { color: var(--warn); }
@@ -174,9 +140,10 @@
 /* On a phone the providers are one framed group, as the OAuth list's sections are, each card
    ruled from the next. */
 .provider-list :global(.responsive-list) {
+  border: 0;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background: var(--bg);
 }
 
@@ -253,15 +220,23 @@
 .phone-card-route {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* The protocol, the host and the transport are separate facts: space sets them apart. */
+  gap: 10px;
   min-width: 0;
   color: var(--fg-2);
   font-size: var(--text-xs);
   white-space: nowrap;
 }
 
-.phone-card-route > :global(.anticon),
-.phone-card-route > svg {
+.phone-card-family {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.phone-card-family > :global(.omc-icon),
+.phone-card-family > svg {
   flex: none;
   color: var(--muted);
 }
@@ -272,10 +247,6 @@
   color: var(--muted);
   font-family: var(--font-mono);
   text-overflow: ellipsis;
-}
-
-.phone-card-host::before {
-  content: '· ';
 }
 
 .phone-card-health {

@@ -14,6 +14,8 @@ interface RequestStreamHeaderProps {
   handleResizeStart: (colId: RequestColumnId, event: React.PointerEvent<HTMLSpanElement>) => void;
   handleResetColumn: (colId: RequestColumnId) => void;
   handleResizeKeyDown: (colId: RequestColumnId, event: React.KeyboardEvent) => void;
+  /** Whether a choice is under way, which is when the list has a selection column. */
+  isSelecting: boolean;
   /** How the loaded rows stand against the selection. */
   selectionState: 'none' | 'some' | 'all';
   onToggleAll: (isSelected: boolean) => void;
@@ -28,11 +30,12 @@ interface RequestStreamHeaderProps {
  * The gripper is what makes a column's width the operator's decision, and every
  * one of them is operable from the keyboard as well as by pointer.
  */
-export function RequestStreamHeader({
+export const RequestStreamHeader = React.memo(function RequestStreamHeader({
   colWidths,
   handleResizeStart,
   handleResetColumn,
   handleResizeKeyDown,
+  isSelecting,
   selectionState,
   onToggleAll,
 }: RequestStreamHeaderProps) {
@@ -41,12 +44,12 @@ export function RequestStreamHeader({
   const selectAllRef = React.useRef<HTMLInputElement>(null);
   React.useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = selectionState === 'some';
-  }, [selectionState]);
+  }, [selectionState, isSelecting]);
 
   return (
 
           <div className="request-table-header">
-            <label className="req-th req-select req-th-select">
+            <label className="req-th req-select req-th-select select-reveal" data-hidden={isSelecting ? undefined : ''}>
               <input
                 ref={selectAllRef}
                 type="checkbox"
@@ -85,4 +88,4 @@ export function RequestStreamHeader({
             <span className="req-th req-th-chevron" />
           </div>
   );
-}
+});

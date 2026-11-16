@@ -3,13 +3,10 @@ import { Notice } from '../../components/feedback';
 import type { MessageKey } from '../../i18n/catalog';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Button,
-  Checkbox,
-  Input,
-  Space,
-  Spin,
-} from 'antd';
+import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   ArrowRightOutlined,
   CheckCircleOutlined,
@@ -19,9 +16,10 @@ import {
   ReloadOutlined,
   StopOutlined,
 } from '../../components/icons';
+import { api, describeError } from '../../api/client';
 import { useT } from '../../i18n';
-import { copyText } from '../../utils/clipboard';
 import { isDemoMode } from '../../types/demoMode';
+import { copyText } from '../../utils/clipboard';
 import { ProviderBrandIcon } from '../../components/LobeIcon';
 import { oauthProviderGroups, type OAuthProviderChoice, type OAuthProviderGroup } from '../oauthProviderLogic';
 import type { OAuthSessionsController } from './useOAuthSessions';
@@ -96,7 +94,11 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
     setShouldVerify((session?.status === 'starting' || session?.status === 'waiting') && target?.verify === true);
   }, [open, selectedProviderId, target?.name, target?.auth_index, target?.verify, session?.status]);
   const [proxyUrl, setProxyUrl] = React.useState('');
-  React.useEffect(() => { setProxyUrl(''); }, [open, selectedProviderId]);
+  const [completingSandbox, setCompletingSandbox] = React.useState(false);
+  React.useEffect(() => {
+    setProxyUrl('');
+    setCompletingSandbox(false);
+  }, [open, selectedProviderId, session?.state]);
 
   // This boolean records route intent across drawer remounts, never the secret itself.
   const requiresProxyReentry = Boolean(session?.requiresProxyReentry);
@@ -138,11 +140,11 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
     value: candidate.id,
     title: candidate.title,
     label: (
-      <Space size={8}>
+      <span className="inline-flex items-center gap-2">
         <ProviderBrandIcon mark={candidate} size={18} />
         <span>{candidate.title}</span>
         <ProviderKindTag choice={candidate} />
-      </Space>
+      </span>
     ),
   }));
 
@@ -177,7 +179,6 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                 options={providerOptions}
                 onChange={(value) => onSelectProvider((value ?? '').trim())}
                 style={{ width: '100%' }}
-                getPopupContainer={(trigger) => trigger.parentElement ?? document.body}
               />
             </div>
 
@@ -209,7 +210,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                             <span className={styles['tile-title']}>{candidate.title}</span>
                             <ProviderKindTag choice={candidate} />
                           </div>
-                          <span className={styles['tile-desc']} title={candidate.description}>
+                          <span className={styles['tile-desc']} data-tip={candidate.description} data-tip-overflow="">
                             {candidate.description}
                           </span>
                         </div>
@@ -228,8 +229,8 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                   {t('omc.connect_provider')}
                 </label>
                 {!target && <Button
-                  size="small"
-                  type="link"
+                  size="sm"
+                  variant="link"
                   onClick={() => onSelectProvider('')}
                   style={{ padding: 0 }}
                 >
@@ -247,7 +248,6 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                 options={providerOptions}
                 onChange={(value) => onSelectProvider((value ?? '').trim())}
                 style={{ width: '100%' }}
-                getPopupContainer={(trigger) => trigger.parentElement ?? document.body}
               />
             </div>
 
@@ -267,7 +267,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
             {target && <>
               <Notice tone="info" title={t('recovery.target', { name: target.name })} description={t('recovery.target_hint')} />
               {!isRecoverySupported && <Notice tone="warning" title={t('recovery.upgrade_required')} />}
-              <Checkbox checked={shouldVerify} disabled={isWaiting || session?.starting || isDemo || !isRecoverySupported} onChange={(event) => setShouldVerify(event.target.checked)}>
+              <Checkbox checked={shouldVerify} disabled={isWaiting || session?.starting || !isRecoverySupported} onCheckedChange={(checked) => setShouldVerify(checked)}>
                 {t('recovery.verify_opt_in')}
               </Checkbox>
             </>}
@@ -279,7 +279,6 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                   id="oauth-connect-proxy"
                   maxLength={4096}
                   value={proxyUrl}
-                  disabled={isDemo}
                   aria-describedby="oauth-connect-proxy-hint"
                   onChange={(event) => setProxyUrl(event.target.value)}
                 />
@@ -298,9 +297,9 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                 </Button>
               )}
               <Button
-                type="primary"
+                variant="primary"
                 loading={session?.starting}
-                disabled={isWaiting || isStartBlocked || (Boolean(target) && !isRecoverySupported) || isDemo}
+                disabled={isWaiting || isStartBlocked || (Boolean(target) && !isRecoverySupported)}
                 onClick={startAuthorization}
                 data-oauth-start={choice.id}
               >
@@ -316,7 +315,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                 </Button>
               )}
               {isStartBlocked && (
-                <Button type="link" data-oauth-default-route onClick={useDefaultRoute}>
+                <Button variant="link" data-oauth-default-route onClick={useDefaultRoute}>
                   {t('oauth.use_default_route')}
                 </Button>
               )}
@@ -332,19 +331,42 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                     </div>
                     <div className={styles['step-body']}>
                       <div className={styles['auth-url-actions']}>
-                        <Button
-                          type="primary"
-                          icon={<LinkOutlined />}
-                          onClick={() => window.open(session.url, '_blank', 'noopener,noreferrer')}
-                        >
-                          {t('oauth.open_link')}
-                        </Button>
+                        {!isDemo && (
+                          <Button
+                            variant="primary"
+                            icon={<LinkOutlined />}
+                            onClick={() => window.open(session.url, '_blank', 'noopener,noreferrer')}
+                          >
+                            {t('oauth.open_link')}
+                          </Button>
+                        )}
+                        {isDemo && (
+                          <Button
+                            variant="primary"
+                            data-testid="oauth-sandbox-complete"
+                            loading={completingSandbox}
+                            disabled={completingSandbox || !isWaiting}
+                            onClick={() => {
+                              if (completingSandbox || !isWaiting) return;
+                              setCompletingSandbox(true);
+                              const stateToken = session.state ?? '';
+                              const callbackUrl = `http://localhost:1455/auth/callback?code=sandbox-code&state=${encodeURIComponent(stateToken)}`;
+                              sessions.setCallbackUrl(choice.id, callbackUrl);
+                              void api.handleOAuthCallback({ provider: choice.id, redirect_url: callbackUrl })
+                                .then(() => sessions.check(choice.id))
+                                .catch((err: unknown) => toast.error(describeError(err)))
+                                .finally(() => setCompletingSandbox(false));
+                            }}
+                          >
+                            {t('oauth.sandbox_complete')}
+                          </Button>
+                        )}
                         <Button icon={<CopyOutlined />} onClick={() => void copyValue(session.url)}>
                           {t('oauth.copy_link')}
                         </Button>
                       </div>
                       <div className={styles['auth-url-box']}>
-                        <Input.TextArea
+                        <Textarea
                           value={session.url}
                           autoSize={{ minRows: 1, maxRows: 3 }}
                           readOnly
@@ -365,7 +387,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                       <p className={styles['step-hint']}>
                         {choice.callback.errorKeys.hintKey ? t(choice.callback.errorKeys.hintKey) : t('oauth.callback_hint')}
                       </p>
-                      <Input.TextArea
+                      <Textarea
                         id="oauth-callback-url"
                         data-oauth-callback-input
                         value={session?.callbackUrl ?? ''}
@@ -377,7 +399,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                       />
                       <div className={styles['callback-actions']}>
                         <Button
-                          type="primary"
+                          variant="primary"
                           data-oauth-callback-submit
                           loading={session?.callbackSubmitting}
                           onClick={() => void sessions.submitCallback(choice.id)}
@@ -408,7 +430,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                       {session.userCode && (
                         <div className={styles['device-code-row']}>
                           <span className={styles['device-code']} data-oauth-user-code>{session.userCode}</span>
-                          <Button size="middle" icon={<CopyOutlined />} onClick={() => void copyValue(session.userCode, 'common.copied')}>
+                          <Button icon={<CopyOutlined />} onClick={() => void copyValue(session.userCode, 'common.copied')}>
                             {t('oauth.copy_code')}
                           </Button>
                         </div>
@@ -428,7 +450,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                 <div className={styles['session-status-card']} aria-live="polite">
                   {isWaiting && (
                     <div className={styles['status-waiting-box']}>
-                      <Spin size="small" />
+                      <Spinner size="small" />
                       <div className={styles['waiting-copy']}>
                         <span className={styles['waiting-title']}>{t('oauth.status_waiting_badge')}</span>
                         <span className={styles['waiting-desc']}>{t('oauth.status_waiting')}</span>
@@ -456,7 +478,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                       </div>
                       <div className={styles['success-actions']}>
                         <Button
-                          type="primary"
+                          variant="primary"
                           icon={<ArrowRightOutlined />}
                           onClick={() => onViewCredentials(choice.id)}
                         >

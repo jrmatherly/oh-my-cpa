@@ -21,7 +21,7 @@ deterministic; its normalization and precedence belong to
 [`internal/pricing`](../internal/pricing), not a duplicated vendor table here.
 
 A model without an automatic match is offered reference rates from the bundled models.dev
-snapshot ([Operations](operations.md#available-model-directory)), resolved only by its exact
+snapshot ([Playground and models](features/playground.md#model-directory)), resolved only by its exact
 name or an unambiguous models.dev alias. Each distinct rate is listed with the providers that
 publish it, because these are often cloud or reseller listings that disagree. A reference is
 never applied: filling it into the editor and saving creates an ordinary custom price.
@@ -76,8 +76,9 @@ See [`accounting.go`](../internal/usage/accounting.go).
 Permanent usage facts retain aggregates after request detail expires. Cost explanations
 must use the locked snapshot rather than today's price, today's provider layout or an
 inferred service tier from latency. Display currency conversion is presentation only;
-recorded costs remain USD. A quota-capacity estimate consumes these locked costs but
-is neither a new price nor an upstream bill.
+recorded costs remain USD. Recorded API-equivalent consumption is separate from
+subscription quota; estimated quota window capacity scales recorded request-time costs
+and tokens over the upstream used percentage.
 
 ## Extending pricing
 
@@ -85,4 +86,4 @@ Business operations live in [`internal/operations/pricing.go`](../internal/opera
 versioned storage in [`internal/repository`](../internal/repository), and parsing,
 matching and quoting in [`internal/pricing`](../internal/pricing). Console and Agent
 use the same operations. Verify the changed accounting or matching claim in its owning
-suite; do not add a browser test to re-prove arithmetic. Follow [Testing](testing.md).
+suite; do not add a browser test to re-prove arithmetic. Follow [Testing](dev/testing.md).

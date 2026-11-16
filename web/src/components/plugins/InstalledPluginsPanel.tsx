@@ -1,5 +1,13 @@
 import React from 'react';
-import { Button, Dropdown, Segmented } from 'antd';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { Switch } from '../common/Switch';
 import { ListLoading } from '../common/PageLoading';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +22,7 @@ import type { MessageKey } from '../../i18n/catalog';
 import { PluginInstallModal } from './PluginInstallModal';
 import { PluginUpdateAllModal } from './PluginUpdateAllModal';
 import { waitForPluginRuntime } from './pluginRuntime';
-import { formatPluginVersion, PluginLogo, PluginMeta, PluginOriginBadge, PluginStateLabel } from './PluginParts';
+import { formatPluginVersion, PluginLogo, PluginOriginBadge, PluginStateLabel } from './PluginParts';
 import styles from './Plugins.module.css';
 import { useToast } from '../feedback';
 import { SearchInput } from '../common/SearchInput';
@@ -22,12 +30,14 @@ import { EmptyState } from '../common/EmptyState';
 import { ConfirmAction } from '../common/ConfirmAction';
 import { Toolbar } from '../common/Toolbar';
 import { Tooltip } from '../common/Tooltip';
+import { Tag } from '../common/Tag';
 import { UPDATE_STATUS_QUERY_KEY } from '../../hooks/useUpdateNotice';
 import { useSortableList } from '../../hooks/useSortableList';
 import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { ReorderHandle, RowContextHandle, RowHandleContext, RowReorder, useReorderRow } from '../common/RowReorder';
 import { FilterTransition, useFilterItemMotion } from '../../motion/filter';
-import { m } from '../../motion';
+import { EntityCard, type EntityCardProps } from '../common/EntityCard';
+import { MetaLine } from '../common/MetaLine';
 
 const pluginKey = (plugin: PluginItem) => plugin.id;
 
@@ -163,7 +173,7 @@ export function InstalledPluginsPanel({
   if (plugins.length === 0) {
     return (
       <EmptyState className={styles.empty} title={t('plugin.installed_empty')}>
-        <Button type="primary" icon={<ShopOutlined />} onClick={onBrowseStore}>
+        <Button variant="primary" icon={<ShopOutlined />} onClick={onBrowseStore}>
           {t('plugin.browse_store')}
         </Button>
       </EmptyState>
@@ -224,6 +234,7 @@ export function InstalledPluginsPanel({
       ) : (
         <RowReorder
           {...sortable.reorder}
+          layout="grid"
           items={visible.map(pluginKey)}
           onStep={(key, direction) => {
             const index = visible.findIndex((plugin) => plugin.id === key);
@@ -231,7 +242,7 @@ export function InstalledPluginsPanel({
             if (index >= 0 && neighbour) sortable.reorder.onMove(key, neighbour.id, direction < 0 ? 'before' : 'after');
           }}
         >
-          <div className={styles['installed-list']}>
+          <div className={`${styles['card-grid']} ${styles['installed-grid']}`}>
             <FilterTransition itemKeys={visible.map(pluginKey)}>
               {visible.map((plugin) => {
                 const listing = catalog.get(plugin.id);
@@ -248,8 +259,8 @@ export function InstalledPluginsPanel({
                 const hasHomepage = homepageURL !== undefined && homepageURL !== repositoryURL;
                 const moreButton = (
                   <Button
-                    size="small"
-                    className="row-action-btn"
+                    size="sm"
+                    variant="ghost" className="row-action-btn"
                     ref={(button) => {
                       if (button) moreButtonRefs.current.set(plugin.id, button);
                       else moreButtonRefs.current.delete(plugin.id);
@@ -261,56 +272,34 @@ export function InstalledPluginsPanel({
                     aria-haspopup="menu"
                   />
                 );
+                const description = metadata.description?.trim() ?? '';
+                const capabilities = [
+                  origin && <PluginOriginBadge key="origin" origin={origin} />,
+                  !plugin.registered && <Tag key="registered" size="small">{t('plugin.badge_not_registered')}</Tag>,
+                  plugin.supports_oauth && <Tag key="oauth" size="small">{t('plugin.badge_auth_provider')}</Tag>,
+                  plugin.supports_quota && <Tag key="quota" size="small">{t('plugin.badge_quota')}</Tag>,
+                ].filter(Boolean);
                 return (
-                  <InstalledPluginRow key={plugin.id} id={plugin.id} name={name} isPhone={isPhone}>
-                    <PluginLogo logo={logo} />
-                    <div className={styles['installed-main']}>
-                      <div className={styles['installed-identity']}>
-                        <div className={styles['installed-title']}>
-                          <span className={styles['installed-name']}>{name}</span>
-                          <span className={styles.badges}>
-                            <PluginStateLabel plugin={plugin} isPluginSystemEnabled={isPluginSystemEnabled} />
-                            {origin && <PluginOriginBadge origin={origin} />}
-                            {!plugin.registered && <span className={styles.badge}>{t('plugin.badge_not_registered')}</span>}
-                            {plugin.supports_oauth && <span className={styles.badge}>{t('plugin.badge_auth_provider')}</span>}
-                            {plugin.supports_quota && <span className={styles.badge}>{t('plugin.badge_quota')}</span>}
-                          </span>
-                        </div>
+                  <InstalledPluginCard
+                    key={plugin.id}
+                    id={plugin.id}
+                    name={name}
+                    isPhone={isPhone}
+                    mark={<PluginLogo logo={logo} />}
+                    heading={<span data-tip={name} data-tip-overflow="">{name}</span>}
+                    subline={(
+                      <MetaLine tone="quiet">
+                        {version && <span className={styles['meta-strong']}>{version}</span>}
+                        {metadata.author ?? ''}
                         {name !== plugin.id && <span className={styles['plugin-id']}>{plugin.id}</span>}
-                        <PluginMeta
-                          items={[
-                            version && <span className={styles['meta-strong']}>{version}</span>,
-                            metadata.author,
-                            plugin.config_fields.length > 0 && t('plugin.config_field_count', { n: plugin.config_fields.length }),
-                            !plugin.configured && t('plugin.not_configured'),
-                          ]}
-                        />
-                      </div>
-                      {metadata.description && <p className={styles.description}>{metadata.description}</p>}
-                    </div>
-                    <div className={styles['installed-actions']}>
-                      {isPhone && <RowContextHandle name={name} variant="inline" />}
+                      </MetaLine>
+                    )}
+                    aside={(
                       <div className="row-actions">
-                        {listing?.update_available && (
-                          <Tooltip title={isDemo ? t('demo.blocked') : isStoreInstallBlocked(listing) === 'auth' ? t('plugin.auth_required_hint') : undefined}>
-                            <Button
-                              type="text"
-                              size="small"
-                              className={styles['update-button']}
-                              icon={<UpgradeOutlined />}
-                              disabled={isDemo || isDeleting || isStoreInstallBlocked(listing) !== undefined}
-                              onClick={() => setUpdating(listing)}
-                              aria-label={t('plugin.update_label_to', { name, version: formatPluginVersion(listing.version) })}
-                              data-testid="plugin-row-update"
-                            >
-                              {t('plugin.update_to', { version: formatPluginVersion(listing.version) })}
-                            </Button>
-                          </Tooltip>
-                        )}
                         <Tooltip title={t('plugin.configure')}>
                           <Button
-                            size="small"
-                            className="row-action-btn"
+                            size="sm"
+                            variant="ghost" className="row-action-btn"
                             icon={<SettingOutlined />}
                             disabled={isDeleting}
                             onClick={() => onConfigure(plugin)}
@@ -336,50 +325,80 @@ export function InstalledPluginsPanel({
                             {moreButton}
                           </ConfirmAction>
                         ) : (
-                          <Dropdown
-                            trigger={['click']}
-                            placement="bottomRight"
-                            menu={{
-                              items: [
-                                ...(repositoryURL ? [{
-                                  key: 'repository',
-                                  icon: <GithubOutlined />,
-                                  label: <a href={repositoryURL} target="_blank" rel="noreferrer noopener">{t('plugin.open_repository')}</a>,
-                                }] : []),
-                                ...(hasHomepage ? [{
-                                  key: 'homepage',
-                                  icon: <ExternalLinkOutlined />,
-                                  label: <a href={homepageURL} target="_blank" rel="noreferrer noopener">{t('plugin.open_homepage')}</a>,
-                                }] : []),
-                                ...(repositoryURL || hasHomepage ? [{ type: 'divider' as const }] : []),
-                                {
-                                  key: 'delete',
-                                  icon: <DeleteOutlined />,
-                                  label: isDemo ? <Tooltip title={t('demo.blocked')}>{t('plugin.delete')}</Tooltip> : t('plugin.delete'),
-                                  danger: true,
-                                  disabled: isDemo || isUpdating,
-                                  onClick: () => setPendingDeleteId(plugin.id),
-                                },
-                              ],
-                            }}
-                          >
-                            {moreButton}
-                          </Dropdown>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger render={moreButton} />
+                            <DropdownMenuContent placement="bottomRight">
+                              {repositoryURL && (
+                                <DropdownMenuItem
+                                  icon={<GithubOutlined />}
+                                  render={<a href={repositoryURL} target="_blank" rel="noreferrer noopener" />}
+                                >
+                                  {t('plugin.open_repository')}
+                                </DropdownMenuItem>
+                              )}
+                              {hasHomepage && (
+                                <DropdownMenuItem
+                                  icon={<ExternalLinkOutlined />}
+                                  render={<a href={homepageURL} target="_blank" rel="noreferrer noopener" />}
+                                >
+                                  {t('plugin.open_homepage')}
+                                </DropdownMenuItem>
+                              )}
+                              {(repositoryURL || hasHomepage) && <DropdownMenuSeparator />}
+                              <DropdownMenuItem
+                                icon={<DeleteOutlined />}
+                                danger
+                                disabled={isDemo || isUpdating}
+                                onClick={() => setPendingDeleteId(plugin.id)}
+                              >
+                                {isDemo ? <Tooltip title={t('demo.blocked')}>{t('plugin.delete')}</Tooltip> : t('plugin.delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
-                      <span className={styles['switch-cell']}>
+                    )}
+                    footerStart={<PluginStateLabel plugin={plugin} isPluginSystemEnabled={isPluginSystemEnabled} />}
+                    footerEnd={(
+                      <>
+                        {listing?.update_available && (
+                          <Tooltip title={isDemo ? t('demo.blocked') : isStoreInstallBlocked(listing) === 'auth' ? t('plugin.auth_required_hint') : undefined}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={styles['update-button']}
+                              icon={<UpgradeOutlined />}
+                              disabled={isDemo || isDeleting || isStoreInstallBlocked(listing) !== undefined}
+                              onClick={() => setUpdating(listing)}
+                              aria-label={t('plugin.update_label_to', { name, version: formatPluginVersion(listing.version) })}
+                              data-testid="plugin-row-update"
+                            >
+                              {t('plugin.update_to', { version: formatPluginVersion(listing.version) })}
+                            </Button>
+                          </Tooltip>
+                        )}
+                        {isPhone && <RowContextHandle name={name} variant="inline" />}
                         <Switch
                           size="small"
                           checked={plugin.enabled}
                           loading={isUpdating}
                           disabled={isDemo || isDeleting}
-                          title={isDemo ? t('demo.blocked') : undefined}
+                          data-tip={isDemo ? t('demo.blocked') : undefined}
                           onChange={(checked) => enabledMutation.mutate({ id: plugin.id, enabled: checked })}
                           aria-label={t('plugin.toggle_label', { name })}
                         />
-                      </span>
-                    </div>
-                  </InstalledPluginRow>
+                      </>
+                    )}
+                  >
+                    {description
+                      ? <p className={styles['card-description']} data-tip={description} data-tip-overflow="">{description}</p>
+                      : <p className={`${styles['card-description']} ${styles['card-description-muted']}`}>{t('plugin.no_description')}</p>}
+                    <MetaLine tone="quiet" className={styles['card-facts']}>
+                      {plugin.config_fields.length > 0 ? t('plugin.config_field_count', { n: plugin.config_fields.length }) : ''}
+                      {!plugin.configured ? t('plugin.not_configured') : ''}
+                    </MetaLine>
+                    {capabilities.length > 0 && <div className={styles.tags}>{capabilities}</div>}
+                  </InstalledPluginCard>
                 );
               })}
             </FilterTransition>
@@ -398,20 +417,27 @@ export function InstalledPluginsPanel({
   );
 }
 
-function InstalledPluginRow({ id, name, isPhone, children }: {
+type InstalledPluginCardProps = Omit<EntityCardProps, 'name' | 'edge'> & {
   id: string;
   name: string;
   isPhone: boolean;
-  children: React.ReactNode;
-}) {
+  /** What the card's head shows for the name: the name, completed by a tooltip when it is cut. */
+  heading: React.ReactNode;
+};
+
+function InstalledPluginCard({ id, name, isPhone, heading, ...card }: InstalledPluginCardProps) {
   const { row, handle, isHeld } = useReorderRow(id);
   const filterMotion = useFilterItemMotion({ isHeld });
   return (
     <RowHandleContext.Provider value={handle}>
-      <m.article {...filterMotion} {...row} className={styles['installed-row']} data-plugin-id={id}>
-        {!isPhone && <ReorderHandle {...handle} name={name} />}
-        {children}
-      </m.article>
+      <EntityCard
+        {...filterMotion}
+        {...card}
+        {...row}
+        name={heading}
+        edge={!isPhone && <ReorderHandle {...handle} name={name} />}
+        data-plugin-id={id}
+      />
     </RowHandleContext.Provider>
   );
 }

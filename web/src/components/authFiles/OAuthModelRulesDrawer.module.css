@@ -89,14 +89,26 @@
   min-width: 0;
 }
 
-.summary {
+.excluded-box {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  min-width: 0;
+}
+
+.excluded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
 .summary-count {
-  font-size: var(--text-md);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -148,10 +160,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 40px;
-  padding: 6px 4px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 2px;
   border-bottom: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.row[data-dragging] {
+  border-radius: var(--radius-md);
+  background: var(--elevated);
+}
+
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -191,10 +216,12 @@
 /* The catalog is the long list in this drawer, so it scrolls inside its own
    box and the footer's actions stay within reach of the rule list above it. */
 .catalog {
-  max-height: 360px;
+  border: 0;
+  max-height: 320px;
   overflow-y: auto;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-md);
 }
 
 .catalog .row {
@@ -218,7 +245,7 @@
 
 /* The pinned remove cell covers the fields that scroll beneath it, so it is
    opaque in the table's own surface, hovered or not, and never shows through. */
-.alias-table:global(.ant-table-wrapper) :global(.ant-table-tbody) > tr > td:global(.ant-table-cell-fix) {
+.alias-table :global([data-slot='table-cell'][data-sticky]) {
   background: var(--surface);
 }
 
@@ -231,4 +258,23 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* The model catalogue's fold: a label line with the catalogue's size, the list behind it. */
+.catalog-fold {
+  padding-top: 2px;
+}
+
+.catalog-fold-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.catalog-fold-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

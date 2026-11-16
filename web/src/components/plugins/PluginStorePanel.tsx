@@ -1,5 +1,7 @@
 import React from 'react';
-import { Button, Segmented, Select } from 'antd';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { ListLoading } from '../common/PageLoading';
 import { CloseOutlined, DownloadOutlined, GithubOutlined, LockOutlined, SettingOutlined, TagOutlined, UpgradeOutlined } from '../icons';
 import { useI18n, useT } from '../../i18n';
@@ -18,7 +20,7 @@ import {
   type PluginStoreFilter,
   type StoreSection,
 } from './pluginStoreLogic';
-import { formatPluginVersion, PluginLinks, PluginLogo, PluginMeta, PluginOriginBadge } from './PluginParts';
+import { formatPluginVersion, PluginLinks, PluginLogo, PluginOriginBadge } from './PluginParts';
 import { PluginInstallModal } from './PluginInstallModal';
 import styles from './Plugins.module.css';
 import { Notice, useToast } from '../feedback';
@@ -27,13 +29,17 @@ import { EmptyState } from '../common/EmptyState';
 import { Toolbar } from '../common/Toolbar';
 import { RefreshButton } from '../common/RefreshButton';
 import { Tooltip } from '../common/Tooltip';
+import { ToolButton } from '../common/ToolButton';
+import { Tag } from '../common/Tag';
+import clsx from 'clsx';
 import { SectionHeading } from '../common/SectionHeading';
 import { BrandArtwork } from '../common/BrandArtwork';
 import { Count } from '../common/Count';
 import { FilterDisclosure } from '../common/FilterDisclosure';
 import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { FilterTransition, useFilterItemMotion } from '../../motion/filter';
-import { m } from '../../motion';
+import { EntityCard } from '../common/EntityCard';
+import { MetaLine } from '../common/MetaLine';
 
 /** Past this length a description is clamped with a toggle; shorter ones never need one. */
 const DESCRIPTION_CLAMP_CHARS = 150;
@@ -152,7 +158,7 @@ export function PluginStorePanel({ store, isLoading, isDemo, onRefresh, isRefres
   const showAll = (section: StoreSection) => (
     !isSourceChosen && section.entries.length > STORE_SECTION_PREVIEW ? (
       // Opening a registry of hundreds of cards is one deliberate step, and one React may interrupt.
-      <Button type="link" size="small" className={styles['show-all']} onClick={() => React.startTransition(() => setFacet(section.sourceId))}>
+      <Button variant="link" size="sm" className={styles['show-all']} onClick={() => React.startTransition(() => setFacet(section.sourceId))}>
         {t('plugin.section_show_all', { n: section.entries.length })}
       </Button>
     ) : undefined
@@ -168,7 +174,7 @@ export function PluginStorePanel({ store, isLoading, isDemo, onRefresh, isRefres
           onChange={setQuery}
           label={t('plugin.search_store')}
         />
-        <FilterDisclosure activeLabel={activeLabels.join(' · ')}>
+        <FilterDisclosure activeLabel={activeLabels}>
           {allSections.length > 1 && (
             <Select
               className={styles['source-select']}
@@ -217,7 +223,7 @@ export function PluginStorePanel({ store, isLoading, isDemo, onRefresh, isRefres
             </button>
           )}
           {(isNarrowed || activeFacet !== ALL_SOURCES) && (
-            <Button type="link" size="small" className={styles['show-all']} onClick={clearFilters}>
+            <Button variant="link" size="sm" className={styles['show-all']} onClick={clearFilters}>
               {t('plugin.clear_filters')}
             </Button>
           )}
@@ -295,7 +301,7 @@ function SourceErrorNotice({ message, onOpenSettings }: { message: string; onOpe
       tone="warning"
       title={t('plugin.source_error_title')}
       description={message}
-      action={<Button size="small" onClick={onOpenSettings}>{t('plugin.open_settings')}</Button>}
+      action={<Button size="sm" onClick={onOpenSettings}>{t('plugin.open_settings')}</Button>}
     />
   );
 }
@@ -355,7 +361,7 @@ function OmcShowcase({ section, isDemo, shouldHideEmpty, onOpenSettings, extra, 
       {isSourceOff ? (
         <EmptyState size="compact" title={t('plugin.omc_source_off')}>
           <Tooltip title={isDemo ? t('demo.blocked') : undefined}>
-            <Button type="primary" disabled={isDemo} loading={isEnabling} onClick={() => void enable()} data-testid="plugin-omc-source-enable">
+            <Button variant="primary" disabled={isDemo} loading={isEnabling} onClick={() => void enable()} data-testid="plugin-omc-source-enable">
               {t('plugin.omc_source_enable')}
             </Button>
           </Tooltip>
@@ -407,41 +413,58 @@ const StoreCard = React.memo(function StoreCard({ entry, isFeatured = false, isE
   // Inside Oh My CPA's section every entry is tagged with the project's name; the tag says nothing there.
   const tags = isFeatured ? metadata.tags.filter((tag) => !/^(omc|oh[- ]?my[- ]?cpa)$/i.test(tag)) : metadata.tags;
 
+  const primaryAction = !entry.installed ? (
+    <Tooltip title={actionTitle}>
+      <Button variant="primary" size="sm" icon={<DownloadOutlined />} disabled={isDemo || blocked !== undefined} onClick={() => onInstall(entry)}>
+        {t('plugin.install')}
+      </Button>
+    </Tooltip>
+  ) : (
+    <>
+      {isUpdate && (
+        <Tooltip title={actionTitle}>
+          <Button variant="primary" size="sm" icon={<UpgradeOutlined />} disabled={isDemo || blocked !== undefined} onClick={() => onInstall(entry)}>
+            {t('plugin.update')}
+          </Button>
+        </Tooltip>
+      )}
+      <ToolButton size="sm" variant="ghost" className="row-action-btn" icon={<SettingOutlined />} label={t('plugin.manage')} onClick={() => onManage(entry.id)} />
+    </>
+  );
+
   return (
-    <m.article
+    <EntityCard
       {...filterMotion}
-      className={`${styles['store-card']} ${isFeatured ? styles['store-card-featured'] : ''}`}
+      isFeatured={isFeatured}
       data-store-id={entry.store_id}
       data-plugin-id={entry.id}
       data-store-origin={origin}
+      mark={<PluginLogo logo={entry.logo} />}
+      name={<span data-tip={metadata.name || entry.id} data-tip-overflow="">{metadata.name || entry.id}</span>}
+      subline={(
+        <MetaLine tone="quiet">
+          {version && <span className={styles['meta-strong']}>{version}</span>}
+          {metadata.author ? t('plugin.by_author', { author: metadata.author }) : ''}
+        </MetaLine>
+      )}
+      aside={primaryAction}
+      footerStart={(
+        <>
+          <PluginOriginBadge origin={origin} />
+          {isUpdate ? (
+            <Tag size="small" tone="accent">{t('plugin.badge_update')}</Tag>
+          ) : entry.installed ? (
+            <Tag size="small">{isFromOtherSource ? t('plugin.badge_installed_elsewhere') : t('plugin.badge_installed')}</Tag>
+          ) : null}
+          {entry.auth_required && (
+            <Tag size="small" tone={entry.auth_configured ? 'neutral' : 'warn'} icon={<LockOutlined />}>
+              {entry.auth_configured ? t('plugin.badge_auth_configured') : t('plugin.badge_auth_missing')}
+            </Tag>
+          )}
+        </>
+      )}
+      footerEnd={<PluginLinks repositoryURL={entry.repository_url} homepage={metadata.homepage} />}
     >
-      <div className={styles['card-head']}>
-        <PluginLogo logo={entry.logo} />
-        <div className={styles['card-title']}>
-          <span className={styles['card-name']} title={metadata.name || entry.id}>{metadata.name || entry.id}</span>
-          <PluginMeta
-            items={[
-              version && <span className={styles['meta-strong']}>{version}</span>,
-              metadata.author && t('plugin.by_author', { author: metadata.author }),
-            ]}
-          />
-        </div>
-      </div>
-
-      <span className={styles.badges}>
-        <PluginOriginBadge origin={origin} />
-        {isUpdate ? (
-          <span className={`${styles.badge} ${styles['badge-accent']}`}>{t('plugin.badge_update')}</span>
-        ) : entry.installed ? (
-          <span className={styles.badge}>{isFromOtherSource ? t('plugin.badge_installed_elsewhere') : t('plugin.badge_installed')}</span>
-        ) : null}
-        {entry.auth_required && (
-          <span className={`${styles.badge} ${entry.auth_configured ? '' : styles['badge-warn']}`}>
-            <LockOutlined />{entry.auth_configured ? t('plugin.badge_auth_configured') : t('plugin.badge_auth_missing')}
-          </span>
-        )}
-      </span>
-
       {description ? (
         <>
           <p className={`${styles['card-description']} ${isExpanded ? styles['card-description-expanded'] : ''}`}>{description}</p>
@@ -458,37 +481,12 @@ const StoreCard = React.memo(function StoreCard({ entry, isFeatured = false, isE
       {tags.length > 0 && (
         <div className={styles.tags}>
           {tags.map((tag) => (
-            <button key={tag} type="button" className={`${styles.tag} ${styles['tag-button']}`} onClick={() => onSelectTag(tag)} aria-label={t('plugin.tag_filter_apply', { tag })}>
+            <button key={tag} type="button" className={clsx('tag is-small', styles['tag-button'])} onClick={() => onSelectTag(tag)} aria-label={t('plugin.tag_filter_apply', { tag })}>
               {tag}
             </button>
           ))}
         </div>
       )}
-
-      <div className={styles['card-footer']}>
-        <span className={styles['card-actions']}>
-          {!entry.installed && (
-            <Tooltip title={actionTitle}>
-              <Button type="primary" size="small" icon={<DownloadOutlined />} disabled={isDemo || blocked !== undefined} onClick={() => onInstall(entry)}>
-                {t('plugin.install')}
-              </Button>
-            </Tooltip>
-          )}
-          {isUpdate && (
-            <Tooltip title={actionTitle}>
-              <Button type="primary" size="small" icon={<UpgradeOutlined />} disabled={isDemo || blocked !== undefined} onClick={() => onInstall(entry)}>
-                {t('plugin.update')}
-              </Button>
-            </Tooltip>
-          )}
-          {entry.installed && (
-            <Button size="small" icon={<SettingOutlined />} onClick={() => onManage(entry.id)}>
-              {t('plugin.manage')}
-            </Button>
-          )}
-        </span>
-        <PluginLinks repositoryURL={entry.repository_url} homepage={metadata.homepage} />
-      </div>
-    </m.article>
+    </EntityCard>
   );
 });

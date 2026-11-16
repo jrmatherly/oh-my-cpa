@@ -1,5 +1,7 @@
 import React from 'react';
-import { Button, Tabs } from 'antd';
+import { formatErrorCode } from '../../utils/format';
+import { Tabs } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import { HistoryOutlined } from '../../components/icons';
 import { CopyButton } from '../../components/common/CopyButton';
 import { CodeBlock } from '../../components/workspace/ModelMarkdown';
@@ -12,7 +14,6 @@ import type { Turn } from './state';
 import { playgroundErrorKey } from './errors';
 import styles from './PlaygroundPage.module.css';
 import { Notice } from '../../components/feedback';
-import { TAB_OVERFLOW } from '../../components/common/tabOverflow';
 
 export interface InspectPanelProps {
   turn: Turn | undefined;
@@ -82,7 +83,7 @@ export const InspectPanel = React.memo(function InspectPanel({ turn, defaultUser
           <Notice
             tone="error"
             title={t(playgroundErrorKey(turn.error.code ?? ''))}
-            description={<code>{[turn.error.code, turn.error.upstream_status, turn.error.parameter].filter(Boolean).join(' · ')}</code>}
+            description={<code>{formatErrorCode({ code: turn.error.code, status: turn.error.upstream_status, parameter: turn.error.parameter })}</code>}
           />
         )}
         <div className={styles['related']}>
@@ -97,7 +98,7 @@ export const InspectPanel = React.memo(function InspectPanel({ turn, defaultUser
           <p className={workspace['field-hint']}>{t(turn.requestID ? 'pg.usage_delay' : 'pg.request_id_missing')}</p>
         </div>
       </section>
-      <Tabs more={TAB_OVERFLOW}
+      <Tabs
         className={styles['inspect-tabs']}
         size="small"
         destroyOnHidden

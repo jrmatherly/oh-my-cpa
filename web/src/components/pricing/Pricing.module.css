@@ -1,6 +1,6 @@
 /* ── Shared pricing surfaces: the editor drawer, tier marks, cost breakdown ── */
 
-.drawer :global(.ant-drawer-body) {
+.drawer :global([data-slot='sheet-body']) {
   padding: 20px 24px;
 }
 
@@ -31,18 +31,24 @@
   gap: 12px;
 }
 
-.section h3 {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--fg);
+/* The scope the editor writes to. It sits above the body so changing it reads as changing what
+   the drawer edits, not as one more field inside it. */
+.scopes {
+  margin-bottom: 20px;
 }
 
-.section-head {
-  display: flex;
+.scope-tab {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* A channel with its own price: the one exception the tabs mark. The shared price is the quiet default. */
+.scope-own {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .mode-option {
@@ -78,13 +84,14 @@
 
 /* ── One OpenRouter model ── */
 .upstream-summary {
+  border: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 12px 14px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
 }
 
 .upstream-head {
@@ -147,18 +154,6 @@
   gap: 6px;
 }
 
-.tier-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  color: var(--fg-2);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  background: var(--bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-}
 
 /* ── The OpenRouter picker ── */
 .picker {
@@ -168,12 +163,13 @@
 }
 
 .picker-list {
+  border: 0;
   display: flex;
   flex-direction: column;
   max-height: 320px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
 }
 
 .picker-option {
@@ -250,13 +246,13 @@
   font-size: var(--text-sm);
 }
 
-.rate-input :global(.ant-input-number),
-.tier-field :global(.ant-input-number),
-.tier-field :global(.ant-picker) {
+.rate-input :global([data-slot='number-input']),
+.tier-field :global([data-slot='number-input']),
+.tier-field :global([data-slot='time-picker']) {
   width: 100%;
 }
 
-.multiplier-field :global(.ant-input-number) {
+.multiplier-field :global([data-slot='number-input']) {
   width: 160px;
 }
 
@@ -364,7 +360,8 @@
   min-width: 0;
 }
 
-.tier-window :global(.ant-select) {
+.tier-window :global([data-slot='select-trigger']),
+.tier-window :global([data-slot='combobox-trigger']) {
   width: 100%;
 }
 
@@ -373,17 +370,18 @@
 }
 
 .tier-row {
+  border: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 100%;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
 }
 
 .tier-row-invalid {
-  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger), var(--edge-drop);
 }
 
 .tier-condition {
@@ -402,8 +400,9 @@
   font-size: var(--text-sm);
 }
 
-.tier-threshold :global(.ant-input-affix-wrapper),
-.tier-threshold :global(.ant-picker) {
+.tier-threshold :global([data-slot='number-input']),
+.tier-threshold :global([data-slot='input-wrapper']),
+.tier-threshold :global([data-slot='time-picker']) {
   width: 100%;
   max-width: 280px;
 }
@@ -416,6 +415,7 @@
 }
 
 .tier-preset {
+  border: 0;
   min-height: 24px;
   padding: 0 8px;
   color: var(--fg-2);
@@ -424,14 +424,14 @@
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-md);
+  transition: box-shadow var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 
 .tier-preset:hover {
   color: var(--fg);
-  border-color: var(--fg-2);
+  box-shadow: var(--shadow-raised);
 }
 
 .tier-preset:focus-visible {
@@ -506,7 +506,7 @@
   white-space: normal;
 }
 
-.schedule tbody th :global(.anticon) {
+.schedule tbody th :global(.omc-icon) {
   margin-right: 4px;
   color: var(--meta);
 }
@@ -583,7 +583,8 @@
   font-size: var(--text-sm);
 }
 
-.calculator :global(.ant-input) {
+.calculator :global([data-slot='number-input']),
+.calculator :global([data-slot='input']) {
   width: 140px;
 }
 
@@ -676,8 +677,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .tier-threshold :global(.ant-input-affix-wrapper),
-  .tier-threshold :global(.ant-picker) {
+  .tier-threshold :global([data-slot='number-input']),
+  .tier-threshold :global([data-slot='input-wrapper']),
+  .tier-threshold :global([data-slot='time-picker']) {
     max-width: none;
   }
 }

@@ -50,6 +50,8 @@ var QUERY_READABLE_TABLES = map[string][]string{
 	"audit_events":                  nil,
 	"client_key_aliases":            nil,
 	"credential_display_names":      nil,
+	"archived_credentials":          {"key_fingerprint"},
+	"archived_providers":            nil,
 	"connections":                   nil,
 	"cpa_bindings":                  nil,
 	"cpa_config_backup_settings":    nil,
@@ -71,6 +73,7 @@ var QUERY_READABLE_TABLES = map[string][]string{
 	"pricing_upstream_catalog":      nil,
 	"quota_refresh_attempts":        nil,
 	"quota_snapshots":               nil,
+	"quota_capacity_cycles":         nil,
 	"release_check_state":           nil,
 	"release_index":                 nil,
 	"resource_overrides":            nil,
@@ -86,6 +89,7 @@ var QUERY_READABLE_TABLES = map[string][]string{
 
 // QUERY_HIDDEN_TABLES are never readable, with the reason recorded for the next reviewer.
 var QUERY_HIDDEN_TABLES = map[string]string{
+	"outbound_proxy_settings":    "encrypted outbound proxy credentials",
 	"database_backup_automation": "encrypted cloud credentials and automatic backup passphrase",
 	"custom_icons":               "operator-uploaded artwork is only returned by the authenticated image endpoint",
 	"fonts":                      "the font library is read through its own endpoint",

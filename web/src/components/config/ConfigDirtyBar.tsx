@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Space } from 'antd';
+import { Button } from '@/components/ui/button';
 import { CheckOutlined, CloseOutlined } from '../icons';
 import { useT } from '../../i18n';
 import { ConfirmAction } from '../common/ConfirmAction';
@@ -11,6 +11,7 @@ export interface ConfigDirtyBarProps {
   isSaving: boolean;
   yamlError?: boolean;
   payloadIssuesCount?: number;
+  validationError?: string;
   showErrorFeedback?: boolean;
   onSave: () => void;
   onDiscard: () => void;
@@ -37,6 +38,7 @@ export const ConfigDirtyBar: React.FC<ConfigDirtyBarProps> = ({
   isSaving,
   yamlError = false,
   payloadIssuesCount = 0,
+  validationError,
   showErrorFeedback = false,
   onSave,
   onDiscard,
@@ -77,12 +79,14 @@ export const ConfigDirtyBar: React.FC<ConfigDirtyBarProps> = ({
 
   if (!isDirty) return null;
 
-  const hasErrors = yamlError || payloadIssuesCount > 0;
+  const hasErrors = yamlError || payloadIssuesCount > 0 || Boolean(validationError);
 
   const errorReason = yamlError
     ? t('cfg.dirty_bar_yaml_error')
     : showErrorFeedback && payloadIssuesCount > 0
     ? t('cfg.dirty_bar_payload_issues', { n: payloadIssuesCount })
+    : showErrorFeedback && validationError
+    ? validationError
     : undefined;
 
   const content = (
@@ -105,14 +109,13 @@ export const ConfigDirtyBar: React.FC<ConfigDirtyBarProps> = ({
           {extra}
         </div>
 
-        <Space size={10} className="config-dirty-bar-actions">
+        <div className="config-dirty-bar-actions inline-flex items-center gap-2.5">
           {/* Discard needs no confirmation, invoking the rollback directly. */}
           <Button
-            size="small"
+            variant="ghost"
             icon={<CloseOutlined />}
             disabled={isSaving || isDiscardDisabled}
             onClick={onDiscard}
-            className="config-dirty-btn-discard"
           >
             {t('cfg.dirty_bar_discard')}
           </Button>
@@ -121,14 +124,12 @@ export const ConfigDirtyBar: React.FC<ConfigDirtyBarProps> = ({
               a valid form goes through confirmation. */}
           {hasErrors ? (
             <Button
-              size="small"
-              type="primary"
+              variant="primary"
               icon={<CheckOutlined />}
               loading={isSaving}
               disabled={isSaving || disabled}
-              title={disabled ? disabledReason ?? t('demo.blocked') : undefined}
+              data-tip={disabled ? disabledReason ?? t('demo.blocked') : undefined}
               onClick={onSave}
-              className="config-dirty-btn-save"
             >
               {t('cfg.dirty_bar_save')}
             </Button>
@@ -149,20 +150,18 @@ export const ConfigDirtyBar: React.FC<ConfigDirtyBarProps> = ({
               placement="topRight"
             >
               <Button
-                size="small"
-                type="primary"
+                variant="primary"
                 icon={<CheckOutlined />}
                 loading={isSaving}
                 disabled={isSaving || disabled}
-                title={disabled ? disabledReason ?? t('demo.blocked') : undefined}
+                data-tip={disabled ? disabledReason ?? t('demo.blocked') : undefined}
                 ref={saveRef}
-                className="config-dirty-btn-save"
               >
                 {t('cfg.dirty_bar_save')}
               </Button>
             </ConfirmAction>
           )}
-        </Space>
+        </div>
       </div>
     </div>
   );

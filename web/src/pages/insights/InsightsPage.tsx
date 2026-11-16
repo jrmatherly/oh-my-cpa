@@ -1,6 +1,6 @@
 import React from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Select } from 'antd';
+import { Select } from '@/components/ui/select';
 import { api, apiErrorCode } from '../../api/client';
 import { useT } from '../../i18n';
 import { useTheme } from '../../theme/ThemeContext';
@@ -17,7 +17,6 @@ import {
   DEFAULT_INSIGHTS_RANGE,
   INSIGHTS_BUCKETS,
   INSIGHTS_RANGE_PREFERENCE,
-  comparesSameStretch,
   insightsPollInterval,
   insightsRangeParams,
   parseInsightsRange,
@@ -36,9 +35,12 @@ import { LoadFailure } from '../../components/feedback';
 import {
   FOLDED_ID,
   attributeServingProviders,
+  baselineMeasures,
   buildFlow,
+  comparisonScale,
   decodeInsightsCube,
   filterRows,
+  groupBaselines,
   groupSparklines,
   groupTotals,
   isAdditiveMetric,
@@ -52,7 +54,7 @@ import {
   type InsightsDimension,
   type InsightsFilters,
   type InsightsMetric,
-} from './insightsCube';
+} from '../../types/insightsCube';
 import {
   INSIGHTS_GROUPINGS,
   readInsightsView,
@@ -62,8 +64,8 @@ import {
   type InsightsGrouping,
   type InsightsViewState,
 } from './insightsViewState';
-import { useInsightsLabels } from './useInsightsLabels';
-import { useCompareWindowLabel } from './useCompareWindowLabel';
+import { useInsightsLabels } from '../../hooks/useInsightsLabels';
+import { useCompareWindowLabel } from '../../hooks/useCompareWindowLabel';
 import { InsightsRangeControl } from './components/InsightsRangeControl';
 import { InsightsFilterBar } from './components/InsightsFilterBar';
 import { MetricTiles } from './components/MetricTiles';
@@ -72,13 +74,16 @@ import { KeyTable } from './components/KeyTable';
 import { KeyCompositionPanel } from './components/KeyCompositionPanel';
 import { InsightsValue } from './components/InsightsValue';
 import { ChartLegend } from '../../components/common/ChartLegend';
+import { DeferredPanel } from '../../components/common/DeferredPanel';
+import { useIsRouteActive, useIsRoutePollingActive } from '../../performance/routeContract';
 import { PanelNarrowing } from './components/PanelNarrowing';
 import { RhythmGrid } from './components/RhythmGrid';
 import { KeyDetailDrawer } from './components/KeyDetailDrawer';
+import {
+  LazyInsightsFlowChart as InsightsFlowChart,
+  LazyInsightsTrendChart as InsightsTrendChart,
+} from '../../charts/lazyCharts';
 import styles from './insights.module.css';
-
-const InsightsTrendChart = React.lazy(() => import('./charts/InsightsTrendChart'));
-const InsightsFlowChart = React.lazy(() => import('./charts/InsightsFlowChart'));
 
 const TREND_TOP = 5;
 const FLOW_TOP = 6;
@@ -136,35 +141,48 @@ export const InsightsPage: React.FC = () => {
   const t = useT();
   const { theme } = useTheme();
   const isPhone = useIsPhoneViewport();
+  const isRouteActive = useIsRouteActive();
+  const isPollingActive = useIsRoutePollingActive();
   const { modelView } = useTokenDisplayStyle();
   const modelDimension: 'call_point' | 'model' = modelView === 'model' ? 'model' : 'call_point';
 
   // Each narrowing, regrouping or metric switch is one step of the browser's Back.
   const [search, setSearch] = useViewSearchParams();
-  const view = React.useMemo(() => readInsightsView(search), [search]);
+  // What the reader asked for, and the view the page is drawn from. A filter, a metric or a grouping
+  // reshapes every panel and chart on the page, and drawn in the click's own task that was most of
+  // a second before the press itself showed. The page now draws from a deferred copy: the pressed
+  // row, tile or segment answers on the next frame, and the panels follow in an interruptible
+  // render that a second click can overtake.
+  const requestedView = React.useMemo(() => readInsightsView(search), [search]);
+  const view = React.useDeferredValue(requestedView);
+  const isViewPending = view !== requestedView;
   const setView = React.useCallback((patch: Partial<InsightsViewState>) => {
     setSearch((current) => writeInsightsView({ ...readInsightsView(current), ...patch }));
   }, [setSearch]);
   // A narrowing reshapes the panels above the row it was chosen in; the row stays under the finger.
-  const anchorPress = useScrollAnchor(search.toString());
+  const anchorPress = useScrollAnchor(view);
 
   const { value: range, ready: isRangeReady, loaded: isRangeStored, set: setRange } = usePreference<InsightsRange>(
     INSIGHTS_RANGE_PREFERENCE, DEFAULT_INSIGHTS_RANGE, parseInsightsRange,
   );
 
   const cubeQuery = useQuery({
-    queryKey: ['insights-cube', insightsRangeParams(range, view.bucket)],
-    queryFn: () => api.getInsightsCube(insightsRangeParams(range, view.bucket)),
+    queryKey: ['insights-cube', insightsRangeParams(range, requestedView.bucket)],
+    queryFn: () => api.getInsightsCube(insightsRangeParams(range, requestedView.bucket)),
     enabled: isRangeReady,
     placeholderData: keepPreviousData,
-    staleTime: 10_000,
-    refetchInterval: (query) => insightsPollInterval(query.state.data?.window),
+    staleTime: 15_000,
+    refetchOnWindowFocus: isPollingActive,
+    refetchInterval: (query) => (isPollingActive ? insightsPollInterval(query.state.data?.window) : false),
   });
-  const { configuredProviders } = useProviderBranding();
+  const { configuredProviders, archivedCredentialsByIndex } = useProviderBranding();
   // A provider's own name is the identity of the connection that answered, and the credential that
   // served a row is what says which connection that was: CPA labels an API-key request with its
   // protocol family, which is also the label of that family's OAuth channel.
-  const servingProvider = React.useMemo(() => createServingProviderResolver(configuredProviders), [configuredProviders]);
+  const servingProvider = React.useMemo(
+    () => createServingProviderResolver(configuredProviders, archivedCredentialsByIndex),
+    [configuredProviders, archivedCredentialsByIndex],
+  );
   const cube = React.useMemo(() => {
     if (!cubeQuery.data) return undefined;
     return attributeServingProviders(decodeInsightsCube(cubeQuery.data), servingProvider);
@@ -173,6 +191,9 @@ export const InsightsPage: React.FC = () => {
   const formatCompareWindow = useCompareWindowLabel();
 
   const [openKey, setOpenKey] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!isRouteActive) setOpenKey((current) => (current !== null ? null : current));
+  }, [isRouteActive]);
   // The rhythm read filters request records, where a connection is the credentials that served it;
   // the page's provider filter names the connection.
   const requestFilters = React.useMemo(() => requestFilterValues(cube, view.filters), [cube, view.filters]);
@@ -183,6 +204,7 @@ export const InsightsPage: React.FC = () => {
     enabled: isRangeReady,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
+    refetchOnWindowFocus: isPollingActive,
     retry: (count, error) => apiErrorCode(error) !== 'demo_uncaptured' && count < 2,
     meta: { silent: true },
   });
@@ -190,11 +212,36 @@ export const InsightsPage: React.FC = () => {
   const drawerRhythmQuery = useQuery({
     queryKey: ['insights-rhythm', drawerRhythmString],
     queryFn: () => api.getInsightsRhythm(drawerRhythmString),
-    enabled: isRangeReady && openKey !== null,
+    enabled: isRouteActive && isRangeReady && openKey !== null,
     staleTime: 60_000,
     retry: (count, error) => apiErrorCode(error) !== 'demo_uncaptured' && count < 2,
     meta: { silent: true },
   });
+
+  // When a cached Insights slot resumes after being parked off-screen, revalidate stale cube and
+  // rhythm snapshots (including closed calendar presets whose server-resolved bounds cross midnight,
+  // where `refetchOnWindowFocus` was suppressed while the route was inactive).
+  const wasRouteActiveRef = React.useRef(isRouteActive);
+  React.useEffect(() => {
+    const becameActive = isRouteActive && !wasRouteActiveRef.current;
+    wasRouteActiveRef.current = isRouteActive;
+    if (!becameActive || !isRangeReady) return;
+    if (cubeQuery.isStale && !cubeQuery.isFetching) {
+      void cubeQuery.refetch();
+    }
+    if (rhythmQuery.isStale && !rhythmQuery.isFetching) {
+      void rhythmQuery.refetch();
+    }
+  }, [
+    isRouteActive,
+    isRangeReady,
+    cubeQuery.isStale,
+    cubeQuery.isFetching,
+    cubeQuery.refetch,
+    rhythmQuery.isStale,
+    rhythmQuery.isFetching,
+    rhythmQuery.refetch,
+  ]);
 
   const metric = view.metric;
   const isLineMetric = !isAdditiveMetric(metric);
@@ -203,19 +250,20 @@ export const InsightsPage: React.FC = () => {
   const previousRows = React.useMemo(() => (cube ? filterRows(cube, cube.previous, view.filters) : []), [cube, view.filters]);
   const isComparing = view.isComparing && Boolean(cube?.compare);
   const current = React.useMemo(() => sumMeasures(rows), [rows]);
-  // The window and the sums travel together: a tile's label depends on which stretch was compared,
-  // not only on the figures.
-  const baseline = React.useMemo(
-    () => (isComparing && cube?.compare
-      ? { measures: sumMeasures(previousRows), window: cube.compare, isSameStretch: comparesSameStretch(cube.window) }
-      : null),
-    [cube, isComparing, previousRows],
-  );
+  const scale = React.useMemo(() => (cube ? comparisonScale(cube) : 1), [cube]);
+  // The comparison baseline is derived from the full previous period's sub-buckets using an
+  // outlier-robust mean scaled to the current window's elapsed duration.
+  const baseline = React.useMemo(() => {
+    if (!isComparing || !cube?.compare) return null;
+    const result = baselineMeasures(previousRows, scale);
+    return { measures: result.baseline, raw: result.raw, window: cube.compare };
+  }, [cube, isComparing, previousRows, scale]);
 
   const rank = React.useCallback((dimension: InsightsDimension) => {
     if (!cube) return [];
-    return rankGroups(groupTotals(cube, rows, dimension), metric, isComparing ? groupTotals(cube, previousRows, dimension) : undefined);
-  }, [cube, isComparing, metric, previousRows, rows]);
+    const prevGroup = isComparing ? groupBaselines(cube, previousRows, dimension, scale) : undefined;
+    return rankGroups(groupTotals(cube, rows, dimension), metric, prevGroup?.baseline, prevGroup?.raw);
+  }, [cube, isComparing, metric, previousRows, rows, scale]);
   // A ranking panel reads every filter but its own, the way the filter picker counts: choosing a model
   // keeps the other models listed, stepped back, so the narrowing is visible where it was made. The
   // dashboard's split applies on top - a request served through an OAuth sign-in is credited to that
@@ -226,8 +274,9 @@ export const InsightsPage: React.FC = () => {
       const narrowed = filterRows(cube, source, view.filters, dimension);
       return admits ? narrowed.filter(admits) : narrowed;
     };
-    return rankGroups(groupTotals(cube, pick(cube.rows), dimension), metric, isComparing ? groupTotals(cube, pick(cube.previous), dimension) : undefined);
-  }, [cube, isComparing, metric, view.filters]);
+    const prevGroup = isComparing ? groupBaselines(cube, pick(cube.previous), dimension, scale) : undefined;
+    return rankGroups(groupTotals(cube, pick(cube.rows), dimension), metric, prevGroup?.baseline, prevGroup?.raw);
+  }, [cube, isComparing, metric, scale, view.filters]);
   const rankings = React.useMemo(() => ({
     key: rank('key'),
     model: rank(modelDimension),
@@ -310,16 +359,16 @@ export const InsightsPage: React.FC = () => {
 
   const selectFilter = React.useCallback((dimension: InsightsDimension, id: string) => {
     if (id === FOLDED_ID) return;
-    setView({ filters: toggleFilter(view.filters, dimension, id) });
-  }, [setView, view.filters]);
+    setView({ filters: toggleFilter(requestedView.filters, dimension, id) });
+  }, [setView, requestedView.filters]);
   const toggleTrendGroup = React.useCallback((id: string) => {
     setSelectedTrendIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }, []);
   const clearFilter = React.useCallback((dimension: InsightsDimension) => {
-    const next = { ...view.filters };
+    const next = { ...requestedView.filters };
     delete next[dimension];
     setView({ filters: next });
-  }, [setView, view.filters]);
+  }, [setView, requestedView.filters]);
   const selectTrendGroup = React.useCallback((id: string | null) => {
     setSelectedTrendIds(id === null ? [] : [id]);
   }, []);
@@ -368,7 +417,7 @@ export const InsightsPage: React.FC = () => {
   // on a window that starts and ends on day boundaries. The exact instants and the deployment's zone
   // are the hover, so the line under the title stays a reading rather than a timestamp dump.
   const subtitle = shownWindow ? (
-    <span className={styles['window-span']} title={`${dayjs(shownWindow.from).format('YYYY-MM-DD HH:mm')} – ${shownWindow.open_end ? t('dash.range.until_now') : dayjs(shownWindow.to).format('YYYY-MM-DD HH:mm')} · ${shownWindow.timezone}`}>
+    <span className={styles['window-span']} data-tip={`${dayjs(shownWindow.from).format('YYYY-MM-DD HH:mm')} – ${shownWindow.open_end ? t('dash.range.until_now') : dayjs(shownWindow.to).format('YYYY-MM-DD HH:mm')} (${shownWindow.timezone})`}>
       {formatWindowSpan(shownWindow, t('dash.range.until_now'))}
     </span>
   ) : t('dash.loading');
@@ -381,7 +430,7 @@ export const InsightsPage: React.FC = () => {
       size="small"
       variant={isPhone ? 'borderless' : undefined}
       className={styles['bucket-control']}
-      value={view.bucket}
+      value={requestedView.bucket}
       // A phone has one line for the title and both controls, so "Auto" shows only what it resolved to.
       labelRender={isPhone && view.bucket === 'auto' && shownWindow ? () => t(`insights.bucket.${shownWindow.bucket}`) : undefined}
       aria-label={t('insights.bucket_label')}
@@ -400,12 +449,11 @@ export const InsightsPage: React.FC = () => {
   const compareButton = (
     <ToolButton
       icon={<SwapOutlined />}
-      label={t(view.isComparing ? 'insights.compare_off' : 'insights.compare_on')}
-      type={view.isComparing ? 'primary' : 'default'}
-      ghost={view.isComparing}
-      aria-pressed={view.isComparing}
+      label={t(requestedView.isComparing ? 'insights.compare_off' : 'insights.compare_on')}
+      variant={requestedView.isComparing ? 'active' : 'secondary'}
+      aria-pressed={requestedView.isComparing}
       disabled={!cube?.compare}
-      onClick={() => setView({ isComparing: !view.isComparing })}
+      onClick={() => setView({ isComparing: !requestedView.isComparing })}
       data-testid="insights-compare"
     />
   );
@@ -467,9 +515,9 @@ export const InsightsPage: React.FC = () => {
   const groupingOptions = INSIGHTS_GROUPINGS.map((grouping) => ({ value: grouping, label: t(`insights.group.${grouping}`) }));
 
   return (
-    <div className={`terminal-page ${styles['page']}`} data-testid="insights-page" onPointerDownCapture={anchorPress}>
+    <div className={`terminal-page ${styles['page']}`} data-testid="insights-page" aria-busy={isViewPending || undefined} onPointerDownCapture={anchorPress}>
       {header}
-      <InsightsFilterBar cube={cube} filters={view.filters} labels={labels} modelDimension={modelDimension} onChange={(filters) => setView({ filters })} onOpenKey={setOpenKey} />
+      <InsightsFilterBar cube={cube} filters={requestedView.filters} labels={labels} modelDimension={modelDimension} onChange={(filters) => setView({ filters })} onOpenKey={setOpenKey} />
       {cubeQuery.isError && (
         <LoadFailure
           tone="warning"
@@ -478,7 +526,7 @@ export const InsightsPage: React.FC = () => {
           onRetry={() => void cubeQuery.refetch()}
         />
       )}
-      <MetricTiles current={current} baseline={baseline} metric={metric} onMetricChange={(next: InsightsMetric) => setView({ metric: next })} />
+      <MetricTiles current={current} baseline={baseline} metric={requestedView.metric} onMetricChange={(next: InsightsMetric) => setView({ metric: next })} />
       <Panel
         className={styles['trend-panel']}
         title={(
@@ -489,7 +537,7 @@ export const InsightsPage: React.FC = () => {
                   size="small"
                   variant={isPhone ? 'borderless' : undefined}
                   className={styles['grouping-select']}
-                  value={view.grouping}
+                  value={requestedView.grouping}
                   options={groupingOptions}
                   onChange={(grouping: InsightsGrouping) => setView({ grouping })}
                   aria-label={t('insights.group_label')}
@@ -519,7 +567,6 @@ export const InsightsPage: React.FC = () => {
                     ? <span>{t('insights.folded')}</span>
                     : <InsightsValue dimension={groupingDimension} id={group.id} labels={labels} />,
                   // The legend chooses which series the chart draws; it never filters the page.
-                  title: t('insights.legend_toggle'),
                   isPressed: selectedTrendIds.includes(group.id),
                   isDimmed: selectedTrendIds.length > 0 && !selectedTrendIds.includes(group.id),
                   onToggle: () => toggleTrendGroup(group.id),
@@ -554,13 +601,13 @@ export const InsightsPage: React.FC = () => {
       </Panel>
       <div className={styles['rankings']} data-layout={panels.key.length === 1 ? 'single-key' : 'grid'}>
         <RankingPanel dimension="key" title={t('insights.dim.key')} groups={panels.key} metric={metric} labels={labels} compare={baseline?.window}
-          colorOf={groupedColor('key')} selected={view.filters.key ?? []} onSelect={selectFilter} onClear={clearFilter} onOpen={setOpenKey} limit={rankingLimit} testId="insights-ranking-key" />
+          colorOf={groupedColor('key')} selected={requestedView.filters.key ?? []} onSelect={selectFilter} onClear={clearFilter} onOpen={setOpenKey} limit={rankingLimit} testId="insights-ranking-key" />
         <RankingPanel dimension={modelDimension} title={t(`insights.dim.${modelDimension}`)} groups={panels.model} metric={metric} labels={labels} compare={baseline?.window}
-          colorOf={groupedColor(modelDimension)} selected={view.filters[modelDimension] ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-model" />
+          colorOf={groupedColor(modelDimension)} selected={requestedView.filters[modelDimension] ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-model" />
         <RankingPanel dimension="provider" title={t('insights.ranking.provider')} groups={panels.provider} metric={metric} labels={labels} compare={baseline?.window}
-          colorOf={groupedColor('provider')} selected={view.filters.provider ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-provider" />
+          colorOf={groupedColor('provider')} selected={requestedView.filters.provider ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-provider" />
         <RankingPanel dimension="credential" title={t('insights.ranking.credential')} groups={panels.credential} metric={metric} labels={labels} compare={baseline?.window}
-          colorOf={groupedColor('credential')} selected={view.filters.credential ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-credential" />
+          colorOf={groupedColor('credential')} selected={requestedView.filters.credential ?? []} onSelect={selectFilter} onClear={clearFilter} limit={rankingLimit} testId="insights-ranking-credential" />
       </div>
       {/* On a phone the key ranking above already lists every key and opens its detail; the table
           would repeat it as a column of label rows. */}
@@ -575,74 +622,89 @@ export const InsightsPage: React.FC = () => {
       )}
       {/* A bar per key needs the width to name the key and still show its parts; a phone has the table above. */}
       {!isPhone && (
-        <KeyCompositionPanel
-          cube={cube}
-          rows={compositionRows}
-          columnDimension={modelDimension}
-          metric={metric}
-          labels={labels}
-          selectedKeys={view.filters.key ?? []}
-          selectedColumns={view.filters[modelDimension] ?? []}
-          onSelect={(keyId, columnId) => {
-            const isSame = (view.filters.key ?? []).join() === keyId
-              && (view.filters[modelDimension] ?? []).join() === (columnId ?? '');
-            const next = { ...view.filters };
-            delete next.key;
-            delete next[modelDimension];
-            // Choosing the segment already chosen takes it back, as a ranking row does.
-            setView({ filters: isSame ? next : { ...next, key: [keyId], ...(columnId === null ? {} : { [modelDimension]: [columnId] }) } });
-          }}
-          onSelectColumn={(columnId) => selectFilter(modelDimension, columnId)}
-          onClear={() => {
-            const next = { ...view.filters };
-            delete next.key;
-            delete next[modelDimension];
-            setView({ filters: next });
-          }}
-        />
+        <DeferredPanel
+          priority="p1"
+          fallback={<Panel className={styles['trend-panel']}><ChartFallback height={280} /></Panel>}
+        >
+          <KeyCompositionPanel
+            cube={cube}
+            rows={compositionRows}
+            columnDimension={modelDimension}
+            metric={metric}
+            labels={labels}
+            selectedKeys={view.filters.key ?? []}
+            selectedColumns={view.filters[modelDimension] ?? []}
+            onSelect={(keyId, columnId) => {
+              const isSame = (requestedView.filters.key ?? []).join() === keyId
+                && (requestedView.filters[modelDimension] ?? []).join() === (columnId ?? '');
+              const next = { ...requestedView.filters };
+              delete next.key;
+              delete next[modelDimension];
+              // Choosing the segment already chosen takes it back, as a ranking row does.
+              setView({ filters: isSame ? next : { ...next, key: [keyId], ...(columnId === null ? {} : { [modelDimension]: [columnId] }) } });
+            }}
+            onSelectColumn={(columnId) => selectFilter(modelDimension, columnId)}
+            onClear={() => {
+              const next = { ...requestedView.filters };
+              delete next.key;
+              delete next[modelDimension];
+              setView({ filters: next });
+            }}
+          />
+        </DeferredPanel>
       )}
       {/* A flow needs its three columns to say anything; a phone gets the rankings above instead. */}
       {flow && flow.links.length > 0 && (
-        <Panel
-          data-testid="insights-flow"
-          title={(
-            <PanelTitle
-              extra={(
-                <PanelNarrowing
-                  count={flowDimensions.reduce((sum, dimension) => sum + (view.filters[dimension]?.length ?? 0), 0)}
-                  unit={t(`insights.metric.${isAdditiveMetric(metric) ? metric : 'requests'}`)}
-                  onClear={() => {
-                    const next = { ...view.filters };
-                    for (const dimension of flowDimensions) delete next[dimension];
-                    setView({ filters: next });
-                  }}
-                />
-              )}
-            >
-              {t('insights.flow_title')}
-            </PanelTitle>
-          )}
+        <DeferredPanel
+          priority="p2"
+          fallback={<Panel className={styles['trend-panel']}><ChartFallback height={320} /></Panel>}
         >
-          <React.Suspense fallback={<ChartFallback height={320} />}>
-            <InsightsFlowChart
-              nodes={flow.nodes}
-              links={flow.links}
-              metric={isAdditiveMetric(metric) ? metric : 'requests'}
-              colorOf={flowColor}
-              labelOf={flowLabel}
-              isDimmed={isFlowNarrowed ? flowDimmed : undefined}
-              onSelect={selectFilter}
-              label={t('insights.flow_title')}
-            />
-          </React.Suspense>
-        </Panel>
+          <Panel
+            data-testid="insights-flow"
+            title={(
+              <PanelTitle
+                extra={(
+                  <PanelNarrowing
+                    count={flowDimensions.reduce((sum, dimension) => sum + (view.filters[dimension]?.length ?? 0), 0)}
+                    unit={t(`insights.metric.${isAdditiveMetric(metric) ? metric : 'requests'}`)}
+                    onClear={() => {
+                      const next = { ...requestedView.filters };
+                      for (const dimension of flowDimensions) delete next[dimension];
+                      setView({ filters: next });
+                    }}
+                  />
+                )}
+              >
+                {t('insights.flow_title')}
+              </PanelTitle>
+            )}
+          >
+            <React.Suspense fallback={<ChartFallback height={320} />}>
+              <InsightsFlowChart
+                nodes={flow.nodes}
+                links={flow.links}
+                metric={isAdditiveMetric(metric) ? metric : 'requests'}
+                colorOf={flowColor}
+                labelOf={flowLabel}
+                isDimmed={isFlowNarrowed ? flowDimmed : undefined}
+                onSelect={selectFilter}
+                label={t('insights.flow_title')}
+              />
+            </React.Suspense>
+          </Panel>
+        </DeferredPanel>
       )}
-      <RhythmGrid
-        data={rhythmQuery.data}
-        measure={rhythmMeasure}
-        isLoading={rhythmQuery.isLoading}
-        isUncaptured={apiErrorCode(rhythmQuery.error) === 'demo_uncaptured'}
-      />
+      <DeferredPanel
+        priority="p2"
+        fallback={<Panel className={styles['trend-panel']}><ChartFallback height={220} /></Panel>}
+      >
+        <RhythmGrid
+          data={rhythmQuery.data}
+          measure={rhythmMeasure}
+          isLoading={rhythmQuery.isLoading}
+          isUncaptured={apiErrorCode(rhythmQuery.error) === 'demo_uncaptured'}
+        />
+      </DeferredPanel>
       <div className={styles['footnote']}>
         {cube.window.widened && <span>{t('insights.widened')}</span>}
         {baseline && <span>{formatCompareWindow(baseline.window)}</span>}
@@ -664,7 +726,7 @@ export const InsightsPage: React.FC = () => {
         onClose={() => setOpenKey(null)}
         onFilter={(keyId) => {
           setOpenKey(null);
-          setView({ filters: { ...view.filters, key: [keyId] } });
+          setView({ filters: { ...requestedView.filters, key: [keyId] } });
         }}
       />
     </div>

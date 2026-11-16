@@ -1,7 +1,8 @@
 import { translateOr } from '../i18n/catalog';
+import { joinPhrases } from '../utils/format';
 import React from 'react';
 import clsx from 'clsx';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useViewSearchParams, type ViewChangeOptions } from '../hooks/useViewSearchParams';
@@ -20,6 +21,7 @@ import { LoadFailure, Notice, useToast, type ToastItem } from '../components/fee
 import { useOpenPriceEditor } from '../components/pricing/PricingEditorContext';
 import { PRICING_QUERY_KEYS } from '../components/pricing/pricingQueries';
 import { copyText } from '../utils/clipboard';
+import { formatGatewayTimestamp } from '../utils/time';
 import { formatRatePer1M } from '../types/pricingDisplay';
 import { isUsageFacetsResponse } from '../types/usageEvents';
 import { MODEL_REQUEST_FACET_QUERY, buildModelLedger, modelRequestsLink, type ModelLedgerEntry, type ModelPricingTarget } from '../types/modelSquareLedger';
@@ -115,7 +117,7 @@ const CopyModelName: React.FC<{ identity: string }> = ({ identity }) => {
   const t = useT();
   const toast = useToast();
   const [hasCopied, setHasCopied] = React.useState(false);
-  const timerRef = React.useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   React.useEffect(() => () => clearTimeout(timerRef.current), []);
   const copy = async () => {
     if (!(await copyText(identity))) {
@@ -149,7 +151,7 @@ const ModelRow: React.FC<ModelRowProps> = React.memo(({ entry, ledger, providers
   const upstream = entry.profiles[0].identity;
   let caption = '';
   // Several routes to one model repeat its name; the caption names each distinct model once.
-  if (entry.profiles.length > 1) caption = [...new Set(entry.profiles.map(profile => profile.metadata?.name || profile.identity))].join(' · ');
+  if (entry.profiles.length > 1) caption = joinPhrases(t, [...new Set(entry.profiles.map(profile => profile.metadata?.name || profile.identity))]);
   else if (reference) caption = reference.name;
   else if (upstream !== entry.identity) caption = upstream;
   const { price } = ledger;
@@ -160,7 +162,7 @@ const ModelRow: React.FC<ModelRowProps> = React.memo(({ entry, ledger, providers
       {caption && <span className={styles['model-caption']}>{caption}</span>}
     </span>
     <span className={styles['model-meta']}>
-      <span className={styles['model-price']} title={t('models.price_head')}>
+      <span className={styles['model-price']} data-tip={t('models.price_head')}>
         {price.status === 'priced' && <>{formatRatePer1M(price.price.prompt_price_per_1m)} / {formatRatePer1M(price.price.completion_price_per_1m)}</>}
         {price.status === 'unpriced' && (onSetPrice && ledger.pricingTargets.length > 0
           ? <button type="button" className={styles['set-price']} onClick={() => onSetPrice(entry.identity)}><StatusLabel tone="warn">{t('pricing.set_price')}</StatusLabel></button>
@@ -171,7 +173,7 @@ const ModelRow: React.FC<ModelRowProps> = React.memo(({ entry, ledger, providers
             so they collapse to their marks and a count; the details list every one of them. */}
         {connections.length === 1
           ? <span className={styles['model-source']}><ProviderBrandIcon mark={connections[0]} size={14} />{connections[0].name}</span>
-          : connections.length > 1 && <span className={styles['model-source']} title={connections.map(connection => connection.name).join(' · ')}>
+          : connections.length > 1 && <span className={styles['model-source']} data-tip={connections.map(connection => connection.name).join(', ')}>
             <span className={styles['source-marks']}>
               {connections.slice(0, MAX_SOURCE_MARKS).map(connection => <ProviderBrandIcon key={connection.id} mark={connection} size={14} />)}
             </span>
@@ -199,7 +201,7 @@ const ModelProfile: React.FC<{ identity: string; metadata?: ModelReference }> = 
   const unknown = <span className={styles['is-absent']}>{t('models.unknown')}</span>;
   const text = (value?: string) => value || unknown;
   const limit = (value?: number) => value ? value.toLocaleString() : unknown;
-  const modalities = (values?: string[]) => values?.length ? values.map(value => (KNOWN_MODALITIES.includes(value) ? translateOr(t, `models.modality.${value}`, value) : value)).join(' · ') : unknown;
+  const modalities = (values?: string[]) => values?.length ? values.map(value => (KNOWN_MODALITIES.includes(value) ? translateOr(t, `models.modality.${value}`, value) : value)).join(' / ') : unknown;
   const flag = (value?: boolean) => {
     if (value === undefined) return unknown;
     return value
@@ -282,8 +284,13 @@ const ModelCost: React.FC<ModelCostProps> = ({ identity, ledger, onSetPrice }) =
       <div><dt>{t('models.requests_24h')}</dt><dd>{recentRequests === undefined ? unknown : recentRequests.toLocaleString()}</dd></div>
     </dl>
     <div className={styles['cost-actions']}>
-      {onSetPrice && ledger.pricingTargets.map(target => <Button key={JSON.stringify([target.channel, target.model])} type={target.price ? 'default' : 'primary'} onClick={() => onSetPrice(target)}>
-        {t(target.price ? 'pricing.edit' : 'pricing.set_price')}{ledger.pricingTargets.length > 1 ? ` · ${target.channelLabel || target.channel || target.model} · ${target.model}` : ''}
+      {onSetPrice && ledger.pricingTargets.map(target => <Button key={JSON.stringify([target.channel, target.model])} variant={target.price ? 'secondary' : 'primary'} onClick={() => onSetPrice(target)}>
+        {t(target.price ? 'pricing.edit' : 'pricing.set_price')}
+        {ledger.pricingTargets.length > 1 && (
+          <span className={styles['target-scope']}>
+            {target.channelLabel || target.channel ? `${target.channelLabel || target.channel} / ${target.model}` : target.model}
+          </span>
+        )}
       </Button>)}
       <Link className={styles['reference-link']} to={modelRequestsLink(identity)}>{t('models.view_requests')}<RightOutlined /></Link>
     </div>
@@ -334,7 +341,7 @@ const CatalogRefreshButton: React.FC<{ onReread: () => Promise<unknown> }> = ({ 
       return;
     }
     if (skipped.length > 0) {
-      const catalogs = skipped.map(outcome => catalogName(outcome.catalog)).join(' · ');
+      const catalogs = joinPhrases(t, skipped.map(outcome => catalogName(outcome.catalog)));
       toast.info(t('models.catalogs_refreshed_with_skips'), { detail: t('models.catalogs_skipped_by_config', { catalogs }) });
       return;
     }
@@ -368,6 +375,11 @@ const CatalogRefreshButton: React.FC<{ onReread: () => Promise<unknown> }> = ({ 
     {t('models.refresh_catalogs')}
   </Button>;
 };
+
+/** The snapshot's day: the catalogue names a date, and a full instant reads as its local day. */
+function snapshotDay(value: string): string {
+  return formatGatewayTimestamp(value).slice(0, 10);
+}
 
 export const ModelSquarePage: React.FC = () => {
   const branding = useProviderBranding();
@@ -416,6 +428,11 @@ export const ModelSquarePage: React.FC = () => {
     if (targets.length === 1) openEditor(targets[0].model, targets[0]);
     else if (targets.length > 1) setSelectedIdentity(identity);
   } : undefined;
+  // The editor takes over from the details rather than opening a second drawer over them.
+  const priceFromDetails = openEditor ? (target: ModelPricingTarget) => {
+    closeDetails();
+    openEditor(target.model, target);
+  } : undefined;
   const reread = () => Promise.all([directory.refetch(), pricing.refetch(), requests.refetch()]);
 
   const pageCount = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
@@ -444,7 +461,7 @@ export const ModelSquarePage: React.FC = () => {
     setSelectedIdentity(target.identity);
     // The neighbour's page must be the visible one, so closing the details lands beside it.
     setPage(Math.floor((selectedIndex + offset) / PAGE_SIZE) + 1);
-    detailsRef.current?.closest('.ant-drawer-body')?.scrollTo({ top: 0 });
+    detailsRef.current?.closest('[data-slot="sheet-body"]')?.scrollTo({ top: 0 });
   };
   const selectedRoutes = selected?.routes.filter(route => providers.has(route.provider_id)) ?? [];
 
@@ -453,7 +470,7 @@ export const ModelSquarePage: React.FC = () => {
   const subtitle = directory.data && t('models.summary_line', {
     models: directory.data.models.length,
     makers: countModelManufacturers(allEntries).length,
-    date: directory.data.metadata_updated_at,
+    date: snapshotDay(directory.data.metadata_updated_at),
   });
 
   return <div className={clsx(styles['page'], 'terminal-page', 'model-square-page')}>
@@ -466,9 +483,9 @@ export const ModelSquarePage: React.FC = () => {
         <span className={styles['result-count']} role="status">
           {isFiltered ? t('models.showing', { shown: entries.length, total: allEntries.length }) : ''}
         </span>
-        {isFiltered && <Button type="link" size="small" className={styles['clear-filters']} onClick={clearFilters}>{t('models.clear_filters')}</Button>}
+        {isFiltered && <Button variant="link" size="sm" className={styles['clear-filters']} onClick={clearFilters}>{t('models.clear_filters')}</Button>}
       </Toolbar>
-      <div className={clsx(styles['chip-group'], styles['maker-strip'])} role="group" aria-label={t('models.filter_makers')}>
+      <div className={clsx(styles['chip-group'], styles['maker-strip'], 'scroll-fade-x')} role="group" aria-label={t('models.filter_makers')}>
         <button type="button" className={clsx(styles['chip'], selectionStyles['selection-control'])} aria-pressed={manufacturerId === ''} onClick={() => setParam('maker', '')}>
           {t('common.all')}<Count size="small">{searched.length}</Count>
         </button>
@@ -513,7 +530,7 @@ export const ModelSquarePage: React.FC = () => {
       footer={selected && selectedIndex >= 0 && entries.length > 1 && <span className={styles['details-position']}>{selectedIndex + 1} / {entries.length}</span>}
     >
       {selected && <div ref={detailsRef}>
-        <ModelCost identity={selected.identity} ledger={ledger.entryFor(selected.identity)} onSetPrice={openEditor ? target => openEditor(target.model, target) : undefined} />
+        <ModelCost identity={selected.identity} ledger={ledger.entryFor(selected.identity)} onSetPrice={priceFromDetails} />
         {selectedRoutes.length > 0 && <div className={styles['served-by']}>
           <h3>{t('models.served_by')}</h3>
           <ul>
@@ -532,7 +549,7 @@ export const ModelSquarePage: React.FC = () => {
         {selected.profiles.map(profile => <ModelProfile key={profile.identity} identity={profile.identity} metadata={profile.metadata} />)}
         <p className={styles['scope-note']}>
           {t('models.reference_note')}
-          {directory.data?.metadata_updated_at && <> {t('models.snapshot_date', { date: directory.data.metadata_updated_at })}</>}
+          {directory.data?.metadata_updated_at && <> {t('models.snapshot_date', { date: snapshotDay(directory.data.metadata_updated_at) })}</>}
         </p>
       </div>}
     </AppDrawer>

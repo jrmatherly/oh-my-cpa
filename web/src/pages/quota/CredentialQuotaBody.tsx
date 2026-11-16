@@ -1,11 +1,16 @@
 import { useTimeZone } from '../../utils/TimeZoneProvider';
+import clsx from 'clsx';
+import { MetaLine } from '../../components/common/MetaLine';
 import React from 'react';
-import { Button } from 'antd';
-import { SyncOutlined, ThunderboltOutlined } from '../../components/icons';
+import { Button } from '@/components/ui/button';
+import { CodeOutlined, SyncOutlined } from '../../components/icons';
 import { useT } from '../../i18n';
 import type { QuotaItem } from '../../types/quota';
-import { formatGmtOffsetLabel, formatObservedAgo, formatQuotaMetric, formatQuotaMoney, formatSnapshotRenewalBound, formatTimeWithCountdown, quotaEmptyStateKey, quotaPayloadSummary } from './quotaFormat';
-import { QuotaProgressBar } from './QuotaProgressBar';
+import { formatObservedAgo, formatQuotaMetric, formatQuotaMoney, formatSnapshotRenewalBound, formatTimeWithCountdown, quotaEmptyStateKey, quotaPayloadSummary } from './quotaFormat';
+import { QuotaWindowCards } from './QuotaWindowCards';
+import { QuotaResetCards } from './QuotaResetCards';
+import { ToolButton } from '../../components/common/ToolButton';
+import { AppModal } from '../../components/common/AppModal';
 import { orderQuotaWindows } from './quotaWindowSelection';
 import { quotaStatusTag } from './quotaStatusTag';
 import { outlivedResetLine, refreshFailureLine } from './quotaAttempt';
@@ -13,11 +18,14 @@ import styles from './QuotaPresentation.module.css';
 import { Notice } from '../../components/feedback';
 import { SectionHeading } from '../../components/common/SectionHeading';
 import { Tag } from '../../components/common/Tag';
-import { ConfirmAction } from '../../components/common/ConfirmAction';
 import { describeQuotaCooldown } from './quotaCooldown';
 
 interface CredentialQuotaBodyProps {
   item: QuotaItem;
+  /** How the credential is named where its details open, already masked as the page masks it. */
+  credentialLabel: string;
+  /** The credential's brand mark, for the details a window opens. */
+  credentialMark?: React.ReactNode;
   nowMS: number;
   isDemo: boolean;
   isRefreshing?: boolean;
@@ -34,6 +42,8 @@ interface CredentialQuotaBodyProps {
  */
 export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
   item,
+  credentialLabel,
+  credentialMark,
   nowMS,
   isDemo,
   isRefreshing,
@@ -43,24 +53,17 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
 }) => {
   useTimeZone();
   const t = useT();
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
   const windows = orderQuotaWindows(item.windows ?? []);
-  // The explanation is printed once under the list rather than as a tooltip per window: a phone
-  // has no hover, and the caveat matters most to the reader who cannot reach one.
-  const hasCapacityReading = windows.some((window) => window.usage || window.capacity);
   const availableCredits = item.reset_credits?.available_count ?? 0;
   const creditBalanceText = item.plan?.credits?.unlimited
     ? t('quota.credits_unlimited')
     : item.plan?.credits?.balance;
-  const applicableCredits = item.reset_credits?.applicable_available_count ?? 0;
   const extraUsage = item.plan?.extra_usage;
   const balances = item.plan?.balances ?? [];
   const usageBreakdown = item.plan?.usage_breakdown ?? [];
   const metrics = item.plan?.metrics ?? [];
-  const creditRows = (item.reset_credits?.credits ?? [])
-    .filter((credit) => credit.expires_at_ms)
-    .sort((left, right) => (left.expires_at_ms ?? 0) - (right.expires_at_ms ?? 0));
-  // Grants are display-only: only ones with remaining resets are listed, and
-  // there is deliberately no claim action beside them.
+  const modelCooldowns = (item.model_cooldowns ?? []).filter((cooldown) => cooldown.is_active);
   const isSnapshotBound = item.plan?.expires_source === 'credential_snapshot';
   // Upstream's applicable count is not the UI gate: it refines which credits apply right
   // now, and the consume response states the outcome. The bank of credits decides whether
@@ -87,49 +90,6 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
   const failureLine = refreshFailureLine(item, nowMS, t);
   const staleLine = outlivedResetLine(item, t);
 
-  // Grant scope identifiers are upstream window ids, not display text: known
-  // ones resolve to the localized window labels, anything upstream adds
-  // later still prints raw rather than vanishing.
-  const grantWindowLabel = (scope: string): string => {
-    switch (scope) {
-      case 'five_hour':
-        return t('quota.window_five_hour');
-      case 'seven_day':
-        return t('quota.window_weekly');
-      case 'seven_day_overage_included':
-        return t('quota.window_seven_day_overage');
-      default:
-        return scope;
-    }
-  };
-
-  const renderWindowRows = (rows: typeof windows) => {
-    const rendered: React.ReactNode[] = [];
-    let lastGroup: string | null = null;
-    rows.forEach((window) => {
-      const group = window.scope === 'group' ? window.label.split(' · ')[0] : null;
-      if (group && lastGroup && group !== lastGroup) {
-        rendered.push(<div key={`divider-${window.id}`} className={styles['window-divider']} aria-hidden="true" />);
-      }
-      rendered.push(
-        <QuotaProgressBar
-          key={window.id}
-          nowMS={nowMS}
-          kind={window.scope === 'group' || window.scope === 'model' ? undefined : window.kind}
-          label={window.label}
-          usedPercent={window.used_percent}
-          remainingPercent={window.remaining_percent}
-          resetAtMS={window.reset_at_ms}
-          resetLabel={window.reset_label}
-          resetAccuracy={window.reset_accuracy}
-          description={window.description}
-          capacity={window}
-        />,
-      );
-      if (group) lastGroup = group;
-    });
-    return rendered;
-  };
 
   return (
     <div
@@ -139,14 +99,33 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
       data-quota-window-count={windows.length}
       data-quota-unsupported={!item.capabilities?.refresh_supported ? 'true' : undefined}
     >
+      {/* What the reading is and when it was taken lead the section, with the tools that act on it. */}
       <div className={styles['quota-status-row']}>
-        {quotaStatusTag(item, t)}
-        {!item.capabilities?.refresh_supported && (
-          <Tag>{t('omc.quota_unsupported')}</Tag>
-        )}
-        {item.recommendation?.action === 'reauth' && (
-          <Tag tone="warn">{t('omc.reauthenticate')}</Tag>
-        )}
+        <div className={styles['quota-status-tags']}>
+          {quotaStatusTag(item, t)}
+          {!item.capabilities?.refresh_supported && (
+            <Tag>{t('omc.quota_unsupported')}</Tag>
+          )}
+          {item.recommendation?.action === 'reauth' && (
+            <Tag tone="warn">{t('omc.reauthenticate')}</Tag>
+          )}
+        </div>
+        <div className={styles['quota-tools']}>
+          <span className={styles['card-meta-time']}>{formatObservedAgo(item.observed_at_ms, nowMS, t)}</span>
+          {hasDiagnostics && (
+            <ToolButton size="sm" variant="ghost" icon={<CodeOutlined />} label={t('omc.quota_diagnostics')} onClick={() => setIsDiagnosticsOpen(true)} />
+          )}
+          {onRefresh && (
+            <ToolButton
+              size="sm"
+              variant="ghost"
+              icon={<SyncOutlined spin={isRefreshing} />}
+              label={t('quota.btn_refresh_quota')}
+              disabled={item.disabled || isRefreshing || !item.capabilities?.refresh_supported}
+              onClick={() => onRefresh(item.auth_index)}
+            />
+          )}
+        </div>
       </div>
 
       {failureLine ? (
@@ -172,7 +151,58 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
         />
       ) : null}
 
-      {(item.plan?.plan_label || item.plan?.expires_at_ms || creditBalanceText || item.reset_credits || extraUsage || metrics.length > 0) && (
+      {item.active_cooldown?.is_active && (
+        <div className={styles.callout} data-tone="danger">
+          <div className={styles['callout-text']}>
+            <div className={styles['callout-title']}>{describeQuotaCooldown(item.active_cooldown.reason, t('quota.cooldown_active_desc'))}</div>
+            {item.active_cooldown.recover_at_ms && (
+              <div className={styles['callout-sub']}>{t('quota.recover_at', { time: formatTimeWithCountdown(item.active_cooldown.recover_at_ms, nowMS, t) })}</div>
+            )}
+            {item.active_cooldown.retry_at_ms && item.active_cooldown.retry_at_ms !== item.active_cooldown.recover_at_ms && (
+              <div className={styles['callout-sub']}>{t('quota.retry_at', { time: formatTimeWithCountdown(item.active_cooldown.retry_at_ms, nowMS, t) })}</div>
+            )}
+            {!!item.active_cooldown.backoff_level && <div className={styles['callout-sub']}>{t('quota.backoff_level', { level: item.active_cooldown.backoff_level })}</div>}
+          </div>
+          {onClearCooldown && (
+            <Button
+              size="sm"
+              danger
+              className={styles['callout-action']}
+              disabled={isDemo || !item.capabilities?.clear_cooldown_supported}
+              data-tip={isDemo ? t('demo.blocked') : undefined}
+              onClick={() => onClearCooldown(item.auth_index)}
+            >
+              {t('quota.clear_cooldown')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Every resting model in one callout, one line each, so a burst of 429s does not stack a
+          banner per model above the readings. */}
+      {modelCooldowns.length > 0 && (
+        <div className={styles.callout} data-tone="danger">
+          <div className={styles['callout-text']}>
+            {modelCooldowns.map((cooldown) => (
+              <div className={styles['callout-line']} key={cooldown.model}>
+                <span className={styles['callout-title']}>{t('quota.model_cooldown', { model: cooldown.model ?? '' })}</span>
+                {cooldown.recover_at_ms && (
+                  <span className={styles['callout-sub']}>{t('quota.recover_at', { time: formatTimeWithCountdown(cooldown.recover_at_ms, nowMS, t) })}</span>
+                )}
+              </div>
+            ))}
+          </div>
+          {!item.active_cooldown?.is_active && onClearCooldown && (
+            <Button size="sm" danger className={styles['callout-action']} disabled={isDemo || !item.capabilities?.clear_cooldown_supported}
+              data-tip={isDemo ? t('demo.blocked') : undefined}
+              onClick={() => onClearCooldown(item.auth_index)}>
+              {t('quota.clear_all_cooldowns')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {(item.plan?.plan_label || item.plan?.expires_at_ms || creditBalanceText || extraUsage || metrics.length > 0) && (
         <div className={styles['meta-row']}>
           {item.plan?.plan_label && (
             <span className={styles['meta-item']}>
@@ -194,12 +224,12 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
                   : formatTimeWithCountdown(item.plan.expires_at_ms, nowMS, t)}
               </span>
               {isSnapshotBound && (
-                <span className={styles['meta-tag']} title={t('quota.renewal_snapshot_hint')}>
+                <span className={styles['meta-tag']} data-tip={t('quota.renewal_snapshot_hint')}>
                   {t('quota.renewal_snapshot')}
                 </span>
               )}
               {item.plan.auto_renews === false && (
-                <span className={styles['meta-tag']} data-renewal-not-renewing="true" title={t('quota.renewal_not_renewing_hint')}>
+                <span className={styles['meta-tag']} data-renewal-not-renewing="true" data-tip={t('quota.renewal_not_renewing_hint')}>
                   {t('quota.renewal_not_renewing')}
                 </span>
               )}
@@ -229,7 +259,7 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
                 <span className={styles['meta-tag']}>{t('quota.extra_usage_user_disabled')}</span>
               )}
               {extraUsage.disabled_reason && (
-                <span className={styles['meta-tag']} title={t('quota.extra_usage_reason')}>{extraUsage.disabled_reason}</span>
+                <span className={styles['meta-tag']} data-tip={t('quota.extra_usage_reason')}>{extraUsage.disabled_reason}</span>
               )}
             </span>
           )}
@@ -239,117 +269,29 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
               <span className={styles['meta-value']}>{formatQuotaMetric(metric)}</span>
             </span>
           ))}
-          {item.reset_credits && (
-            <span className={styles['meta-item']}>
-              <span className={styles['meta-label']}>{t('quota.col_reset_count')}</span>
-              <span className={styles['meta-value']}>{availableCredits}</span>
-              {applicableCredits > 0 && applicableCredits !== availableCredits && (
-                <span className={styles['meta-tag']} title={t('omc.quota_credit_applicable_hint')}>
-                  {t('omc.quota_credit_applicable', { n: applicableCredits })}
-                </span>
-              )}
-            </span>
-          )}
         </div>
       )}
 
-      {item.active_cooldown?.is_active && (
-        <div className={`${styles['rec-banner']} ${styles['rec-banner-danger']}`}>
-          <span className={styles['banner-dot']} style={{ background: 'var(--danger)' }} />
-          <div className={styles['rec-text']}>
-            <div>{describeQuotaCooldown(item.active_cooldown.reason, t('quota.cooldown_active_desc'))}</div>
-            {item.active_cooldown.recover_at_ms && (
-              <div className={styles['rec-sub-danger']}>
-                {t('quota.recover_at', { time: formatTimeWithCountdown(item.active_cooldown.recover_at_ms, nowMS, t) })}
-              </div>
-            )}
-            {item.active_cooldown.retry_at_ms && item.active_cooldown.retry_at_ms !== item.active_cooldown.recover_at_ms && (
-              <div className={styles['rec-sub-danger']}>
-                {t('quota.retry_at', { time: formatTimeWithCountdown(item.active_cooldown.retry_at_ms, nowMS, t) })}
-              </div>
-            )}
-            {!!item.active_cooldown.backoff_level && <div>{t('quota.backoff_level', { level: item.active_cooldown.backoff_level })}</div>}
-          </div>
-          {onClearCooldown && (
-            <div className={styles['rec-action']}>
-              <Button
-                size="small"
-                danger
-                disabled={isDemo || !item.capabilities?.clear_cooldown_supported}
-                title={isDemo ? t('demo.blocked') : undefined}
-                onClick={() => onClearCooldown(item.auth_index)}
-              >
-                {t('quota.clear_cooldown')}
-              </Button>
-            </div>
-          )}
-        </div>
+      {windows.length > 0 ? (
+        <QuotaWindowCards
+          windows={windows}
+          nowMS={nowMS}
+          provider={item.provider}
+          observedAtMS={item.observed_at_ms}
+          owner={{ authIndex: item.auth_index, credentialName: credentialLabel, mark: credentialMark }}
+        />
+      ) : (
+        <div className={styles['no-window']}>{t(quotaEmptyStateKey(item))}</div>
       )}
 
-      {(item.model_cooldowns ?? []).filter((cooldown) => cooldown.is_active).map((cooldown, index) => (
-        <div className={`${styles['rec-banner']} ${styles['rec-banner-danger']}`} key={cooldown.model}>
-          <span className={styles['banner-dot']} style={{ background: 'var(--danger)' }} />
-          <div className={styles['rec-text']}>
-            <div>{t('quota.model_cooldown', { model: cooldown.model ?? '' })}</div>
-            {cooldown.recover_at_ms && (
-              <div className={styles['rec-sub-danger']}>
-                {t('quota.recover_at', { time: formatTimeWithCountdown(cooldown.recover_at_ms, nowMS, t) })}
-              </div>
-            )}
-            {cooldown.retry_at_ms && cooldown.retry_at_ms !== cooldown.recover_at_ms && (
-              <div className={styles['rec-sub-danger']}>
-                {t('quota.retry_at', { time: formatTimeWithCountdown(cooldown.retry_at_ms, nowMS, t) })}
-              </div>
-            )}
-            {!!cooldown.backoff_level && <div>{t('quota.backoff_level', { level: cooldown.backoff_level })}</div>}
-          </div>
-          {index === 0 && !item.active_cooldown?.is_active && onClearCooldown && (
-            <div className={styles['rec-action']}>
-              <Button size="small" danger disabled={isDemo || !item.capabilities?.clear_cooldown_supported}
-                title={isDemo ? t('demo.blocked') : t('quota.clear_all_cooldowns')}
-                onClick={() => onClearCooldown(item.auth_index)}>
-                {t('quota.clear_all_cooldowns')}
-              </Button>
-            </div>
-          )}
-        </div>
-      ))}
 
-      {item.reset_credits && creditRows.length > 0 && (
-        <div className={styles.section}>
-          <SectionHeading level="label" as="div" title={t('quota.reset_expiry_title_zoned', { zone: formatGmtOffsetLabel(new Date(nowMS)) })} />
-          <div className={styles['reset-list']}>
-            {creditRows.map((credit, index) => (
-              <div className={styles['reset-row']} key={credit.id || index}>
-                <span className={styles['meta-label']}>{t('quota.reset_occurrence', { n: index + 1 })}</span>
-                <span className={styles['meta-value']}>
-                  {credit.expires_at_ms ? formatTimeWithCountdown(credit.expires_at_ms, nowMS, t) : '—'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(item.reset_grants ?? []).filter((grant) => grant.resets_left > 0).length > 0 && (
-        <div className={styles.section}>
-          <SectionHeading level="label" as="div" title={t('quota.reset_grants_title_zoned', { zone: formatGmtOffsetLabel(new Date(nowMS)) })} />
-          <div className={styles['reset-list']}>
-            {(item.reset_grants ?? [])
-              .filter((grant) => grant.resets_left > 0)
-              .map((grant, index) => (
-                <div className={styles['reset-row']} key={grant.id || index}>
-                  <span className={styles['meta-label']}>{grant.label || t('quota.reset_occurrence', { n: index + 1 })}</span>
-                  <span className={styles['meta-value']}>
-                    {t('quota.reset_grant_remaining', { left: grant.resets_left, total: grant.resets_total })}
-                    {grant.ends_at_ms ? ` · ${formatTimeWithCountdown(grant.ends_at_ms, nowMS, t)}` : ''}
-                    {(grant.clears ?? []).length > 0 ? ` · ${(grant.clears ?? []).map(grantWindowLabel).join(' · ')}` : ''}
-                  </span>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
+      <QuotaResetCards
+        credits={item.reset_credits}
+        grants={item.reset_grants}
+        nowMS={nowMS}
+        isDemo={isDemo}
+        onRedeem={canRedeem ? () => onRedeemCredit?.(item.auth_index) : undefined}
+      />
 
       {balances.length > 0 && (
         <div className={styles.section} data-quota-balances="true">
@@ -357,35 +299,21 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
           <div className={styles['reset-list']}>
             {balances.map((balance) => (
               <div className={styles['reset-row']} key={balance.id}>
-                <span className={styles['meta-label']} title={balance.id}>
+                <span className={styles['meta-label']} data-tip={balance.id}>
                   {balance.id === 'iguana_necktie' ? t('quota.balance_cloud_session_credits') : balance.id}
                 </span>
-                <span className={styles['meta-value']}>
-                  {t('quota.balance_remaining', { amount: formatQuotaMoney(balance.remaining_usd) })}
-                  {` · ${t('quota.balance_spent', { used: formatQuotaMoney(balance.used_usd), limit: formatQuotaMoney(balance.limit_usd) })}`}
-                  {balance.reset_at_ms ? ` · ${formatTimeWithCountdown(balance.reset_at_ms, nowMS, t)}` : ''}
+                <span className={styles['balance-reading']}>
+                  <span className={styles['meta-value']}>{t('quota.balance_remaining', { amount: formatQuotaMoney(balance.remaining_usd) })}</span>
+                  <MetaLine className={styles['balance-detail']}>
+                    {t('quota.balance_spent', { used: formatQuotaMoney(balance.used_usd), limit: formatQuotaMoney(balance.limit_usd) })}
+                    {balance.reset_at_ms ? formatTimeWithCountdown(balance.reset_at_ms, nowMS, t) : ''}
+                  </MetaLine>
                 </span>
               </div>
             ))}
           </div>
         </div>
       )}
-
-      <div className={styles.section}>
-        <SectionHeading level="label" as="div" title={t('quota.windows_title')} />
-        <div className={styles['windows-list']}>
-          {windows.length > 0 ? (
-            renderWindowRows(windows)
-          ) : (
-            <div className={styles['no-window']}>
-              {t(quotaEmptyStateKey(item))}
-            </div>
-          )}
-        </div>
-        {hasCapacityReading && (
-          <div className={styles['capacity-hint']} data-quota-capacity-hint="true">{t('quota.capacity_hint')}</div>
-        )}
-      </div>
 
       {usageBreakdown.length > 0 && (
         <div className={styles.section} data-quota-usage-breakdown="true">
@@ -404,17 +332,18 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
       )}
 
       {hasDiagnostics && (
-        <details className={styles['quota-diagnostics']}>
-          <summary>{t('omc.quota_diagnostics')}</summary>
+        <AppModal open={isDiagnosticsOpen} onCancel={() => setIsDiagnosticsOpen(false)} footer={null} size="medium" title={t('omc.quota_diagnostics')}>
+          <div className={styles['quota-diagnostics']}>
           {item.error && <div className={styles['diagnostic-line']}>{item.error}</div>}
           {item.last_refresh && (
             <div className={styles['diagnostic-line']}>
               <span className={styles['meta-label']}>{t('quota.last_refresh_at')}</span>
-              <span>
+              <MetaLine>
                 {formatObservedAgo(item.last_refresh.attempted_at_ms, nowMS, t)}
-                {' · '}
-                {t(item.last_refresh.outcome === 'failed' ? 'quota.last_refresh_outcome_failed' : 'quota.last_refresh_outcome_succeeded')}
-              </span>
+                <b className={item.last_refresh.outcome === 'failed' ? 'text-danger' : undefined}>
+                  {t(item.last_refresh.outcome === 'failed' ? 'quota.last_refresh_outcome_failed' : 'quota.last_refresh_outcome_succeeded')}
+                </b>
+              </MetaLine>
             </div>
           )}
           {Object.entries(rawSignals).map(([key, value]) => (
@@ -426,53 +355,23 @@ export const CredentialQuotaBody: React.FC<CredentialQuotaBodyProps> = ({
           {payloadSummary.map(([label, value], index) => (
             <div className={styles['diagnostic-line']} key={`payload-${index}`} data-quota-payload-line="true">
               <span className={styles['meta-label']}>{label}</span>
-              <span className="mono-num">{value}</span>
+              <span className={clsx('mono-num', styles['diagnostic-values'])}>{value}</span>
             </div>
           ))}
           {Object.entries(item.model_quotas ?? {}).map(([model, observation]) => (
             <div className={styles['diagnostic-line']} key={`model-${model}`}>
               <span className={styles['meta-label']}>{model}</span>
-              <span className="mono-num">
-                {Object.entries(observation.signals ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ') || '—'}
+              <span className={clsx('mono-num', styles['diagnostic-values'])}>
+                {Object.entries(observation.signals ?? {}).length === 0
+                  ? '—'
+                  : Object.entries(observation.signals ?? {}).map(([key, value]) => <span key={key}>{key}: {value}</span>)}
               </span>
             </div>
           ))}
-        </details>
+          </div>
+        </AppModal>
       )}
 
-      <div className={styles['quota-body-footer']}>
-        <div className={styles['card-meta-time']}>{formatObservedAgo(item.observed_at_ms, nowMS, t)}</div>
-        <div className={styles['card-actions']}>
-          {canRedeem && (
-            <ConfirmAction
-              title={t('quota.redeem_credit_confirm_title')}
-              description={t('quota.redeem_credit_confirm_desc')}
-              onConfirm={() => onRedeemCredit?.(item.auth_index)}
-              isDanger
-            >
-              <Button
-                size="small"
-                icon={<ThunderboltOutlined />}
-                disabled={isDemo}
-                title={isDemo ? t('demo.blocked') : undefined}
-              >
-                {t('quota.btn_reset_quota')}
-              </Button>
-            </ConfirmAction>
-          )}
-          {onRefresh && (
-            <Button
-              size="small"
-              icon={<SyncOutlined spin={isRefreshing} />}
-              aria-label={t('quota.btn_refresh_quota')}
-              disabled={item.disabled || isRefreshing || !item.capabilities?.refresh_supported}
-              onClick={() => onRefresh(item.auth_index)}
-            >
-              {t('quota.btn_refresh_quota')}
-            </Button>
-          )}
-        </div>
-      </div>
     </div>
   );
 };

@@ -1,7 +1,8 @@
 import { CustomIconLibrary } from './CustomIconLibrary';
 import { shouldCloseIconPicker } from '../types/customIcons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Segmented, theme } from 'antd';
+
+import { Segmented } from '@/components/ui/segmented';
 import {
   LOBE_ICON_CATALOG,
   type LobeIconCatalogEntry,
@@ -13,23 +14,6 @@ import { EmptyState } from './common/EmptyState';
 import { ToggleTag } from './common/Tag';
 import styles from './IconPickerModal.module.css';
 import { AppModal } from './common/AppModal';
-
-/**
- * ANTD_CONTAINER_ZINDEX_STEP is the step antd 6 reserves per container level
- * (Drawer, Modal, Popover) above `zIndexPopupBase`; see
- * `antd/es/_util/hooks/useZIndex.js`, where CONTAINER_OFFSET is 100.
- *
- * The picker is opened from inside the provider Drawer, but it is rendered as a
- * sibling of that Drawer rather than as a child of it, so it cannot inherit the
- * Drawer's stacking context and the two compete for the same base level. Relying
- * on antd's implicit per-mount ordering made the picker an overlay that could
- * land behind the Drawer; this states the intended order explicitly.
- *
- * Two steps clears one container (the Drawer) plus its mask. The base comes from
- * the live theme token rather than the literal 1000, so a themed base is
- * respected.
- */
-const ANTD_CONTAINER_ZINDEX_STEP = 100;
 
 interface IconPickerModalProps {
   open: boolean;
@@ -49,10 +33,6 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
   const t = useT();
   const [isLibraryBusy, setIsLibraryBusy] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
-  const { token } = theme.useToken();
-  // Derived from the live theme token, so a themed z-index base is respected
-  // rather than pinned to today's default of 1000.
-  const zIndex = token.zIndexPopupBase + ANTD_CONTAINER_ZINDEX_STEP * 2;
   const [tab, setTab] = useState<'builtin' | 'custom'>('builtin');
   useEffect(() => {
     if (open) setTab(currentIcon?.startsWith('custom:') ? 'custom' : 'builtin');
@@ -144,7 +124,6 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
       footer={null}
       size="large"
       destroyOnHidden
-      zIndex={zIndex}
     >
       <Segmented
         className={styles['source-tabs']}
@@ -235,7 +214,7 @@ export const IconPickerModal: React.FC<IconPickerModalProps> = ({
                       }
                     }}
                     className={styles['tile']}
-                    title={`${item.fullTitle} (${item.id})`}
+                    data-tip={`${item.fullTitle} (${item.id})`}
                   >
                     {visibleIconIds.has(item.id) ? (
                       <LobeIcon iconId={item.id} size={28} loading="lazy" />

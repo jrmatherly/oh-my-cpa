@@ -145,10 +145,13 @@ func (h *Handler) bindProviderOperations(service *operations.Service) {
 			return errors.New("write_busy")
 		}
 		defer h.providerWrites.release()
+		if err := h.flushCoordinatorUnderProviderGate(ctx); err != nil {
+			return mapAgentProviderError(err)
+		}
 		if err := check(id, revision)(ctx); err != nil {
 			return err
 		}
-		return h.applyProviderMetadata(ctx, id, name, "", false)
+		return h.applyProviderMetadata(ctx, id, name, "", false, nil)
 	}
 }
 func mapAgentProviderError(err error) error {

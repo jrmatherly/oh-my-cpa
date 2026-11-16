@@ -1,0 +1,356 @@
+/* Three cards drawn the way every card in the console is: the page's ground inside the dialog's
+   elevated fill, the edge shadow, a PanelTitle head over a rule. Nothing here names a colour;
+   the theme's tokens carry every palette, light or dark. Inside an elevated dialog, dark palettes
+   lift the forecast onto `--selected-inset` so it stays distinct from the dialog itself, and
+   `--float-rule` keeps row hairlines visible across every surface. */
+.dialog-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.mark-tile {
+  border: 0;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.title-text {
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Period switcher above the three cards when a quota family has sibling windows. */
+.cycle-bar {
+  display: flex;
+  align-items: center;
+  margin-block-end: 12px;
+}
+
+.window-switch {
+  flex: none;
+  max-inline-size: 100%;
+}
+
+/* The cards share the grid's row tracks, so a head or label that wraps in a longer language
+   lowers that part in all three cards and the figures stay level across them. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  column-gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cards,
+.note {
+  --capacity-label-color: var(--fg-2);
+  --capacity-quiet-color: var(--muted);
+  --capacity-forecast-bg: var(--selected-inset);
+  --capacity-forecast-foot-bg: color-mix(in srgb, var(--bg) 30%, transparent);
+}
+
+:global(:root[data-theme-mode='light']) .cards,
+:global(:root[data-theme-mode='light']) .note {
+  --capacity-label-color: var(--muted);
+  --capacity-quiet-color: var(--meta);
+  --capacity-forecast-bg: var(--select-surface);
+  --capacity-forecast-foot-bg: var(--surface);
+}
+
+.card {
+  border: 0;
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  min-inline-size: 0;
+  overflow: clip;
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.card[data-tone='forecast'] {
+  box-shadow: var(--shadow-selected);
+  background: var(--capacity-forecast-bg);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: 12px 14px 10px;
+  border-block-end: 1px solid var(--float-rule);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.caption {
+  min-inline-size: 0;
+  overflow: clip;
+  color: var(--capacity-quiet-color);
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: 14px 14px 12px;
+}
+
+.label,
+.row dt {
+  color: var(--capacity-label-color);
+  font-size: var(--text-xs);
+}
+
+.lead-value {
+  overflow: clip;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rows {
+  margin: 0;
+  padding: 0 14px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+  padding: 9px 0;
+  border-block-start: 1px solid var(--float-rule);
+}
+
+.row dd {
+  margin: 0;
+  overflow: clip;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cache-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cache-dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklch, var(--cache-rate-from) var(--cache-rate-from-share), var(--cache-rate-to));
+}
+
+/* With no reading the card keeps its rows, and the dashes in the quiet ink stand in for figures. */
+.card[data-empty] .lead-value,
+.card[data-empty] .row dd {
+  color: var(--capacity-quiet-color);
+  font-weight: 400;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 38px;
+  padding: 8px 14px;
+  border-block-start: 1px solid var(--float-rule);
+  background: var(--surface);
+  color: var(--capacity-quiet-color);
+  font-size: var(--text-2xs);
+}
+
+.card[data-tone='forecast'] .foot {
+  background: var(--capacity-forecast-foot-bg);
+}
+
+.meter {
+  flex: 1 1 36px;
+  min-inline-size: 28px;
+}
+
+:global(:root:not([data-reduced-motion='true'])) .meter > :global(.meter-fill) {
+  transition: inline-size var(--motion-slow) var(--ease-out);
+}
+
+.foot-figure {
+  flex: none;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+
+.foot-tag {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* A note too long for the foot wraps beside the tag instead of pushing it out of the card. */
+.foot-text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-block-start: 14px;
+  color: var(--capacity-quiet-color);
+  font-size: var(--text-2xs);
+  line-height: 1.6;
+}
+
+.note-glyph {
+  flex: none;
+  margin-block-start: 3px;
+}
+
+/* A phone reads the dialog top to bottom, so the forecast - what the dialog is opened for - leads,
+   this window's usage that it is built on follows, and the window before closes; each card folds
+   its four figures into a balanced 2x2 grid over the used-share foot. */
+@media (max-width: 640px) {
+  .window-switch {
+    inline-size: 100%;
+  }
+
+  .cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .card {
+    border: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-row: auto;
+  }
+
+  /* Newest first: the forecast, this window so far, then the window before it (the first card). */
+  .card[data-tone='forecast'] {
+    order: -1;
+  }
+
+  .card:first-child {
+    order: 1;
+  }
+
+  .head {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .caption {
+    font-size: var(--text-xs);
+    text-align: end;
+  }
+
+
+  .rows {
+    display: contents;
+  }
+
+  .lead,
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 10px 12px;
+    border-block-start: 0;
+  }
+
+  .lead,
+  .rows .row:nth-child(1) {
+    border-block-end: 1px solid var(--float-rule);
+  }
+
+  .rows .row:nth-child(1),
+  .rows .row:nth-child(3) {
+    border-inline-start: 1px solid var(--float-rule);
+  }
+
+  .lead-value,
+  .row dd {
+    max-inline-size: 100%;
+    font-size: var(--text-base);
+    line-height: 1.3;
+  }
+
+  .card[data-tone='forecast'] .lead-value,
+  .card[data-tone='forecast'] .row dd {
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+
+  .foot {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    min-block-size: 0;
+    padding: 8px 12px;
+  }
+
+  .card[data-empty] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card[data-empty] .head {
+    border-block-end: 0;
+  }
+
+  .card[data-empty]:not([data-tone='forecast']) .lead,
+  .card[data-empty]:not([data-tone='forecast']) .rows,
+  .card[data-empty]:not([data-tone='forecast']) .foot,
+  .card[data-tone='forecast'][data-empty] .lead,
+  .card[data-tone='forecast'][data-empty] .rows {
+    display: none;
+  }
+
+  .card[data-tone='forecast'][data-empty] .head {
+    border-block-end: 1px solid var(--float-rule);
+  }
+
+  .note {
+    margin-block-start: 12px;
+  }
+}

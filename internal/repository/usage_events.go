@@ -1,15 +1,18 @@
 package repository
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/oh-my-cpa/oh-my-cpa/internal/pricing"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/security"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/usage"
 )
@@ -270,9 +273,23 @@ func (r *Repository) countUsageEventsIngestedAfter(ctx context.Context, filter U
 	if err != nil {
 		return 0, err
 	}
+	var maxID int64
+	if err := r.SQL().QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM usage_events`).Scan(&maxID); err != nil {
+		return 0, fmt.Errorf("read usage event head id: %w", err)
+	}
+	if maxID <= sinceID {
+		return 0, nil
+	}
 	where = append(where, `e.id > ?`)
 	args = append(args, sinceID)
-	query := `SELECT COUNT(1) FROM usage_events e WHERE ` + strings.Join(where, " AND ")
+	from := "usage_events e"
+	// Live-tail polls ask about a handful of newly recorded rows near the head of
+	// an hour-to-month window. Bound the scan to that short tail via the (instance, id)
+	// index instead of walking every row in the time window.
+	if maxID-sinceID <= 2000 && strings.TrimSpace(filter.InstanceID) != "" {
+		from = "usage_events e INDEXED BY idx_usage_events_instance_id"
+	}
+	query := `SELECT COUNT(1) FROM ` + from + ` WHERE ` + strings.Join(where, " AND ")
 	var count int64
 	if err := r.SQL().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count usage events ingested since id: %w", err)
@@ -331,8 +348,7 @@ func (r *Repository) ListUsageEvents(ctx context.Context, filter UsageEventFilte
 		}
 	}
 	if cursor != nil {
-		// The columns must be qualified: the query joins discovered_resources,
-		// which also has an id, and an unqualified name is ambiguous to SQLite.
+		// Qualify columns with the e alias used by usageEventWhere and ORDER BY.
 		//
 		// The row comparison is what makes the tiebreaker correct: comparing the
 		// timestamp alone would skip every row sharing the boundary timestamp,
@@ -364,10 +380,10 @@ func (r *Repository) ListUsageEvents(ctx context.Context, filter UsageEventFilte
 }
 
 // usageEventListSelect is the list projection of a request record: every column
-// a row prints, plus the triaged resource behind its credential. The join keeps
-// only unambiguous claims, so an index two resources share names neither. The
-// caller names the records' source, so a read that must not trust the planner's
-// choice of index can name one.
+// a row prints; unambiguous discovered-resource claims are resolved in one
+// indexed lookup over the returned credentials rather than materializing the
+// full discovered_resources table per query. The caller names the records'
+// source, so a read that must not trust the planner's choice of index can name one.
 func usageEventListSelect(from string) string {
 	return `
 		SELECT e.id, e.instance_id, e.event_key, e.request_id, e.timestamp_ms,
@@ -377,18 +393,9 @@ func usageEventListSelect(from string) string {
 		       e.latency_ms, e.ttft_ms, e.client_ip, e.x_forwarded_for, e.user_agent,
 		       e.input_tokens, e.output_tokens, e.reasoning_tokens, e.cached_tokens,
 		       e.cache_read_tokens, e.cache_creation_tokens, e.total_tokens,
-		       d.id, d.cpa_resource_name AS resource_name,
 		       e.cost_nanos / 1000000000.0 AS cost_usd, e.pricing_status, e.price_version_id,
 		       e.response_model, e.model_substituted, e.fail_status_code, e.token_accounting
-		FROM ` + from + `
-		LEFT JOIN (
-			SELECT instance_id, cpa_auth_index,
-			       CASE WHEN COUNT(1) = 1 THEN MIN(d.id) ELSE NULL END AS id,
-			       CASE WHEN COUNT(1) = 1 THEN MIN(d.cpa_resource_name) ELSE NULL END AS cpa_resource_name
-			FROM discovered_resources d
-			WHERE cpa_auth_index IS NOT NULL AND cpa_auth_index <> ''
-			GROUP BY instance_id, cpa_auth_index
-		) d ON d.instance_id = e.instance_id AND d.cpa_auth_index = e.auth_index`
+		FROM ` + from
 }
 
 // queryUsageEventRows runs a statement built on usageEventListSelect and scans
@@ -400,12 +407,11 @@ func (r *Repository) queryUsageEventRows(ctx context.Context, query string, args
 	}
 	defer rows.Close()
 
-	items := []UsageEventRow{}
+	items := make([]UsageEventRow, 0, 64)
 	for rows.Next() {
 		var row UsageEventRow
 		var failed, generate int
 		var streamVal sql.NullInt64
-		var resourceID, resourceName sql.NullString
 		var costUSD sql.NullFloat64
 		var accounting sql.NullString
 		if errScan := rows.Scan(
@@ -416,7 +422,7 @@ func (r *Repository) queryUsageEventRows(ctx context.Context, query string, args
 			&row.LatencyMS, &row.TTFTMS, &row.ClientIP, &row.XForwardedFor, &row.UserAgent,
 			&row.Tokens.InputTokens, &row.Tokens.OutputTokens, &row.Tokens.ReasoningTokens,
 			&row.Tokens.CachedTokens, &row.Tokens.CacheReadTokens, &row.Tokens.CacheCreationTokens,
-			&row.Tokens.TotalTokens, &resourceID, &resourceName, &costUSD, &row.PricingStatus, &row.PriceVersionID,
+			&row.Tokens.TotalTokens, &costUSD, &row.PricingStatus, &row.PriceVersionID,
 			&row.ResponseModel, &row.ModelSubstituted, &row.FailStatusCode, &accounting); errScan != nil {
 			return nil, fmt.Errorf("scan usage event: %w", errScan)
 		}
@@ -431,14 +437,6 @@ func (r *Repository) queryUsageEventRows(ctx context.Context, query string, args
 			isStream := streamVal.Int64 == 1
 			row.Stream = &isStream
 		}
-		if resourceID.Valid {
-			value := resourceID.String
-			row.ResourceID = &value
-		}
-		if resourceName.Valid && strings.TrimSpace(resourceName.String) != "" {
-			value := resourceName.String
-			row.ResourceName = &value
-		}
 		if costUSD.Valid {
 			row.CostUSD = &costUSD.Float64
 		}
@@ -448,7 +446,89 @@ func (r *Repository) queryUsageEventRows(ctx context.Context, query string, args
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate usage events: %w", err)
 	}
+	if err := r.attachDiscoveredResources(ctx, items); err != nil {
+		return nil, err
+	}
 	return items, nil
+}
+
+type discoveredResourceClaim struct {
+	id   string
+	name string
+}
+
+// attachDiscoveredResources joins unambiguous discovered_resources claims onto
+// scanned rows via idx_discovered_resources_auth_index, skipping the table
+// entirely when no row names an auth_index.
+func (r *Repository) attachDiscoveredResources(ctx context.Context, items []UsageEventRow) error {
+	if len(items) == 0 {
+		return nil
+	}
+	byInstance := map[string][]string{}
+	seen := map[[2]string]struct{}{}
+	for i := range items {
+		if items[i].AuthIndex == "" || items[i].InstanceID == "" {
+			continue
+		}
+		pair := [2]string{items[i].InstanceID, items[i].AuthIndex}
+		if _, ok := seen[pair]; ok {
+			continue
+		}
+		seen[pair] = struct{}{}
+		byInstance[items[i].InstanceID] = append(byInstance[items[i].InstanceID], items[i].AuthIndex)
+	}
+	if len(byInstance) == 0 {
+		return nil
+	}
+	claims := make(map[[2]string]discoveredResourceClaim, len(seen))
+	for instanceID, indexes := range byInstance {
+		for start := 0; start < len(indexes); start += maxSQLiteParameters {
+			chunk := indexes[start:min(start+maxSQLiteParameters, len(indexes))]
+			args := make([]any, 0, 1+len(chunk))
+			args = append(args, instanceID)
+			for _, authIndex := range chunk {
+				args = append(args, authIndex)
+			}
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+			rows, err := r.SQL().QueryContext(ctx, `
+				SELECT cpa_auth_index, MIN(id), COALESCE(MIN(cpa_resource_name), '')
+				FROM discovered_resources
+				WHERE instance_id = ? AND cpa_auth_index IN (`+placeholders+`)
+				GROUP BY cpa_auth_index
+				HAVING COUNT(1) = 1`, args...)
+			if err != nil {
+				return fmt.Errorf("resolve discovered resources: %w", err)
+			}
+			for rows.Next() {
+				var authIndex, resID, resName string
+				if errScan := rows.Scan(&authIndex, &resID, &resName); errScan != nil {
+					rows.Close()
+					return fmt.Errorf("scan discovered resource: %w", errScan)
+				}
+				claims[[2]string{instanceID, authIndex}] = discoveredResourceClaim{id: resID, name: resName}
+			}
+			errRows := rows.Err()
+			rows.Close()
+			if errRows != nil {
+				return fmt.Errorf("iterate discovered resources: %w", errRows)
+			}
+		}
+	}
+	for i := range items {
+		claim, ok := claims[[2]string{items[i].InstanceID, items[i].AuthIndex}]
+		if !ok {
+			continue
+		}
+		if claim.id != "" {
+			id := claim.id
+			items[i].ResourceID = &id
+		}
+		if strings.TrimSpace(claim.name) != "" {
+			name := claim.name
+			items[i].ResourceName = &name
+		}
+	}
+	return nil
 }
 
 // GetUsageEvent loads one record by primary key.
@@ -463,7 +543,6 @@ func (r *Repository) GetUsageEvent(ctx context.Context, id int64) (UsageEventRow
 	var failed, generate int
 	var streamVal sql.NullInt64
 	var isNativeKey sql.NullInt64
-	var resourceID, resourceName sql.NullString
 	var costUSD sql.NullFloat64
 	var accounting, structuredUsage sql.NullString
 	err := r.SQL().QueryRowContext(ctx, `
@@ -474,19 +553,10 @@ func (r *Repository) GetUsageEvent(ctx context.Context, id int64) (UsageEventRow
 		       e.latency_ms, e.ttft_ms, e.client_ip, e.x_forwarded_for, e.user_agent,
 		       e.input_tokens, e.output_tokens, e.reasoning_tokens, e.cached_tokens,
 		       e.cache_read_tokens, e.cache_creation_tokens, e.total_tokens,
-		       d.id, d.cpa_resource_name AS resource_name,
 		       e.cost_nanos / 1000000000.0 AS cost_usd, e.pricing_status, e.price_version_id,
 		       e.response_model, e.model_substituted, e.fail_status_code, e.fail_body, e.fail_code, e.response_headers,
 		       e.access_provider, e.is_native_key, e.token_accounting, e.structured_usage
 		FROM usage_events e
-		LEFT JOIN (
-			SELECT instance_id, cpa_auth_index,
-			       CASE WHEN COUNT(1) = 1 THEN MIN(d.id) ELSE NULL END AS id,
-			       CASE WHEN COUNT(1) = 1 THEN MIN(d.cpa_resource_name) ELSE NULL END AS cpa_resource_name
-			FROM discovered_resources d
-			WHERE cpa_auth_index IS NOT NULL AND cpa_auth_index <> ''
-			GROUP BY instance_id, cpa_auth_index
-		) d ON d.instance_id = e.instance_id AND d.cpa_auth_index = e.auth_index
 		WHERE e.id = ?`, id).Scan(
 		&row.ID, &row.InstanceID, &row.EventKey, &row.RequestID, &row.TimestampMS,
 		&row.Provider, &row.Endpoint, &row.ExecutorType, &row.AuthType, &row.AuthIndex,
@@ -495,7 +565,7 @@ func (r *Repository) GetUsageEvent(ctx context.Context, id int64) (UsageEventRow
 		&row.LatencyMS, &row.TTFTMS, &row.ClientIP, &row.XForwardedFor, &row.UserAgent,
 		&row.Tokens.InputTokens, &row.Tokens.OutputTokens, &row.Tokens.ReasoningTokens,
 		&row.Tokens.CachedTokens, &row.Tokens.CacheReadTokens, &row.Tokens.CacheCreationTokens,
-		&row.Tokens.TotalTokens, &resourceID, &resourceName, &costUSD, &row.PricingStatus, &row.PriceVersionID,
+		&row.Tokens.TotalTokens, &costUSD, &row.PricingStatus, &row.PriceVersionID,
 		&row.ResponseModel, &row.ModelSubstituted, &row.FailStatusCode, &row.FailBody, &row.FailCode, &row.ResponseHeaders,
 		&row.AccessProvider, &isNativeKey, &accounting, &structuredUsage)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -519,19 +589,15 @@ func (r *Repository) GetUsageEvent(ctx context.Context, id int64) (UsageEventRow
 		isStream := streamVal.Int64 == 1
 		row.Stream = &isStream
 	}
-	if resourceID.Valid {
-		value := resourceID.String
-		row.ResourceID = &value
-	}
-	if resourceName.Valid && strings.TrimSpace(resourceName.String) != "" {
-		value := resourceName.String
-		row.ResourceName = &value
-	}
 	if costUSD.Valid {
 		row.CostUSD = &costUSD.Float64
 	}
 	row.HasRequestLog = strings.TrimSpace(row.RequestID) != ""
-	return row, nil
+	single := [1]UsageEventRow{row}
+	if err := r.attachDiscoveredResources(ctx, single[:]); err != nil {
+		return row, err
+	}
+	return single[0], nil
 }
 
 // CorrelatedErrorEvents returns CPA error notifications for the same credential
@@ -713,67 +779,76 @@ func (r *Repository) GetUsageFacets(ctx context.Context, instanceID string, from
 	if r == nil || r.SQL() == nil {
 		return facets, errors.New("repository is not initialized")
 	}
-	// Materialize only the facet columns once: separate indexed detail-table walks otherwise
-	// hold the single SQLite connection much longer than grouping this narrow window.
-	columns := []struct {
-		column     string
-		maskColumn string
-		target     *[]UsageFacetValue
-	}{
-		{column: "model", target: &facets.Models},
-		{column: "provider", target: &facets.Providers},
-		{column: "api_group_key", maskColumn: "api_key_mask", target: &facets.APIGroupKey},
-		{column: "auth_index", target: &facets.AuthIndexes},
-		{column: "source", target: &facets.Sources},
-		{column: "executor_type", target: &facets.Executors},
-		{column: "model_alias", target: &facets.ModelAliases},
-		{column: "auth_type", target: &facets.AuthTypes},
-		{column: "reasoning_effort", target: &facets.ReasoningEfforts},
-		{column: "service_tier", target: &facets.ServiceTiers},
-		{column: "resolved_service_tier", target: &facets.ResolvedServiceTiers},
-	}
-	var query strings.Builder
-	query.WriteString(`WITH facet_window AS MATERIALIZED (
-		SELECT model, provider, api_group_key, api_key_mask, auth_index, source,
-		       executor_type, model_alias, auth_type, reasoning_effort, service_tier,
-		       ` + RESOLVED_SERVICE_TIER_SQL + ` AS resolved_service_tier
-		FROM usage_events e WHERE instance_id = ? AND timestamp_ms BETWEEN ? AND ?
-	) `)
-	for i, entry := range columns {
-		if i > 0 {
-			query.WriteString(" UNION ALL ")
-		}
-		maskExpression := "''"
-		if entry.maskColumn != "" {
-			maskExpression = `COALESCE(MAX(NULLIF(` + entry.maskColumn + `, '')), '')`
-		}
-		// Each subquery retains its own cap and binary tie ordering before the union.
-		fmt.Fprintf(&query, `SELECT %d AS dimension, value, requests, mask FROM (
-			SELECT %s AS value, COUNT(1) AS requests, %s AS mask
-			FROM facet_window WHERE %s <> '' GROUP BY %s
-			ORDER BY requests DESC, value ASC LIMIT 200
-		)`, i, entry.column, maskExpression, entry.column, entry.column)
-	}
-	query.WriteString(" ORDER BY dimension ASC, requests DESC, value ASC")
-	rows, err := r.SQL().QueryContext(ctx, query.String(), instanceID, fromMS, toMS)
+	// Scan the narrow projection once. Materializing the whole window and sorting it
+	// once per dimension held the shared SQLite connection for seconds on large ranges.
+	// Aggregate in Go so SQLite needs neither temporary tables nor repeated GROUP BYs.
+	rows, err := r.SQL().QueryContext(ctx, `
+		SELECT model, provider, api_group_key, auth_index, source, executor_type,
+		       COALESCE(model_alias, ''), auth_type, reasoning_effort, service_tier,
+		       response_service_tier, effective_service_tier, api_key_mask
+		FROM usage_events WHERE instance_id = ? AND timestamp_ms BETWEEN ? AND ?`, instanceID, fromMS, toMS)
 	if err != nil {
 		return facets, fmt.Errorf("read usage facets: %w", err)
 	}
 	defer rows.Close()
+
+	targets := [...]*[]UsageFacetValue{
+		&facets.Models, &facets.Providers, &facets.APIGroupKey, &facets.AuthIndexes,
+		&facets.Sources, &facets.Executors, &facets.ModelAliases, &facets.AuthTypes,
+		&facets.ReasoningEfforts, &facets.ServiceTiers, &facets.ResolvedServiceTiers,
+	}
+	var counts [len(targets)]map[string]UsageFacetValue
+	for dimension := range counts {
+		counts[dimension] = make(map[string]UsageFacetValue)
+	}
+	var model, provider, apiGroupKey, authIndex, source, executor string
+	var alias, authType, effort, requestedTier, responseTier, effectiveTier, mask string
 	for rows.Next() {
-		var dimension int
-		var value UsageFacetValue
-		if err := rows.Scan(&dimension, &value.Value, &value.Requests, &value.Mask); err != nil {
+		if err := rows.Scan(&model, &provider, &apiGroupKey, &authIndex, &source, &executor,
+			&alias, &authType, &effort, &requestedTier, &responseTier, &effectiveTier, &mask); err != nil {
 			return facets, fmt.Errorf("scan usage facets: %w", err)
 		}
-		value.Mask = security.NormalizeMask(value.Mask)
-		target := columns[dimension].target
-		*target = append(*target, value)
+		resolvedTier, _ := pricing.ResolveServiceTier(provider, executor, responseTier, requestedTier, effectiveTier)
+		values := [...]string{model, provider, apiGroupKey, authIndex, source, executor,
+			alias, authType, effort, requestedTier, resolvedTier}
+		for dimension, value := range values {
+			if value == "" {
+				continue
+			}
+			entry := counts[dimension][value]
+			entry.Value = value
+			entry.Requests++
+			// Compare stored masks before normalization, matching SQLite's binary MAX.
+			if dimension == 2 && mask > entry.Mask {
+				entry.Mask = mask
+			}
+			counts[dimension][value] = entry
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return facets, err
+		return facets, fmt.Errorf("iterate usage facets: %w", err)
 	}
-
+	// Release the connection before ordering the small facet results.
+	if err := rows.Close(); err != nil {
+		return facets, fmt.Errorf("close usage facets: %w", err)
+	}
+	for dimension, entries := range counts {
+		values := make([]UsageFacetValue, 0, len(entries))
+		for _, entry := range entries {
+			values = append(values, entry)
+		}
+		slices.SortFunc(values, func(left, right UsageFacetValue) int {
+			if order := cmp.Compare(right.Requests, left.Requests); order != 0 {
+				return order
+			}
+			return strings.Compare(left.Value, right.Value)
+		})
+		values = values[:min(len(values), 200)]
+		for index := range values {
+			values[index].Mask = security.NormalizeMask(values[index].Mask)
+		}
+		*targets[dimension] = values
+	}
 	return facets, nil
 }
 

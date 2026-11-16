@@ -1,7 +1,8 @@
 import { useInsightsFormat } from '../useInsightsFormat';
+import { tipCard } from '../../../components/common/tipCard';
 import { translateOr, type TFunc } from '../../../i18n/catalog';
 import React from 'react';
-import { Segmented } from 'antd';
+import { Segmented } from '@/components/ui/segmented';
 import { Panel } from '../../../components/common/Panel';
 import { PanelTitle } from '../../../components/common/PanelTitle';
 import { EmptyState } from '../../../components/common/EmptyState';
@@ -11,9 +12,8 @@ import type { InsightsRhythmCell, InsightsRhythmResponse } from '../../../types/
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
 
 import { canShowWeekView, peakHourSet, summarizeRhythm } from '../insightsRhythm';
+import { LazyInsightsHourChart as InsightsHourChart } from '../../../charts/lazyCharts';
 import styles from '../insights.module.css';
-
-const InsightsHourChart = React.lazy(() => import('../charts/InsightsHourChart'));
 
 type RhythmMeasure = 'requests' | 'tokens' | 'cost';
 
@@ -94,7 +94,10 @@ export const RhythmGrid: React.FC<RhythmGridProps> = ({ data, measure, isLoading
                     className={styles['rhythm-cell']}
                     data-empty={value <= 0 || undefined}
                     style={{ '--heatmap-quiet-share': heatmapRampMix(value, max).fromShare } as React.CSSProperties}
-                    title={`${weekdayLabel(t, weekday)} ${clock(hour)}–${clock(hour + 1)} · ${formatMetric(metric, value, style)}`}
+                    {...tipCard({
+                      heading: `${weekdayLabel(t, weekday)} ${clock(hour)}–${clock(hour + 1)}`,
+                      rows: [{ label: t(`insights.metric.${metric}`), value: formatMetric(metric, value, style) }],
+                    })}
                   />
                 );
               })}
@@ -119,7 +122,7 @@ export const RhythmGrid: React.FC<RhythmGridProps> = ({ data, measure, isLoading
         <PanelTitle
           extra={canShowWeek && (
             <Segmented
-              size="small"
+              size="sm"
               value={view}
               onChange={(next) => setView(next as 'hours' | 'week')}
               aria-label={t('insights.rhythm_view_label')}

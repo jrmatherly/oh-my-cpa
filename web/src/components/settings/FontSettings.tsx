@@ -1,6 +1,9 @@
 import type { MessageKey } from '../../i18n/catalog';
+import { MetaLine } from '../common/MetaLine';
 import React from 'react';
-import { AutoComplete, Button, Select, type SelectProps } from 'antd';
+import { AutoComplete } from '@/components/ui/autocomplete';
+import { Select, type SelectOptionItem } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api, apiErrorCode } from '../../api/client';
@@ -20,7 +23,7 @@ import {
   type FontRole,
   type InstalledFont,
 } from '../../types/fonts';
-import { formatBytes } from '../../utils/format';
+import { formatBytes, joinPhrases } from '../../utils/format';
 import { ConfirmAction } from '../common/ConfirmAction';
 import { EmptyState } from '../common/EmptyState';
 import { SettingRow } from '../common/SettingRow';
@@ -103,12 +106,12 @@ export const FontSettings: React.FC = () => {
 const FontPicker: React.FC<{ role: FontRole; fonts: readonly InstalledFont[] }> = ({ role, fonts }) => {
   const t = useT();
   const { value, loaded, setRole } = useFontRoles();
-  const builtIns: SelectProps['options'] = BUILT_IN_FONTS.map((font) => ({
+  const builtIns: SelectOptionItem<string>[] = BUILT_IN_FONTS.map((font) => ({
     value: builtInRef(font.id),
     label: <span style={{ fontFamily: font.stack }}>{t(font.nameKey)}</span>,
     title: t(font.nameKey),
   }));
-  const installed: NonNullable<SelectProps['options']> = fonts.map((font) => ({
+  const installed: SelectOptionItem<string>[] = fonts.map((font) => ({
     value: libraryRef(font.id),
     label: <span style={{ fontFamily: fontStackFor(libraryRef(font.id), fonts) }}>{font.family}</span>,
     title: font.family,
@@ -123,8 +126,8 @@ const FontPicker: React.FC<{ role: FontRole; fonts: readonly InstalledFont[] }> 
       popupMatchSelectWidth={false}
       options={installed.length
         ? [
-          { label: t('omc.font_group_builtin'), title: t('omc.font_group_builtin'), options: builtIns },
-          { label: t('omc.font_group_library'), title: t('omc.font_group_library'), options: installed },
+          { label: t('omc.font_group_builtin'), options: builtIns },
+          { label: t('omc.font_group_library'), options: installed },
         ]
         : builtIns}
     />
@@ -185,7 +188,10 @@ const FontLibraryDialog: React.FC<{ open: boolean; fonts: readonly InstalledFont
       label: (
         <span className={styles.suggestion}>
           <span>{suggestion.family}</span>
-          <span className={styles.meta}>{t(`omc.font_category_${suggestion.category}`)}{suggestion.isCjk ? ` · ${t('omc.font_cjk')}` : ''}</span>
+          <MetaLine className={styles.meta}>
+            {t(`omc.font_category_${suggestion.category}`)}
+            {suggestion.isCjk ? t('omc.font_cjk') : ''}
+          </MetaLine>
         </span>
       ),
     }));
@@ -227,7 +233,7 @@ const FontLibraryDialog: React.FC<{ open: boolean; fonts: readonly InstalledFont
               placeholder="Noto Sans SC"
               aria-label={t('omc.font_google_family')}
             />
-            <Button type="primary" htmlType="submit" icon={<CloudDownloadOutlined />} disabled={!trimmed} loading={install.isPending}>
+            <Button variant="primary" type="submit" icon={<CloudDownloadOutlined />} disabled={!trimmed} loading={install.isPending}>
               {t('omc.font_install')}
             </Button>
           </form>
@@ -237,7 +243,7 @@ const FontLibraryDialog: React.FC<{ open: boolean; fonts: readonly InstalledFont
         <section className={styles.section} aria-label={t('omc.font_installed')}>
           <div className={styles['section-head']}>
             <span className={styles['field-label']}>{t('omc.font_installed')}</span>
-            <Button size="small" icon={<UploadOutlined />} loading={upload.isPending} onClick={() => fileInput.current?.click()}>{t('omc.font_upload')}</Button>
+            <Button size="sm" icon={<UploadOutlined />} loading={upload.isPending} onClick={() => fileInput.current?.click()}>{t('omc.font_upload')}</Button>
             <input
               ref={fileInput}
               type="file"
@@ -295,14 +301,12 @@ const FontLibraryList: React.FC<{ fonts: readonly InstalledFont[] }> = ({ fonts 
           <li key={font.id} className={styles.row}>
             <div className={styles.identity}>
               <span className={styles.family} style={{ fontFamily: stack }}>{font.family}</span>
-              <span className={styles.meta}>
-                {[
-                  t(font.source === 'google' ? 'omc.font_source_google' : 'omc.font_source_upload'),
-                  font.faces.length === 1 ? t('omc.font_file_single') : t('omc.font_files', { n: font.faces.length }),
-                  formatBytes(font.byte_size),
-                  ...(usedBy.length ? [t('omc.font_in_use', { roles: usedBy.join(' / ') })] : []),
-                ].join(' · ')}
-              </span>
+              <MetaLine className={styles.meta}>
+                {t(font.source === 'google' ? 'omc.font_source_google' : 'omc.font_source_upload')}
+                {font.faces.length === 1 ? t('omc.font_file_single') : t('omc.font_files', { n: font.faces.length })}
+                {formatBytes(font.byte_size)}
+                {usedBy.length > 0 && <b>{t('omc.font_in_use', { roles: joinPhrases(t, usedBy) })}</b>}
+              </MetaLine>
             </div>
             <ConfirmAction
               title={t('omc.font_delete_confirm', { family: font.family })}
@@ -312,7 +316,7 @@ const FontLibraryList: React.FC<{ fonts: readonly InstalledFont[] }> = ({ fonts 
               isConfirming={remove.isPending && remove.variables?.id === font.id}
               onConfirm={() => remove.mutateAsync(font).catch(() => undefined)}
             >
-              <Button type="text" icon={<DeleteOutlined />} aria-label={t('omc.font_delete', { family: font.family })} />
+              <Button variant="ghost" icon={<DeleteOutlined />} aria-label={t('omc.font_delete', { family: font.family })} />
             </ConfirmAction>
           </li>
         );

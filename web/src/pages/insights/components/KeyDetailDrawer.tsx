@@ -1,6 +1,6 @@
 import { useInsightsFormat } from '../useInsightsFormat';
 import React from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { AppDrawer } from '../../../components/common/AppDrawer';
 import { FactList } from '../../../components/common/FactList';
 import { useT } from '../../../i18n';
@@ -10,9 +10,9 @@ import { formatTokens, formatTokensFull } from '../../../types/tokenDisplay';
 import {
   filterRows, groupTotals, metricValue, rankGroups, sumMeasures,
   type InsightsCube, type InsightsDimension, type InsightsFilters, type InsightsMetric,
-} from '../insightsCube';
+} from '../../../types/insightsCube';
 
-import type { InsightsLabels } from '../useInsightsLabels';
+import type { InsightsLabels } from '../../../hooks/useInsightsLabels';
 import { RankingPanel } from './RankingPanel';
 import { RhythmGrid } from './RhythmGrid';
 import styles from '../insights.module.css';
@@ -60,7 +60,7 @@ export const KeyDetailDrawer: React.FC<KeyDetailDrawerProps> = ({
       width="medium"
       title={keyId ? labels.label('key', keyId) : undefined}
       footer={keyId ? (
-        <Button type="primary" onClick={() => onFilter(keyId)}>{t('insights.filter_to_key')}</Button>
+        <Button variant="primary" onClick={() => onFilter(keyId)}>{t('insights.filter_to_key')}</Button>
       ) : undefined}
     >
       {keyId && (
@@ -69,7 +69,7 @@ export const KeyDetailDrawer: React.FC<KeyDetailDrawerProps> = ({
             facts={[
               { key: 'mask', label: t('insights.col.mask'), value: labels.detail('key', keyId) ?? labels.label('key', keyId) },
               { key: 'requests', label: t('insights.metric.requests'), value: formatMetric('requests', total.requests, style) },
-              { key: 'tokens', label: t('insights.metric.tokens'), value: <span title={formatTokensFull(total.totalTokens)}>{formatTokens(total.totalTokens, style)}</span> },
+              { key: 'tokens', label: t('insights.metric.tokens'), value: <span data-tip={formatTokensFull(total.totalTokens)}>{formatTokens(total.totalTokens, style)}</span> },
               { key: 'cost', label: t('insights.metric.cost'), value: formatMetric('cost', metricValue(total, 'cost'), style) },
             ]}
           />

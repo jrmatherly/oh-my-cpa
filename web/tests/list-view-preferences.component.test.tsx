@@ -24,9 +24,8 @@ function OAuthView() {
 function RequestView() {
   const view = useUsageEventViewState();
   return <>
-    <output aria-label="view">{JSON.stringify({ grouping: view.grouping, autoRefresh: view.isAutoRefresh, query: view.query })}</output>
+    <output aria-label="view">{JSON.stringify({ grouping: view.grouping, query: view.query })}</output>
     <button disabled={!view.isEnabled} onClick={() => view.changeGrouping('source')}>Group requests</button>
-    <button disabled={!view.isEnabled} onClick={() => view.toggleAutoRefresh(true)}>Refresh requests</button>
     <button disabled={!view.isEnabled} onClick={() => view.commit({ auth_type: ['oauth'], latency_min: ['300'] })}>Filter requests</button>
   </>;
 }
@@ -43,8 +42,9 @@ beforeEach(() => {
 
 describe('list view preference persistence', () => {
   it('preserves old OAuth page sizes and normalizes unknown filter values', () => {
-    expect(parseOAuthManagementView({ pageSize: 48, density: 'expanded' })).toEqual({ pageSize: 48, status: 'all', quota: 'all', sort: 'custom' });
-    expect(parseOAuthManagementView({ pageSize: '24', status: 'bogus', quota: 'bogus', sort: 'bogus' })).toEqual({ pageSize: 12, status: 'all', quota: 'all', sort: 'custom' });
+    expect(parseOAuthManagementView({ pageSize: 48, density: 'expanded' })).toEqual({ pageSize: 48, layout: 'list', status: 'all', quota: 'all', sort: 'custom' });
+    expect(parseOAuthManagementView({ pageSize: '24', status: 'bogus', quota: 'bogus', sort: 'bogus', layout: 'bogus' })).toEqual({ pageSize: 12, layout: 'list', status: 'all', quota: 'all', sort: 'custom' });
+    expect(parseOAuthManagementView({ layout: 'cards', sort: 'quota-asc' })).toMatchObject({ layout: 'cards', sort: 'quota-asc' });
   });
 
   it('saves OAuth filters and sorting with page size, restores them with a fresh cache and persists reset', async () => {
@@ -54,14 +54,14 @@ describe('list view preference persistence', () => {
     await waitFor(() => expect(writes()).toHaveLength(1));
     fireEvent.click(screen.getByRole('button', { name: 'Resize OAuth' }));
     await waitFor(() => expect(writes()).toHaveLength(2));
-    expect(api.state.preferences.oauth_management_view_v1).toEqual({ pageSize: 24, status: 'enabled', quota: 'attention', sort: 'priority-desc' });
+    expect(api.state.preferences.oauth_management_view_v1).toEqual({ pageSize: 24, layout: 'list', status: 'enabled', quota: 'attention', sort: 'priority-desc' });
     first.unmount();
     const second = mount(<OAuthView />);
     await waitFor(() => expect(readView()).toMatchObject({ pageSize: 24, status: 'enabled', quota: 'attention', sort: 'priority-desc' }));
     expect(writes()).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Reset OAuth' }));
     await waitFor(() => expect(writes()).toHaveLength(3));
-    expect(api.state.preferences.oauth_management_view_v1).toEqual({ pageSize: 24, status: 'all', quota: 'all', sort: 'custom' });
+    expect(api.state.preferences.oauth_management_view_v1).toEqual({ pageSize: 24, layout: 'list', status: 'all', quota: 'all', sort: 'custom' });
     second.unmount();
     mount(<OAuthView />);
     await waitFor(() => expect(readView()).toMatchObject({ pageSize: 24, status: 'all', quota: 'all', sort: 'custom' }));
@@ -105,22 +105,20 @@ describe('list view preference persistence', () => {
   });
 
   for (const route of ['/', '/?preset=24h&model=linked-model']) {
-    it(`restores request grouping, refresh and advanced filters after remount from ${route}`, async () => {
+    it(`restores request grouping and advanced filters after remount from ${route}`, async () => {
       const first = mount(<RequestView />, route);
       await waitFor(() => expect((screen.getByRole('button', { name: 'Group requests' }) as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Group requests' }));
       await waitFor(() => expect(writes()).toHaveLength(1));
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh requests' }));
-      await waitFor(() => expect(writes()).toHaveLength(2));
       fireEvent.click(screen.getByRole('button', { name: 'Filter requests' }));
-      await waitFor(() => expect(writes()).toHaveLength(3));
+      await waitFor(() => expect(writes()).toHaveLength(2));
       first.unmount();
       mount(<RequestView />);
-      await waitFor(() => expect(readView()).toMatchObject({ grouping: 'source', autoRefresh: true, query: { filters: { auth_type: ['oauth'] }, ranges: { latency: { min: 300 } } } }));
-      expect(writes()).toHaveLength(3);
+      await waitFor(() => expect(readView()).toMatchObject({ grouping: 'source', query: { filters: { auth_type: ['oauth'] }, ranges: { latency: { min: 300 } } } }));
+      expect(writes()).toHaveLength(2);
     });
 
-    it(`rolls request grouping and refresh back after refused saves from ${route}`, async () => {
+    it(`rolls request grouping back after refused saves from ${route}`, async () => {
       mount(<RequestView />, route);
       await waitFor(() => expect((screen.getByRole('button', { name: 'Group requests' }) as HTMLButtonElement).disabled).toBe(false));
       await act(async () => { await Promise.resolve(); });
@@ -128,9 +126,6 @@ describe('list view preference persistence', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Group requests' }));
       await screen.findByText('write_busy');
       await waitFor(() => expect(readView().grouping).toBe('time'));
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh requests' }));
-      await waitFor(() => expect(writes()).toHaveLength(2));
-      await waitFor(() => expect(readView().autoRefresh).toBe(false));
       if (route !== '/') expect(readView().query).toMatchObject({ preset: '24h', filters: { model: ['linked-model'] } });
     });
   }

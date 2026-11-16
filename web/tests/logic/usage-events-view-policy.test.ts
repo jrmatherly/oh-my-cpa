@@ -43,6 +43,13 @@ import {
   syncShortfallReason,
 } from '../../src/components/usage/syncPresentation.ts';
 import { chipDisplayValue } from '../../src/components/usage/chipDisplay.ts';
+import {
+  buildGroupSegments,
+  computeGroupedVirtualWindow,
+  computeVirtualWindow,
+  assignBandTones,
+  planArrivalGlide,
+} from '../../src/components/usage/requestVirtualWindow.ts';
 import { EVENT_PRESETS } from '../../src/types/usageEventQuery.ts';
 import { test } from 'vitest';
 
@@ -172,7 +179,7 @@ test('setting, widening and clearing one dimension all express themselves as abs
 // ---------------------------------------------------------------------------
 
 test('the saved view is derived from the navigated URL, not merged from the previous query', () => {
-  const current = { grouping: 'time' as const, autoRefresh: false };
+  const current = { grouping: 'time' as const };
   // `model` is absent from the URL because the operator just cleared it. Deriving
   // every field from this state is what stops the cleared value being read back
   // out of the previous query and resurrected on the next visit.
@@ -191,7 +198,6 @@ test('the saved view is derived from the navigated URL, not merged from the prev
 test('a cleared filter is absent from the saved view rather than stored empty', () => {
   const pref = viewPreferenceFromUrl(new URLSearchParams('preset=1h'), {
     grouping: 'time',
-    autoRefresh: false,
   });
   // No `filterValues` key at all: an empty map and an absent one would both be
   // read back as "not filtering", but only absence keeps the stored document
@@ -202,7 +208,6 @@ test('a cleared filter is absent from the saved view rather than stored empty', 
 test('cost is stored once, as its own field, and never inside the filter map', () => {
   const pref = viewPreferenceFromUrl(new URLSearchParams('preset=1h&cost=unpriced'), {
     grouping: 'time',
-    autoRefresh: false,
   });
   assert.equal(pref.cost, 'unpriced');
   // Keeping it in both was a second source of truth that hydration wrote back
@@ -213,16 +218,13 @@ test('cost is stored once, as its own field, and never inside the filter map', (
 test('the saved view carries the layout choices it was given, not the URL defaults', () => {
   const pref = viewPreferenceFromUrl(new URLSearchParams('preset=1h'), {
     grouping: 'source',
-    autoRefresh: true,
   });
   assert.equal(pref.grouping, 'source');
-  assert.equal(pref.autoRefresh, true);
 });
 
 test('an absolute window is saved as bounds, and an open-ended one keeps only its start', () => {
   const closed = viewPreferenceFromUrl(new URLSearchParams('from=100&to=200'), {
     grouping: 'time',
-    autoRefresh: false,
   });
   assert.equal(closed.from, 100);
   assert.equal(closed.to, 200);
@@ -230,7 +232,6 @@ test('an absolute window is saved as bounds, and an open-ended one keeps only it
 
   const openEnded = viewPreferenceFromUrl(new URLSearchParams('from=100'), {
     grouping: 'time',
-    autoRefresh: false,
   });
   assert.equal(openEnded.from, 100);
   assert.equal(openEnded.to, undefined);
@@ -241,7 +242,6 @@ test('an absolute window is saved as bounds, and an open-ended one keeps only it
 test('an absent window falls back to the default preset rather than to bounds', () => {
   const pref = viewPreferenceFromUrl(new URLSearchParams('model=o3'), {
     grouping: 'time',
-    autoRefresh: false,
   });
   assert.equal(pref.preset, '1h');
   assert.equal(pref.from, undefined);
@@ -562,4 +562,124 @@ test('a plain text dimension is shown exactly as it was committed', () => {
 test('a reasoning chip shows the parameter spelling', () => {
   assert.equal(chipDisplayValue({ ...chipBase, key: 'reasoning', value: 'xhigh' }), 'xHigh');
   assert.equal(chipDisplayValue({ ...chipBase, key: 'reasoning', value: 'high' }), 'high');
+});
+
+// ---------------------------------------------------------------------------
+// Request virtual windowing
+// ---------------------------------------------------------------------------
+
+test('computeVirtualWindow quantizes stride steps and keeps surviving row coordinates invariant', () => {
+  const heights = Array.from({ length: 100 }, (_, index) => (index % 5 === 0 ? 96 : 72));
+  const atTop = computeVirtualWindow({
+    itemCount: heights.length,
+    getRowHeight: (index) => heights[index],
+    scrollTop: 0,
+    viewportHeight: 360,
+    overscanPx: 144,
+    strideRows: 2,
+  });
+  assert.equal(atTop.startIndex, 0);
+  assert.equal((atTop.endIndex + 1) % 2, 0);
+
+  // Small sub-stride movement inside the overscanned band keeps the mounted window unchanged.
+  const slightScroll = computeVirtualWindow({
+    itemCount: heights.length,
+    getRowHeight: (index) => heights[index],
+    scrollTop: 48,
+    viewportHeight: 360,
+    overscanPx: 144,
+    strideRows: 2,
+  });
+  assert.equal(slightScroll.startIndex, atTop.startIndex);
+
+  // Advancing further shifts startIndex in stride multiples without altering surviving row Y offsets.
+  const deeper = computeVirtualWindow({
+    itemCount: heights.length,
+    getRowHeight: (index) => heights[index],
+    scrollTop: 720,
+    viewportHeight: 360,
+    overscanPx: 144,
+    strideRows: 2,
+  });
+  assert.ok(deeper.startIndex > 0);
+  assert.equal(deeper.startIndex % 2, 0);
+  for (let index = deeper.startIndex; index <= Math.min(atTop.endIndex, deeper.endIndex); index += 1) {
+    assert.equal(deeper.offsets[index], atTop.offsets[index]);
+  }
+});
+
+test('buildGroupSegments and computeGroupedVirtualWindow slice overlapping groups while skipping offscreen bodies', () => {
+  const rows = Array.from({ length: 30 }, (_, index) => ({
+    id: index + 1,
+    source: index < 15 ? 'openai' : 'anthropic',
+  }));
+  const segments = buildGroupSegments(rows, (row) => row.source);
+  assert.deepEqual(segments.map((segment) => segment.groupKey), ['openai', 'anthropic']);
+  assert.equal(segments[1].entries[0].index, 15);
+
+  const grouped = computeGroupedVirtualWindow({
+    segments,
+    getItemKey: (row) => row.id,
+    getHeaderHeight: () => 40,
+    getItemHeight: () => 80,
+    scrollTop: 0,
+    viewportHeight: 240,
+    overscanPx: 160,
+    strideRows: 2,
+  });
+  assert.equal(grouped.totalHeight, 2 * 40 + 30 * 80);
+  assert.equal(grouped.slices[0].startIndex, 0);
+  assert.ok(grouped.slices[0].endIndex >= 4 && grouped.slices[0].endIndex < 14);
+  // Second group starts at 40 + 15 * 80 = 1240px, outside viewport + overscan (400px).
+  assert.equal(grouped.slices[1].endIndex, -1);
+});
+
+test('planArrivalGlide carries the drawn rows down with the records that landed above them', () => {
+  const previousTops = new Map([[3, 0], [2, 72], [1, 144]]);
+  const glide = planArrivalGlide({
+    previousKeys: new Set([3, 2, 1]),
+    previousTops,
+    drawnTops: new Map([[5, 0], [4, 72], [3, 144], [2, 216], [1, 288]]),
+    maxTravel: 640,
+  });
+  assert.deepEqual(glide, [
+    { key: 5, from: -144, isArrival: true },
+    { key: 4, from: -144, isArrival: true },
+    { key: 3, from: -144, isArrival: false },
+    { key: 2, from: -144, isArrival: false },
+    { key: 1, from: -144, isArrival: false },
+  ]);
+
+  // A record that lands mid-list pushes only what is below it, and fades in where it belongs.
+  const between = planArrivalGlide({
+    previousKeys: new Set([3, 2, 1]),
+    previousTops,
+    drawnTops: new Map([[3, 0], [9, 72], [2, 144], [1, 216]]),
+    maxTravel: 640,
+  });
+  assert.deepEqual(between?.map((move) => move.from), [0, -72, -72, -72]);
+});
+
+test('planArrivalGlide draws a replaced, unchanged or backlogged list in place', () => {
+  const previousTops = new Map([[3, 0], [2, 72], [1, 144]]);
+  const plan = (drawnTops: Map<number, number>, maxTravel = 640) =>
+    planArrivalGlide({ previousKeys: new Set([3, 2, 1]), previousTops, drawnTops, maxTravel });
+  assert.equal(plan(new Map([[9, 0], [8, 72]])), null, 'another page keeps nothing');
+  assert.equal(plan(new Map([[2, 0], [1, 72]])), null, 'a record that left is not an arrival');
+  assert.equal(plan(new Map([[3, 0], [2, 72], [1, 144]])), null, 'a re-read with nothing new');
+  assert.equal(plan(new Map([[5, 0], [4, 72], [3, 144]]), 100), null, 'a backlog travels too far');
+});
+
+test('assignBandTones keeps every record its band as records arrive above it', () => {
+  const first = assignBandTones([3, 2, 1], new Map());
+  assert.deepEqual([...first.values()], ['odd', 'even', 'odd']);
+
+  const arrived = assignBandTones([4, 3, 2, 1], first);
+  assert.deepEqual([...arrived], [[4, 'even'], [3, 'odd'], [2, 'even'], [1, 'odd']]);
+
+  // A record landing mid-list keeps the stripes alternating by turning over only what is below it.
+  const between = assignBandTones([4, 3, 9, 2, 1], arrived);
+  assert.deepEqual([...between.values()], ['even', 'odd', 'even', 'odd', 'even']);
+
+  assert.deepEqual([...assignBandTones([8, 7], arrived).values()], ['odd', 'even'], 'another page starts afresh');
 });

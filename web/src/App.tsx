@@ -7,23 +7,19 @@ import {
   Navigate,
   Outlet,
 } from 'react-router-dom';
-import { App as AntdApp, ConfigProvider } from 'antd';
-import enUS from 'antd/locale/en_US';
-import msMY from 'antd/locale/ms_MY';
-import zhCN from 'antd/locale/zh_CN';
-import zhTW from 'antd/locale/zh_TW';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getAppConfig } from './types/config';
-import { createThemeConfig } from './theme/themeConfig';
 import { AuthGate } from './components/common/AuthGate';
 import { RouteErrorPage } from './components/common/RouteErrorPage';
 import { DemoNotice } from './components/common/DemoNotice';
+import { ConfirmDialogHost, Toaster } from './components/feedback';
 import type { RouteLoadingBody, RouteLoadingHandle } from './components/common/PageLoading';
 // Eager: it stands in for the shell while the shell's own download and the stored preferences are
 // in flight. It reads the locale, so a language change re-renders it rather than recreating the router.
 import { ShellLoading } from './components/common/ShellLoading';
 
 import {
+  AppLayout,
   UsageEventsPage,
   PricingPage,
   ProvidersPage,
@@ -45,15 +41,14 @@ import {
   PluginPageHost,
   OmcSettingsPage,
 } from './routePages';
-import { ThemeProvider, ThemeServerSync, useTheme } from './theme/ThemeContext';
-import { I18nProvider, useI18n } from './i18n';
+import { ThemeProvider, ThemeServerSync } from './theme/ThemeContext';
+import { I18nProvider } from './i18n';
 import { TokenDisplayProvider } from './types/tokenDisplayContext';
 import { useScrollSmoothing } from './hooks/useScrollSmoothing';
 import { MotionPreferenceSync, MotionProvider } from './hooks/useReducedMotionPreference';
 import { useConsoleFonts } from './hooks/useFonts';
-
-// The recovery boundary stays eager even when the authenticated shell cannot be downloaded.
-const AppLayout = React.lazy(() => import('./components/common/AppLayout').then(module => ({ default: module.AppLayout })));
+import { DEFAULT_SWR_STALE_TIME_MS } from './api/queryKeys';
+import { useEventSource } from './hooks/useEventSource';
 
 /**
  * The frame a route draws while its module downloads: the shape of its loaded body, so the page that
@@ -66,19 +61,15 @@ function loadingAs(loading: RouteLoadingBody): RouteLoadingHandle {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5000,
+      // 30s SWR window delivers 0ms cached route/tab switches while background SSE
+      // events (/api/events) push immediate invalidations on server-side mutations.
+      staleTime: DEFAULT_SWR_STALE_TIME_MS,
+      gcTime: 5 * 60_000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
   },
 });
-
-const ANTD_LOCALES = {
-  zh: zhCN,
-  'zh-Hant': zhTW,
-  en: enUS,
-  ms: msMY,
-} as const;
 
 export const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
@@ -89,21 +80,6 @@ export const App: React.FC = () => (
     </I18nProvider>
   </QueryClientProvider>
 );
-
-/**
- * Sits below both the theme and locale providers, because Ant Design's tokens and locale are both
- * projections: the theme decides every colour, the language decides date and number formats.
- *
- * The theme itself does not wait for the deployment: the console is painted from the browser's own
- * stored preference in the first frame, and the deployment's copy is reconciled afterwards by
- * `ThemeServerSync`, which `AppRoutes` mounts behind the sign-in gate.
- */
-/**
- * Toasts (`useToast`) open at the top centre, where the eye already is after a click in the page
- * header or a table, and never stack into a collapsed pile: a report with per-target reasons has to
- * stay readable beside the acknowledgement that followed it.
- */
-const TOAST_CONFIG = { placement: 'top', stack: false } as const;
 
 /** Renders nothing; it only switches the console-wide wheel and keyboard glide (`useScrollSmoothing`). */
 const ScrollSmoothingSync: React.FC = () => {
@@ -117,43 +93,27 @@ const FontSync: React.FC = () => {
   return null;
 };
 
-const TAG_CONFIG = { variant: 'filled' } as const;
-const WAVE_CONFIG = { disabled: true } as const;
-const BUTTON_CONFIG = { autoInsertSpace: false } as const;
-
-const ThemedShell: React.FC = () => {
-  const { lang } = useI18n();
-  const { theme } = useTheme();
-  const antdTheme = React.useMemo(() => createThemeConfig(theme), [theme]);
-  return (
-    <ConfigProvider
-      locale={ANTD_LOCALES[lang]}
-      theme={antdTheme}
-      // Fields are wells, not boxes: a filled control reads as part of the toolbar or form it sits
-      // in, and its edge appears only under focus. A tag is a soft fill with no edge for the same
-      // reason. The click wave is a material ripple that no native control draws, and a space
-      // pushed between two Chinese characters ("取 消") is a typesetting habit no platform keeps.
-      variant="filled"
-      tag={TAG_CONFIG}
-      wave={WAVE_CONFIG}
-      button={BUTTON_CONFIG}
-    >
-      <MotionProvider>
-        <AntdApp notification={TOAST_CONFIG}>
-          <MotionPreferenceSync />
-          <ScrollSmoothingSync />
-          <FontSync />
-          <DemoNotice />
-          <TokenDisplayProvider>
-            <CurrencyDisplayProvider>
-              <AppRoutes />
-            </CurrencyDisplayProvider>
-          </TokenDisplayProvider>
-        </AntdApp>
-      </MotionProvider>
-    </ConfigProvider>
-  );
+/** Renders nothing; maintains the authenticated tab-wide '/api/events' SSE reconciliation stream. */
+const StateEventsSync: React.FC = () => {
+  useEventSource('/api/events', { isEnabled: !getAppConfig().demo });
+  return null;
 };
+
+const ThemedShell: React.FC = () => (
+  <MotionProvider>
+    <MotionPreferenceSync />
+    <ScrollSmoothingSync />
+    <FontSync />
+    <DemoNotice />
+    <Toaster />
+    <ConfirmDialogHost />
+    <TokenDisplayProvider>
+      <CurrencyDisplayProvider>
+        <AppRoutes />
+      </CurrencyDisplayProvider>
+    </TokenDisplayProvider>
+  </MotionProvider>
+);
 
 const AppRoutes: React.FC = () => {
   const config = getAppConfig();
@@ -213,6 +173,7 @@ const AppRoutes: React.FC = () => {
           out, a theme change stays in this browser marked dirty, and this pushes it on sign-in;
           mounted outside the gate it sent the write anyway and reported the refusal in a toast. */}
       <ThemeServerSync />
+      <StateEventsSync />
       <TimeZoneProvider fallback={<ShellLoading />}><RouterProvider router={router} /></TimeZoneProvider>
     </AuthGate>
   );

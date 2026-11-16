@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorCode } from '../../api/client';
 import { AppDrawer } from '../../components/common/AppDrawer';
@@ -7,6 +7,7 @@ import { AppModal } from '../../components/common/AppModal';
 import { ToolButton } from '../../components/common/ToolButton';
 import { DownloadOutlined, HistoryOutlined, LeftOutlined } from '../../components/icons';
 import { useToast } from '../../components/feedback';
+import { invalidateQueriesSilently } from '../../utils/progressSources';
 import { useT } from '../../i18n';
 import type { BackupAutomation, BackupAutomationInput, DatabaseBackupJob } from '../../types/databaseBackup';
 import { databaseBackupErrorKey } from '../../utils/databaseBackupErrors';
@@ -31,7 +32,7 @@ const JOBS_KEY = ['database-backups'];
  * account's connection is a dialog over it, and the tasks that are not settings (restore, export,
  * history) are pages inside the drawer, each with the way back in its title.
  */
-export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
+export function DatabaseBackups() {
   const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -45,13 +46,12 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
   const automation = useQuery({
     queryKey: AUTOMATION_KEY,
     queryFn: () => api.getDatabaseBackupAutomation(),
-    enabled: !isDemo,
     refetchInterval: isOpen ? 5000 : false,
   });
   const jobsQuery = useQuery({
     queryKey: JOBS_KEY,
     queryFn: () => api.getDatabaseBackups(),
-    enabled: isOpen && !isDemo,
+    enabled: isOpen,
     refetchInterval: (current) =>
       current.state.data?.items.some((job) => RUNNING_STATES.has(job.state)) ? 1000 : false,
   });
@@ -80,7 +80,7 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
     try {
       const saved = await api.saveDatabaseBackupAutomation({ ...automationInput(current), ...patch });
       queryClient.setQueryData(AUTOMATION_KEY, saved);
-      await queryClient.invalidateQueries({ queryKey: AUTOMATION_KEY });
+      await invalidateQueriesSilently(queryClient, { queryKey: AUTOMATION_KEY });
       return true;
     } catch (error) {
       queryClient.setQueryData(AUTOMATION_KEY, previous);
@@ -132,9 +132,9 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
       <div className={styles['entry']}>
         <div className={styles['entry-text']}>
           <span>{t('sys.backup_title')}</span>
-          {!isDemo && value && <span className={styles['hint']}>{entrySummary(value, t)}</span>}
+          {value && <span className={styles['hint']}>{entrySummary(value, t)}</span>}
         </div>
-        <Button disabled={isDemo} onClick={() => setIsOpen(true)}>
+        <Button onClick={() => setIsOpen(true)}>
           {t('sys.backup_manage')}
         </Button>
       </div>
@@ -148,8 +148,8 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
           ) : (
             <span className={styles['drawer-title']}>
               <ToolButton
-                type="text"
-                size="small"
+                variant="ghost"
+                size="sm"
                 icon={<LeftOutlined />}
                 label={t('common.back')}
                 onClick={() => go('plan')}
@@ -164,8 +164,8 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
         extra={
           view === 'plan' && (
             <span className={styles['drawer-tools']}>
-              <ToolButton type="text" icon={<DownloadOutlined />} label={t('sys.backup_export_task')} onClick={() => go('export')} />
-              <ToolButton type="text" icon={<HistoryOutlined />} label={t('sys.backup_history')} onClick={() => go('history')} />
+              <ToolButton variant="ghost" icon={<DownloadOutlined />} label={t('sys.backup_export_task')} onClick={() => go('export')} />
+              <ToolButton variant="ghost" icon={<HistoryOutlined />} label={t('sys.backup_history')} onClick={() => go('history')} />
             </span>
           )
         }
@@ -217,7 +217,7 @@ export function DatabaseBackups({ isDemo }: { isDemo: boolean }) {
         </div>
       </AppDrawer>
       <AppModal
-        open={!!editing}
+        open={isOpen && !!editing}
         size="medium"
         title={editing ? providerLabel(editing.draft.provider) : ''}
         description={

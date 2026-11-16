@@ -87,6 +87,8 @@ const FIXED_ROUTES = new Map([
   ['/api/v1/management/system/repository', 'system-repository'],
   ['/api/v1/management/system/updates', 'system-updates'],
   ['/api/v1/management/system/live', 'system-live'],
+  ['/api/v1/events', 'v1-events-live'],
+  ['/api/v1/management/state', 'management-state'],
   ['/api/v1/management/system/updater', 'system-updater'],
   ['/api/v1/management/system/maintenance', 'system-maintenance'],
   ['/api/v1/management/system/data-retention', 'system-data-retention'],
@@ -94,6 +96,7 @@ const FIXED_ROUTES = new Map([
   ['/api/v1/management/config/source', 'config-source'],
   ['/api/v1/management/config/backups', 'config-backups'],
   ['/api/v1/management/providers', 'providers'],
+  ['/api/v1/management/identity-directory', 'identity-directory'],
   ['/api/v1/management/routing', 'routing'],
   ['/api/v1/management/routing/models', 'routing-models'],
   ['/api/v1/management/api-keys', 'api-keys'],
@@ -130,6 +133,7 @@ const FIXED_ROUTES = new Map([
   // the fact that this table had no entry for it, and the header then read a body without
   // the field it needed.
   ['/api/healthz', 'healthz'],
+  ['/api/events', 'events-live'],
 ]);
 
 /**
@@ -140,6 +144,8 @@ const FIXED_ROUTES = new Map([
  * from `dashboard-24h`, not the same response relabelled.
  */
 const PRESET_ROUTES = new Map([
+  ['/api/v1/management/providers', (url) => (url.searchParams.get('include_keys') === 'true' ? 'providers-with-keys' : 'providers')],
+  ['/api/v1/management/api-keys', (url) => (url.searchParams.get('include_keys') === 'true' ? 'api-keys-with-keys' : 'api-keys')],
   ['/api/v1/management/dashboard', (url) => `dashboard-${dashboardPresetOf(url)}`],
   ['/api/v1/management/dashboard/tail', (url) => `dashboard-tail-${dashboardPresetOf(url)}`],
   ['/api/v1/management/dashboard/providers', (url) => `dashboard-providers-${dashboardPresetOf(url)}`],
@@ -151,6 +157,9 @@ const REQUEST_EVENT_DETAIL = '/api/v1/usage/events/{id}';
 
 /** One installed plugin's settings document. */
 const PLUGIN_CONFIG = '/api/v1/management/plugins/{id}/config';
+
+/** One quota window's capacity details. */
+const QUOTA_CAPACITY = '/api/v1/management/quota/{authIndex}/capacity';
 
 /** One model's price editor read. */
 const PRICING_MODEL = '/api/v1/pricing/models/{model}';
@@ -193,6 +202,16 @@ const PARAMETERISED_ROUTES = [
   { path: '/api/v1/management/oauth/status', resolve: () => 'oauth-status' },
   { path: '/api/v1/management/logs', resolve: () => 'logs' },
   { path: '/api/v1/management/quota/auth-codex-01', resolve: () => 'quota-codex' },
+  // One window's capacity details, captured for the windows the dataset estimates. Another
+  // window has no answer rather than a different window's history.
+  {
+    path: QUOTA_CAPACITY,
+    pattern: /^\/api\/v1\/management\/quota\/[A-Za-z0-9._-]+\/capacity$/,
+    resolve: (url) => {
+      const name = `quota-capacity-${url.pathname.split('/').at(-2)}-${url.searchParams.get('window') ?? ''}`;
+      return Object.hasOwn(dataset.responses, name) ? name : undefined;
+    },
+  },
   // One installed plugin's settings document, captured per fixture plugin. A plugin the
   // dataset does not hold has no answer rather than another plugin's settings.
   {

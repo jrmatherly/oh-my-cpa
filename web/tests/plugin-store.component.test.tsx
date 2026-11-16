@@ -58,7 +58,7 @@ it('updates catalog display, search and an open confirmation without changing in
   fireEvent.click(within(storePanel).getByRole('button', { name: makeT('en')('plugin.install') }));
   const dialog = await screen.findByRole('dialog');
   expect(dialog.textContent).toContain('Base name');
-  const language = screen.getByRole('combobox', { name: 'Catalog language' });
+  const language = screen.getByLabelText('Catalog language');
   fireEvent.change(language, { target: { value: 'zh' } });
   await waitFor(() => expect(dialog.textContent).toContain('简体标题'));
   for (const panel of [storePanel, installedPanel]) {
@@ -73,10 +73,10 @@ it('updates catalog display, search and an open confirmation without changing in
   expect(within(storePanel).getByText('&lt;tag&gt;')).toBeTruthy();
   expect(storePanel.querySelector('tag')).toBeNull();
   expect(storePanel.querySelector('a[href="https://github.com/publisher/stable-plugin"]')).not.toBeNull();
-  const search = within(storePanel).getByRole('textbox');
+  const search = within(storePanel).getByRole('textbox', { hidden: true });
   fireEvent.change(search, { target: { value: '简体标签 & 保护' } });
   expect(storePanel.querySelector('[data-plugin-id="stable-plugin"]')).not.toBeNull();
-  const installedSearch = within(installedPanel).getByRole('textbox');
+  const installedSearch = within(installedPanel).getByRole('textbox', { hidden: true });
   fireEvent.change(installedSearch, { target: { value: '简体描述 & 保护' } });
   expect(installedPanel.querySelector('[data-plugin-id="stable-plugin"]')).not.toBeNull();
   fireEvent.change(language, { target: { value: 'zh-Hant' } });
@@ -218,24 +218,24 @@ it('keeps background registry refresh separate from a manually requested update 
   const { client } = renderWithOmc(<ThemeProvider><PluginsPage /></ThemeProvider>, { route: '/plugins' });
   expect((await automatic.arrived).query.has('refresh')).toBe(false);
   const check = screen.getByTestId('plugin-check-updates');
-  expect(check.classList.contains('ant-btn-loading')).toBe(false);
+  expect(check.getAttribute('aria-busy')).toBeNull();
   await act(async () => automatic.release());
 
   const refresh = server.hold('GET', '/management/plugin-store');
   fireEvent.click(screen.getByRole('switch', { name: makeT('en')('plugin.toggle_label', { name: 'Runtime name' }) }));
   const backgroundRequest = await refresh.arrived;
   expect(backgroundRequest.query.has('refresh')).toBe(false);
-  expect(check.classList.contains('ant-btn-loading')).toBe(false);
+  expect(check.getAttribute('aria-busy')).toBeNull();
 
   const manual = server.hold('GET', '/management/plugin-store');
   fireEvent.click(check);
   expect((await manual.arrived).query.get('refresh')).toBe('true');
-  await waitFor(() => expect(check.classList.contains('ant-btn-loading')).toBe(true));
+  await waitFor(() => expect(check.getAttribute('aria-busy')).toBe('true'));
   expect(backgroundRequest.init.signal?.aborted).toBe(true);
   const updated = { ...store, plugins: [{ ...entry, installed: true, install_source_status: 'matched', version: '1.3.0', update_available: true }] };
   await act(async () => manual.release(updated));
   expect(await screen.findByText(makeT('en')('plugin.check_updates_found', { n: 1 }))).toBeTruthy();
-  await waitFor(() => expect(check.classList.contains('ant-btn-loading')).toBe(false));
+  await waitFor(() => expect(check.getAttribute('aria-busy')).toBeNull());
   await act(async () => refresh.release());
   expect(client.getQueryData<PluginStoreResponse>(['management-plugin-store'])).toEqual(updated);
 });
@@ -286,7 +286,7 @@ it.each(['complete', 'partial'] as const)('reports a %s manual check without cla
     : [];
   await act(async () => manual.release({ ...store, source_errors: sourceErrors }));
   const title = await screen.findByText(t(outcome === 'partial' ? 'plugin.store_refresh_partial' : 'plugin.check_updates_none'));
-  expect(title.closest(outcome === 'partial' ? '.ant-notification-notice-warning' : '.ant-notification-notice-info')).not.toBeNull();
+  expect(title.closest(outcome === 'partial' ? '.omc-toast-warning' : '.omc-toast-info')).not.toBeNull();
   if (outcome === 'partial') expect(screen.getByText('Registry unavailable')).toBeTruthy();
   expect(screen.getByText('Runtime name')).toBeTruthy();
 });
@@ -327,7 +327,8 @@ it('persists plugin moves across filters and remounts without changing gateway o
   await screen.findByRole('button', { name: label });
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Runtime' } });
   expect(rows()).toEqual([installed.id, 'last']);
-  fireEvent.keyDown(screen.getByRole('button', { name: label }), { key: 'ArrowUp' });
+  // The installed plugins are a grid of cards, so a sideways arrow steps a card as well.
+  fireEvent.keyDown(screen.getByRole('button', { name: label }), { key: 'ArrowLeft' });
   await waitFor(() => expect(server.preferenceWrites()).toEqual([{ key: 'omc_plugin_order', value: { installed: ['last', installed.id, 'hidden'] } }]));
   expect(rows()).toEqual(['last', installed.id]);
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
@@ -387,4 +388,45 @@ it('installs an Oh My CPA plugin in one step, asks a curated one for its id, and
   renderWithOmc(<ThemeProvider><PluginStorePanel store={{ ...store, plugins: [entry] }} isLoading={false} isDemo={false} onRefresh={() => {}} isRefreshing={false} onManage={() => {}} onOpenSettings={() => {}} /></ThemeProvider>);
   fireEvent.click(await screen.findByRole('button', { name: (name) => name.replace(/\s/g, '') === t('plugin.omc_source_enable').replace(/\s/g, '') }));
   await waitFor(() => expect(server.preferenceWrites()).toEqual([{ key: 'omc_plugin_source_enabled', value: true }]));
+});
+
+it('states the install record once, in the settings drawer head', async () => {
+  const t = makeT('en');
+  const server = installOmcApi({ plugins: [{ ...installed, metadata: undefined }] });
+  server.on('GET', '/management/plugin-store', () => ({ ...store, plugins: [] }));
+  server.on('GET', `/management/plugins/${installed.id}/config`, () => ({
+    config: { enabled: true, store: { name: 'Recorded name', version: '0.2.5', author: 'Recorded author', license: 'MIT', description: 'Recorded description', repository: 'owner/stable-plugin' } },
+  }));
+  renderWithOmc(<ThemeProvider><PluginsPage /></ThemeProvider>, { route: `/plugins?plugin=${installed.id}` });
+  const drawer = await screen.findByRole('dialog');
+  const head = await waitFor(() => {
+    const element = drawer.querySelector<HTMLElement>('[data-plugin-config-identity]');
+    expect(element?.textContent).toContain('MIT');
+    return element!;
+  });
+  // What the plugin leaves out comes from CPA's record, in the head and nowhere else.
+  expect(head.textContent).toContain('Recorded name');
+  expect(drawer.textContent).toContain(t('plugin.config_title', { name: 'Recorded name' }));
+  expect(head.textContent).toContain('v0.2.5');
+  expect(head.textContent).toContain('Recorded author');
+  expect(head.textContent).toContain('Recorded description');
+  expect(head.querySelector('a[href="https://github.com/owner/stable-plugin"]')).not.toBeNull();
+  expect(within(drawer).getAllByText('Recorded description')).toHaveLength(1);
+  expect(within(drawer).queryByText(t('plugin.config_no_fields'))).not.toBeNull();
+});
+
+it('opens an installed plugin\'s settings from the store without leaving it', async () => {
+  const t = makeT('en');
+  const server = installOmcApi({ plugins: [installed] });
+  server.on('GET', '/management/plugin-store', () => ({ ...store, plugins: [{ ...entry, installed: true, install_source_status: 'matched' }] }));
+  server.on('GET', `/management/plugins/${installed.id}/config`, () => ({ config: { enabled: true, store: { name: 'Recorded name' } } }));
+  const { container } = renderWithOmc(<ThemeProvider><PluginsPage /></ThemeProvider>, { route: '/plugins/store' });
+  fireEvent.click(await screen.findByRole('button', { name: t('plugin.manage') }));
+  const drawer = await screen.findByRole('dialog');
+  await waitFor(() => expect(drawer.textContent).toContain(t('plugin.config_no_fields')));
+  expect(drawer.textContent).toContain('Runtime name');
+  expect(drawer.textContent).not.toContain('Recorded name');
+  expect(container.querySelector('[data-plugin-panel="store"]')).not.toBeNull();
+  // The modal drawer hides the page from assistive technology; the page underneath is still the store.
+  expect(screen.getByRole('heading', { level: 1, name: t('nav.plugin_store'), hidden: true })).toBeTruthy();
 });

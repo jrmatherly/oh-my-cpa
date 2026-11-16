@@ -23,7 +23,7 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -93,7 +93,7 @@
 
 .drawer-section {
   padding: 14px 16px 16px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--surface);
 }
 
@@ -107,6 +107,22 @@
 
 .identity-alert {
   min-width: 0;
+}
+
+.identity-alert :global(.omc-notice-tools) {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.appeal-link {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.appeal-link-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .identity-alert-raw {
@@ -142,7 +158,7 @@
   margin-top: 4px;
   margin-bottom: 20px;
   padding: 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg);
 }
 
@@ -210,11 +226,24 @@
 
 .alias {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg);
+}
+
+.alias[data-dragging] {
+  background: var(--elevated);
+}
+
+.alias-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .alias-names {
@@ -279,7 +308,27 @@
 
 /* A tab's name and the state tag beside it. */
 .tab-label {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Unsaved changes mark the tab with a dot hung off its label's corner, so the tab strip never
+   widens or moves its indicator when the first field changes. */
+.tab-dirty {
+  position: absolute;
+  top: -1px;
+  right: -8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.identity-alert-details summary {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
 }

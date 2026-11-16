@@ -5,9 +5,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { useT } from '../../i18n';
 import { ProviderBrandIcon } from '../LobeIcon';
-import { pluginOAuthProviderKeys, pluginOAuthProviderLogos, pluginOAuthProviderTitles } from '../../types/pluginOAuthProviders';
-import { usePreference } from '../../hooks/usePreference';
-import { parseProviderIcons, PROVIDER_ICONS_PREFERENCE } from '../../types/providerIcons';
+import { useProviderBranding } from '../../hooks/useProviderBranding';
 import type { ManagementOverview, ManagementOverviewProvider } from '../../types/management';
 import { isSlidingRange, type DashboardRange } from '../../types/dashboard';
 import {
@@ -26,6 +24,7 @@ import { useRankedSortableList } from '../../hooks/useSortableList';
 import { DASHBOARD_PROVIDER_ORDER_PREFERENCE } from '../../types/dashboardLayout';
 import { useTimeZone } from '../../utils/TimeZoneProvider';
 import { formatMinuteSpan } from '../../utils/dateTimeFormat';
+import { useIsRouteActive, useIsRoutePollingActive } from '../../performance/routeContract';
 import './dashboard.css';
 
 const PLAIN_NUMBER_FORMAT = new Intl.NumberFormat('en');
@@ -80,60 +79,55 @@ export const DashboardProviders = React.memo(function DashboardProviders({
   const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
   const isPhone = useIsPhoneViewport();
+  const isRouteActive = useIsRouteActive();
+  const isPollingActive = useIsRoutePollingActive();
   const sliding = range ? isSlidingRange(range) : true;
 
-  // Custom provider icon overrides
-  const { value: customIcons } = usePreference<Record<string, string>>(
-    PROVIDER_ICONS_PREFERENCE,
-    {},
-    parseProviderIcons,
-  );
-
-  // All configured AI providers from settings
-  const { data: providersData } = useQuery({
-    queryKey: ['management-providers', false],
-    queryFn: () => api.getManagementProviders(false),
-    refetchInterval: 30000,
-    staleTime: 10000,
-  });
+  const {
+    providerIcons: customIcons,
+    pluginLogos,
+    pluginTitles,
+    pluginOAuthIds,
+    configuredProviders: brandingProviders,
+    isProviderCatalogUnknown,
+  } = useProviderBranding();
 
   // Windowed provider traffic controlled by the top time selector
-  const { data: windowProvidersData } = useQuery({
+  const windowProvidersEnabled = Boolean(query && enabled !== false);
+  const windowProvidersQuery = useQuery({
     queryKey: ['dashboard-providers', query],
     queryFn: () => api.getDashboardProviders(query),
-    enabled: Boolean(query && enabled !== false),
-    refetchInterval: sliding ? 30000 : false,
-    staleTime: 5000,
+    enabled: windowProvidersEnabled,
+    refetchInterval: isPollingActive && sliding ? 30000 : false,
+    refetchOnWindowFocus: isPollingActive,
+    staleTime: 15_000,
     placeholderData: keepPreviousData,
   });
+  const windowProvidersData = windowProvidersQuery.data;
 
-  // Dynamic plugins discovery for plugin-based OAuth channels like Codebuddy
-  const { data: pluginsData } = useQuery({
-    queryKey: ['management-plugins'],
-    queryFn: api.getPlugins,
-    staleTime: 30000,
-  });
-
-  const pluginOAuthIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!pluginsData?.plugins) return ids;
-    for (const plugin of pluginsData.plugins) {
-      const keys = pluginOAuthProviderKeys(plugin);
-      for (const key of keys) ids.add(key);
-      if (keys.length && plugin.metadata?.name) {
-        ids.add(plugin.metadata.name.toLowerCase().trim());
-      }
+  // Revalidate stale windowed provider traffic (including closed calendar presets such as
+  // `yesterday` across midnight) whenever the cached Dashboard route resumes active visibility.
+  const wasRouteActiveRef = React.useRef(isRouteActive);
+  React.useEffect(() => {
+    const becameActive = isRouteActive && !wasRouteActiveRef.current;
+    wasRouteActiveRef.current = isRouteActive;
+    if (
+      becameActive &&
+      windowProvidersEnabled &&
+      windowProvidersQuery.isStale &&
+      !windowProvidersQuery.isFetching
+    ) {
+      void windowProvidersQuery.refetch();
     }
-    return ids;
-  }, [pluginsData]);
+  }, [
+    isRouteActive,
+    windowProvidersEnabled,
+    windowProvidersQuery.isStale,
+    windowProvidersQuery.isFetching,
+    windowProvidersQuery.refetch,
+  ]);
 
-  // A plugin-registered provider's own logo replaces the mark the console would
-  // otherwise resolve for it, including an operator-stored icon override.
-  const pluginLogos = useMemo(() => pluginOAuthProviderLogos(pluginsData?.plugins), [pluginsData]);
-  // Rows carry the names the OAuth page gives the same providers.
-  const pluginTitles = useMemo(() => pluginOAuthProviderTitles(pluginsData?.plugins), [pluginsData]);
-
-  const configuredProviders = providersData?.providers || [];
+  const configuredProviders = brandingProviders ?? [];
   const overviewProviders: ManagementOverviewProvider[] = overview.providers || [];
   // `undefined` while the auth-file read failed: an empty list would claim no OAuth credentials.
   const authFilesByType = overview.credentials ? (overview.credentials.by_type ?? []) : undefined;
@@ -163,8 +157,9 @@ export const DashboardProviders = React.memo(function DashboardProviders({
       pluginOAuthIds,
       pluginLogos,
       pluginTitles,
+      isProviderCatalogUnknown,
     });
-  }, [overviewProviders, windowProviders, windowCredentials, configuredProviders, customIcons, authFilesByType, pluginOAuthIds, pluginLogos, pluginTitles]);
+  }, [overviewProviders, windowProviders, windowCredentials, configuredProviders, customIcons, authFilesByType, pluginOAuthIds, pluginLogos, pluginTitles, isProviderCatalogUnknown]);
 
   // The operator's order replaces the volume sort for the rows it names; a provider it does not
   // name still lands by volume after them, and the fold keeps hiding the tail of that order.
@@ -277,7 +272,7 @@ function ProviderRow({ provider, blocks, isPhone, hasActivityGrid, activityLabel
           />
           <span
             className={`status-pip ${provider.disabled ? 'is-disabled' : 'is-active'}`}
-            title={provider.disabled ? t('dash.providers_status_disabled') : undefined}
+            data-tip={provider.disabled ? t('dash.providers_status_disabled') : undefined}
           />
         </div>
         <div className="provider-title-line">

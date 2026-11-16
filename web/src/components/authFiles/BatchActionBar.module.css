@@ -1,14 +1,7 @@
-.bar:global(.is-inline) {
-  margin-bottom: 12px;
-  padding: 8px 0;
-  gap: 12px 16px;
-  background: transparent;
-  border-block: 1px solid var(--border-soft);
-}
-
+/* The shared slab (index.css `.selection-bar`) holds the geometry; this bar adds the scope controls
+   and a destructive group set off from the rest. */
 .bar :global(.selection-bar-start) {
-  flex: 1 1 420px;
-  gap: 8px 16px;
+  flex: 0 1 auto;
 }
 
 .scope-controls {
@@ -24,48 +17,62 @@
   border-inline-start: 1px solid var(--border-soft);
 }
 
+/* A phone's bar is one line: the count and the reach of the selection, then the glyphs. */
 @media (max-width: 640px) {
+  .bar:global(.selection-bar),
   .bar :global(.selection-bar-start) {
-    flex-basis: 100%;
+    flex-wrap: nowrap;
   }
 
-  .scope-controls {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+  .bar:global(.selection-bar) {
+    gap: 4px;
+    padding: 6px;
+    padding-inline-start: 12px;
   }
 
-  .scope-controls > :global(.ant-btn) {
-    height: auto;
-    min-height: 24px;
-    white-space: normal;
+  .bar :global(.selection-bar-start) {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 4px;
   }
 
-  .scope-filtered {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  .bar :global(.selection-bar-count) {
+    flex-shrink: 0;
   }
 
-  .scope-clear {
-    grid-column: 2;
-    grid-row: 1;
+  .bar :global(.selection-bar-note) {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .bar :global(.selection-bar-actions) {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    margin-inline-start: 0;
-    gap: 8px;
+    flex: none;
+    gap: 0;
   }
 
-  .destructive-action {
-    padding-inline-start: 0;
-    margin-inline-start: 0;
-    border-inline-start: 0;
+  .scope-menu {
+    position: relative;
+    flex-shrink: 0;
+    gap: 2px;
+    padding-inline: 6px 4px;
+    color: var(--fg-2);
   }
 
-  .destructive-action > :global(.ant-btn) {
-    width: 100%;
+  @media (pointer: coarse) {
+    .scope-menu::before {
+      content: '';
+      position: absolute;
+      inset: -6px -2px;
+    }
+  }
+
+  .phone-divider {
+    width: 1px;
+    height: 16px;
+    margin-inline: 4px;
+    background: var(--border-soft);
   }
 }

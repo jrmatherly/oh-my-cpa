@@ -13,17 +13,18 @@ Start with this file and the task's source files. Read only the guide relevant t
 | Task | Read |
 | --- | --- |
 | Domain terminology | [CONTEXT.md](CONTEXT.md) |
-| Architecture or security boundaries | [Architecture](docs/architecture.md) |
+| Architecture or security boundaries | [Architecture](docs/dev/architecture.md) |
 | Local setup and contribution | [Contributing](CONTRIBUTING.md) |
-| Testing pyramid, commands or CI | [Testing](docs/testing.md) |
-| UI, layout or interaction primitives | [Design](docs/design.md) |
+| Testing pyramid, commands or CI | [Testing](docs/dev/testing.md) |
+| UI, layout or interaction primitives | [Design](docs/dev/design.md) |
 | CPA integration or configuration writes | [CPA contract](docs/cpa-v8-compat.md) |
 | Pricing or request cost | [Pricing](docs/pricing.md) |
 | Agent tools or MCP | [Capabilities](docs/agent-capabilities.md) |
 | Installation, updates or operations | [Install](docs/install.md), [Operations](docs/operations.md) |
 | Database backup, recovery or encryption keys | [SQLite runbook](docs/ops/sqlite-operations.md) |
-| Release packaging and signing | [Releasing](docs/releasing.md) |
+| Release packaging and signing | [Releasing](docs/dev/releasing.md) |
 | Public Cloudflare demo | [Demo operations](docs/ops/cloudflare-demo.md) |
+| Documentation site and organization | [Docs index](docs/README.md) |
 
 Do not read every guide before editing. Executable code owns field lists, defaults,
 schemas and design-token values; documentation explains system boundaries, rationale
@@ -62,7 +63,7 @@ and operator procedures.
 
 - **Backend layered structure**:
   - `cmd/oh-my-cpa/`: CLI entrypoints (`serve`, `updater`, `mcp`, `database`).
-  - `internal/api/`: HTTP transport, auth/CSRF middleware, handwritten DTO projections, SSE streaming.
+  - `internal/api/`: HTTP transport, auth/CSRF middleware, handwritten DTO projections, SSE streaming, and `swaggo` Swagger 2.0 annotations.
   - `internal/operations/`: Shared business mutations (validation, revision checks, write gates, backups, readback) consumed by both HTTP handlers and Agent/MCP capabilities.
   - `internal/capability/`, `internal/agent/`, `internal/mcpbridge/`: Capability registry, Agent loop/persistence, and MCP transport adapters.
   - `internal/cpa/`: Gateway v8 management client, lossless YAML patching (`configyaml`), credential discovery.
@@ -70,7 +71,8 @@ and operator procedures.
   - `internal/ingest/`, `internal/usage/`, `internal/pricing/`, `internal/quota/`: Usage ingestion, token accounting, versioned price book, and quota observation/warmup.
 - **Frontend structure (`web/src/`)**:
   - `pages/`: Route-level views loaded through `App.tsx` and `PageLoading.tsx`.
-  - `components/common/` & `components/feedback/`: Shared interaction primitives (`AppModal`, `ConfirmAction`, `NumberInput`, `SearchSelect`, `RowReorder`, `RefreshButton`, etc.). Always reuse shared primitives before building page-local controls.
+  - `components/ui/`: Headless `shadcn/ui` primitives backed by `@base-ui/react` and styled with OMC palette tokens.
+  - `components/common/` & `components/feedback/`: Shared console primitives (`AppModal`, `ConfirmAction`, `NumberInput`, `SearchSelect`, `RowReorder`, `RefreshButton`, `Notice`, `useToast`, etc.). Always reuse shared primitives before building page-local controls.
   - `api/` & `hooks/`: Typed HTTP client and React Query hooks.
   - `types/`: Domain models and pure state/derivation helpers.
   - `theme/` & `i18n/`: Tokenized palette/theme projection and 4-locale catalogs (`zh`, `en`, `zh-Hant`, `ms`).
@@ -82,19 +84,26 @@ and operator procedures.
   - One replica per SQLite data directory. Migrations are strictly forward-only; never edit applied migration files. Price versions and audit logs are append-only.
   - Only the updater container holds the Docker socket; the console stays socket-free, read-only and unprivileged. OMC updates verify Ed25519-signed manifests and pull by digest.
   - The production SPA is embedded into the Go binary (`internal/web`). Both root (`/`) and configured `OMCPA_BASE_PATH` must work.
+- **Public site (`omc.junze.dev`)**:
+  - `deploy/site/`: Cloudflare Workers Assets configuration (`oh-my-cpa-site`) assembling `/` and `/zh/` (`landing/render.mjs`, static bilingual HTML), `/docs/` (bilingual EN/ZH Fumadocs static export synced from canonical `docs/`, with per-page Markdown and `llms.txt`), `/api-reference/` (standalone Scalar UI + `swagger.json`), `/demo/` (`stageDemo({ basePath: '/demo' })`), `/og/` social cards (`pnpm site:social-cards`), `sitemap.xml` and `robots.txt`.
+  - `scripts/sync-docs-site.mjs` & `scripts/build-site.mjs`: Single-source docs sync (`DOCS_SECTIONS` owns the docs navigation, simple to advanced) and static site bundler (`pnpm build:docs`, `pnpm build:api-reference`, `pnpm build:site`).
+- **OpenAPI / Swagger contract (`docs/openapi/swagger.json`)**:
+  - Every `/api` route registered in `internal/api/handler.go` MUST carry `swaggo` annotations (`@Summary`, `@Description`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Security`, `@Router` relative to `@BasePath /api`) referencing explicit, safe DTO structs (never unprojected domain/repository/secret-bearing models or inline `map[string]any` payloads for documented responses).
+  - After adding, modifying, or removing any `/api` handler, route, or DTO, regenerate `docs/openapi/swagger.json` with `pnpm openapi:generate` and commit the updated spec.
+  - `TestOpenAPIRouteCoverage` and `TestOpenAPISpecFreshness` (`internal/api/openapi_test.go`) plus `pnpm check:openapi` enforce 100% bidirectional route parity and spec freshness in Go tests and CI (`verify:static:repository`).
 
 ## Testing governance & anti-bloat rules
 
-To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testing](docs/testing.md):
+To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testing](docs/dev/testing.md):
 
 1. **Tier 1 — Pure Logic & Go Unit Tests (default layer)**:
    - Backend logic, SQLite persistence, and API handlers live in `*_test.go` beside the package. Fresh SQLite test databases automatically use the cached post-migration bootstrap snapshot; avoid re-seeding multi-thousand-row demo fixtures outside `internal/demo` and `demo_export_test.go`.
    - Frontend pure derivations, reducers, and HTTP contract fixtures live in `web/tests/logic/*.test.ts` and `web/tests/*.contract.test.ts` (Vitest `logic` project, Node environment, `isolate: false`).
    - **Rule**: Extend existing domain test files instead of creating a new micro-test file for a single helper function. Do not write tests for speculative edge cases or trivial getters/formatters.
 2. **Tier 2 — Component Wiring Tests (`web/tests/*.component.test.tsx`)**:
-   - Exercised in Vitest `components` (jsdom, `isolate: false`, `motion: false` via `renderWithOmc`).
-   - Use only for non-trivial stateful React/Ant Design workflows (form drafts, optimistic rollback, multi-step dialogs).
-   - **Rule**: Never mount full pages or Ant Design trees in jsdom to test static rendering, copy strings, CSS class names, or pure view-model derivations that belong in Tier 1.
+   - Exercised in Vitest `components` (jsdom, `isolate: false`, via `renderWithOmc`).
+   - Use only for non-trivial stateful React/UI primitive workflows (form drafts, optimistic rollback, multi-step dialogs, keyboard focus).
+   - **Rule**: Never mount full pages in jsdom just to test static rendering, copy strings, CSS class names, or pure view-model derivations that belong in Tier 1.
 3. **Tier 3 — Built-Artifact Browser Acceptance (`scripts/browser-acceptance.mjs`)**:
    - Runs Playwright Chromium against the real compiled Go binary, embedded SPA, SQLite, and fake CPA (`pnpm verify:browser:smoke` for PRs, `pnpm verify:browser` for full acceptance).
    - **Rule**: Do not maintain a mocked dev-server Playwright probe suite. Do not reintroduce per-feature browser probe scripts or use Playwright to test CSS geometry, static copy, or isolated component states already covered by Tier 1/2.
@@ -102,6 +111,8 @@ To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testin
 ## Verification workflow
 
 - `pnpm test:fast`: Fast local verification (`pnpm type-check && pnpm test:logic && go test -short ./...`). Runs in seconds without building the binary or launching a browser.
+- `pnpm verify:docs`: Verifies repository links (`pnpm check-docs`), Fumadocs TypeScript types (`pnpm type-check:docs`), bilingual static export (`pnpm build:docs`), and docs sync/staging tests (`scripts/build-site.test.mjs`).
+- `pnpm openapi:generate` / `pnpm check:openapi`: Regenerates `docs/openapi/swagger.json` via the pinned `swag` Go tool (`go tool swag`) or verifies it is up to date without mutating the worktree.
 - `pnpm test:frontend`: Runs all Vitest `logic` and `components` suites (`~20s`). For targeted iteration, run `pnpm exec vitest run --config web/vitest.config.ts <file>`.
 - `pnpm build && pnpm verify:browser:smoke`: Compiles the Go binary around the SPA that `pnpm build` wrote to `internal/web/dist` and runs the fast end-to-end Chromium smoke check. Without a fresh build the binary serves the placeholder page.
 - `pnpm verify`: Runs `test:fast`, `test:components`, and `verify:build` (`type-check`, `build`, `check:bundle`).
@@ -109,7 +120,15 @@ To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testin
 
 ## Code style & documentation hygiene
 
-- Write all technical documentation (`AGENTS.md`, `CONTEXT.md`, `CONTRIBUTING.md`, `docs/**/*.md`) and code comments in English. Only `README.zh-CN.md` and `web/src/i18n/locales/zh*` use Chinese.
+- Write all technical documentation (`AGENTS.md`, `CONTEXT.md`, `CONTRIBUTING.md`, English guides under `docs/`) and code comments in English. Only `README.zh-CN.md`, `docs/zh/**`, and `web/src/i18n/locales/zh*` use Chinese.
+- Corners use the five-step scale (`--radius-xs|sm|md|lg|xl`, `RADIUS` in TypeScript) by role, never a literal length, and nested shapes stay concentric (inner = outer − gap); see [Design](docs/dev/design.md#corners).
+- Edges are shadows, not borders: a surface takes `--shadow-edge|raised|float|overlay`, a control `--shadow-control`, a field or track `--shadow-well`, and a state recolours the ring. Ring strength is solved per palette (`EDGE_STEPS`), so never hand-tune one surface's shadow; see [Design](docs/dev/design.md#edges-and-elevation).
+- A selected thing is picked up and lit (`--shadow-selected` + `--select-surface`, `--select-transition`), never outlined; the accent ring is for keyboard focus alone. Buttons follow the variant table (primary once per view, `active` for a pressed toggle, `ghost` for row and inline actions, icon-only tools as `ToolButton`); see [Design](docs/dev/design.md#buttons).
+- A control is one height on every pointer (32px, `sm` 28px; touch widens the hit area, never the control), tags share one geometry, and a state never moves what is already on screen (docked `SelectionBar`, shrinking search, tooltip over notice); see [Design](docs/dev/design.md#composition-and-shared-controls).
+- A grid of records uses the three-part `EntityCard` (head, body, foot; never a panel nested in the card) with fixed places: menu top right, state bottom left, switch bottom right. A drawer says each fact once and never repeats its head; see [Design](docs/dev/design.md#entity-cards).
+- Never string facts together with a middle dot (`·`) in code, styles or catalogs: side-by-side facts use `MetaLine`, label/value pairs use rows, related parts use a sentence or parentheses (`pnpm check:feedback` enforces it); see [Design](docs/dev/design.md#information-expression).
+- A tooltip is a last resort: it names an icon-only control, explains a disabled one, completes truncated text, or reads an exact value or a data mark. It never repeats visible text or explains how to click. More than one fact is a `TipCard` (heading, label/value rows, notes) rendered by `TooltipReadout`, never a joined string; see [Design](docs/dev/design.md#tooltips).
+- Read only declared tokens (no `var(--x, fallback)` for a token that does not exist), keep `--meta` for quiet prose rather than anything pressable, key motion on `data-reduced-motion` rather than `prefers-reduced-motion`, and use 900px for shell-shaped rules and 640px only for phone content; see [Design](docs/dev/design.md#small-screens-keyboard-and-touch).
 - Keep external contract spellings (`JSON`, `SQL`, CPA YAML fields) exact. Use `is`/`has`/`can`/`should` prefixes for booleans and kebab-case CSS module classes via `styles['class-name']`.
 - User-visible copy belongs in all four locale catalogs (`web/src/i18n/locales/{zh,en,zh-Hant,ms}/`).
 - **No defensive copy or condition enumeration**: When authoring UI subtitles, descriptions, and hints, never write defensive disclaimers (e.g. "不是xxx", "并非xxx"), fallback/empty-state condition enumeration (e.g. "为空时xxx，为xx时xxx", "0 表示xxx", "留空则xxx"), or operational commands (e.g. "修改后需重启"). State capabilities directly in a single calm sentence; let placeholders, units, and control defaults communicate fallback behavior. If a control is self-explanatory (ports, paths, URLs with placeholders, standard switches), omit the subtitle entirely.

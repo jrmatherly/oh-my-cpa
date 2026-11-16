@@ -1,13 +1,14 @@
 import { useInsightsFormat } from '../useInsightsFormat';
+import { tipCard } from '../../../components/common/tipCard';
 import React from 'react';
 import clsx from 'clsx';
 import { EmptyState } from '../../../components/common/EmptyState';
 import { useT } from '../../../i18n';
 import { heatmapRampMix, heatmapRampPosition } from '../../../theme/heatmapRamp';
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
-import { matrixCellKey, metricValue, type InsightsDimension, type InsightsMatrix, type InsightsMetric } from '../insightsCube';
+import { matrixCellKey, metricValue, type InsightsDimension, type InsightsMatrix, type InsightsMetric } from '../../../types/insightsCube';
 
-import type { InsightsLabels } from '../useInsightsLabels';
+import type { InsightsLabels } from '../../../hooks/useInsightsLabels';
 import { InsightsValue } from './InsightsValue';
 import styles from '../insights.module.css';
 
@@ -56,7 +57,7 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({ matrix, rowDimension, 
               <tr>
                 <th className={styles['matrix-corner']} scope="col">{t(`insights.dim.${rowDimension}`)}</th>
                 {matrix.columnIds.map((columnId) => (
-                  <th key={columnId} scope="col" title={columnId}>
+                  <th key={columnId} scope="col" data-tip={columnId}>
                     <InsightsValue dimension={columnDimension} id={columnId} labels={labels} className={styles['matrix-column-label']} />
                   </th>
                 ))}
@@ -68,7 +69,7 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({ matrix, rowDimension, 
                 const rowTotal = matrix.rowTotals.get(rowId);
                 return (
                   <tr key={rowId}>
-                    <th scope="row" title={rowId}>
+                    <th scope="row" data-tip={rowId}>
                       <InsightsValue dimension={rowDimension} id={rowId} labels={labels} />
                     </th>
                     {matrix.columnIds.map((columnId) => {
@@ -85,7 +86,13 @@ export const MatrixTable: React.FC<MatrixTableProps> = ({ matrix, rowDimension, 
                             type="button"
                             className={clsx(styles['matrix-cell'], isDense && styles['matrix-cell-dense'])}
                             style={{ '--heatmap-quiet-share': shade.fromShare } as React.CSSProperties}
-                            title={`${labels.label(rowDimension, rowId)} · ${labels.label(columnDimension, columnId)}: ${formatMetricExact(metric, cell.value) ?? formatMetric(metric, cell.value, style)}`}
+                            {...tipCard({
+                              rows: [
+                                { label: t(`insights.dim.${rowDimension}`), value: labels.label(rowDimension, rowId) },
+                                { label: t(`insights.dim.${columnDimension}`), value: labels.label(columnDimension, columnId) },
+                                { label: t(`insights.metric.${metric}`), value: formatMetricExact(metric, cell.value) ?? formatMetric(metric, cell.value, style) },
+                              ],
+                            })}
                             onClick={() => onSelectCell(rowId, columnId)}
                           >
                             {formatMetric(metric, cell.value, style)}

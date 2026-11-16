@@ -1,6 +1,5 @@
 import React from 'react';
 
-import { App as AntdApp } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { parseDocument, type Document } from 'yaml';
 
@@ -12,8 +11,14 @@ import { describeConfigSaveError } from './configSaveErrors';
 import { ALL_CONFIG_FIELDS, type ConfigFieldDefinition, type ConfigSectionId } from '../../types/configSchema';
 import type { ConfigScalarsResponse } from '../../types/configManagement';
 import type { PayloadValidationIssue } from './payloadRules';
+import {
+  formatPatternRulesIssue,
+  type PatternRulesDraftState,
+  type PatternRulesValidationIssue,
+} from './PatternRulesEditor';
+import { formatStringMapIssue, type StringMapDraftState, type StringMapValidationIssue } from './StringMapEditor';
 import type { YamlSourceEditorRef } from './YamlSourceEditor';
-import { useToast } from '../feedback';
+import { useConfirmModal, useToast } from '../feedback';
 
 /**
  * The configuration draft and the transaction that saves it.
@@ -38,7 +43,7 @@ import { useToast } from '../feedback';
  */
 export function useConfigDraft() {
   const t = useT();
-  const { modal } = AntdApp.useApp();
+  const modal = useConfirmModal();
   const toast = useToast();
   const queryClient = useQueryClient();
   const editorRef = React.useRef<YamlSourceEditorRef | null>(null);
@@ -57,13 +62,106 @@ export function useConfigDraft() {
   const [serverYaml, setServerYaml] = React.useState<string>('');
   const [serverRevision, setServerRevision] = React.useState<string>('');
   const [conflictState, setConflictState] = React.useState<{ currentRevision: string } | null>(null);
+  const [stringMapDrafts, setStringMapDrafts] = React.useState<Record<string, StringMapDraftState>>({});
+  const [stringMapIssues, setStringMapIssues] = React.useState<Record<string, StringMapValidationIssue>>({});
+  const [patternRulesDrafts, setPatternRulesDrafts] = React.useState<Record<string, PatternRulesDraftState>>({});
+  const [patternRulesIssues, setPatternRulesIssues] = React.useState<Record<string, PatternRulesValidationIssue>>({});
 
   const docRef = React.useRef<Document | null>(null);
   const serverDocRef = React.useRef<Document | null>(null);
   const rawYamlRef = React.useRef('');
   const serverYamlRef = React.useRef('');
+  const stringMapIssuesRef = React.useRef<Record<string, StringMapValidationIssue>>({});
+  const patternRulesIssuesRef = React.useRef<Record<string, PatternRulesValidationIssue>>({});
   /** Guards against a second save starting before isPending propagates. */
   const saveInFlightRef = React.useRef(false);
+
+  React.useEffect(() => {
+    stringMapIssuesRef.current = stringMapIssues;
+  }, [stringMapIssues]);
+
+  React.useEffect(() => {
+    patternRulesIssuesRef.current = patternRulesIssues;
+  }, [patternRulesIssues]);
+
+  const clearStringMapState = React.useCallback(() => {
+    stringMapIssuesRef.current = {};
+    setStringMapDrafts({});
+    setStringMapIssues({});
+  }, []);
+
+  const clearPatternRulesState = React.useCallback(() => {
+    patternRulesIssuesRef.current = {};
+    setPatternRulesDrafts({});
+    setPatternRulesIssues({});
+  }, []);
+
+  const setStringMapDraft = React.useCallback((fieldId: string, state: StringMapDraftState | null) => {
+    setStringMapDrafts((prev) => {
+      if (state === null) {
+        if (!Object.prototype.hasOwnProperty.call(prev, fieldId)) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      }
+      return { ...prev, [fieldId]: state };
+    });
+  }, []);
+
+  const setStringMapIssue = React.useCallback((fieldId: string, issue: StringMapValidationIssue | null) => {
+    setStringMapIssues((prev) => {
+      if (issue === null) {
+        if (!Object.prototype.hasOwnProperty.call(prev, fieldId)) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        stringMapIssuesRef.current = next;
+        return next;
+      }
+      const existing = prev[fieldId];
+      if (existing && existing.kind === issue.kind && (existing.kind !== 'duplicate_key' || existing.key === (issue as { key: string }).key)) {
+        return prev;
+      }
+      const next = { ...prev, [fieldId]: issue };
+      stringMapIssuesRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const setPatternRulesDraft = React.useCallback((fieldId: string, state: PatternRulesDraftState | null) => {
+    setPatternRulesDrafts((prev) => {
+      if (state === null) {
+        if (!Object.prototype.hasOwnProperty.call(prev, fieldId)) return prev;
+        const next = { ...prev };
+        delete next[fieldId];
+        return next;
+      }
+      return { ...prev, [fieldId]: state };
+    });
+  }, []);
+
+  const setPatternRulesIssue = React.useCallback((fieldId: string, issue: PatternRulesValidationIssue | null) => {
+    const prev = patternRulesIssuesRef.current;
+    if (issue === null) {
+      if (!Object.prototype.hasOwnProperty.call(prev, fieldId)) return;
+      const next = { ...prev };
+      delete next[fieldId];
+      patternRulesIssuesRef.current = next;
+      setPatternRulesIssues(next);
+      return;
+    }
+    const existing = prev[fieldId];
+    if (
+      existing
+      && existing.kind === issue.kind
+      && ((existing.kind !== 'unsupported_re2' && existing.kind !== 'trailing_backslash')
+        || existing.pattern === (issue as { pattern: string }).pattern)
+    ) {
+      return;
+    }
+    const next = { ...prev, [fieldId]: issue };
+    patternRulesIssuesRef.current = next;
+    setPatternRulesIssues(next);
+  }, []);
 
   const viewModeRef = React.useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -97,6 +195,8 @@ export function useConfigDraft() {
         // A malformed document is expected here: the previous baseline stays in place.
       }
       if (!hasLocalEdits) {
+        clearStringMapState();
+        clearPatternRulesState();
         replaceDraft(yaml);
         return;
       }
@@ -106,7 +206,7 @@ export function useConfigDraft() {
       const rebased = rebaseDraft(draftBase, docRef.current, yaml);
       if (rebased !== null) replaceDraft(rebased);
     },
-    [replaceDraft],
+    [clearPatternRulesState, clearStringMapState, replaceDraft],
   );
 
   React.useEffect(() => {
@@ -118,7 +218,9 @@ export function useConfigDraft() {
       configQuery.data.safe_yaml,
       configQuery.data.revision || '',
       serverDocRef.current,
-      rawYamlRef.current !== serverYamlRef.current,
+      rawYamlRef.current !== serverYamlRef.current
+        || Object.keys(stringMapIssuesRef.current).length > 0
+        || Object.keys(patternRulesIssuesRef.current).length > 0,
     );
   }, [configQuery.data?.safe_yaml, configQuery.data?.revision, viewMode, adoptBaseline]);
 
@@ -127,7 +229,20 @@ export function useConfigDraft() {
   rawYamlRef.current = rawYaml;
   serverYamlRef.current = serverYaml;
 
-  const isDirty = rawYaml !== serverYaml;
+  const hasStringMapIssues = Object.keys(stringMapIssues).length > 0;
+  const hasPatternRulesIssues = Object.keys(patternRulesIssues).length > 0;
+  const hasFieldIssues = hasStringMapIssues || hasPatternRulesIssues;
+  const firstStringMapErrorMessage = React.useMemo(() => {
+    const first = Object.values(stringMapIssues)[0];
+    return first ? formatStringMapIssue(first, t) : undefined;
+  }, [stringMapIssues, t]);
+  const firstPatternRulesErrorMessage = React.useMemo(() => {
+    const first = Object.values(patternRulesIssues)[0];
+    return first ? formatPatternRulesIssue(first, t) : undefined;
+  }, [patternRulesIssues, t]);
+  const firstFieldErrorMessage = firstStringMapErrorMessage ?? firstPatternRulesErrorMessage;
+
+  const isDirty = rawYaml !== serverYaml || hasFieldIssues;
 
   const updateFieldInDoc = React.useCallback(
     (field: ConfigFieldDefinition, value: unknown) => {
@@ -192,7 +307,10 @@ export function useConfigDraft() {
       toast.success(t('cfg.source_save_success'));
       // The operator may have kept typing while the save was in flight: those
       // newer edits are carried over onto what was saved.
-      const hasNewerDraft = rawYamlRef.current !== variables.yamlToSave;
+      const hasNewerDraft =
+        rawYamlRef.current !== variables.yamlToSave
+        || Object.keys(stringMapIssuesRef.current).length > 0
+        || Object.keys(patternRulesIssuesRef.current).length > 0;
       let savedDraft: Document | null = null;
       try {
         savedDraft = parseDocument(variables.yamlToSave);
@@ -213,6 +331,10 @@ export function useConfigDraft() {
         }
       }
       setPayloadIssues([]);
+      if (!hasNewerDraft) {
+        clearStringMapState();
+        clearPatternRulesState();
+      }
       setShowErrorFeedback(false);
       setValidateTrigger(0);
       void queryClient.invalidateQueries({ queryKey: ['management-config'] });
@@ -241,9 +363,11 @@ export function useConfigDraft() {
       // A malformed document is expected here: the previous baseline stays in place.
     }
     setPayloadIssues([]);
+    clearStringMapState();
+    clearPatternRulesState();
     setShowErrorFeedback(false);
     setValidateTrigger(0);
-  }, [serverYaml]);
+  }, [clearPatternRulesState, clearStringMapState, serverYaml]);
 
   const [payloadIssues, setPayloadIssues] = React.useState<PayloadValidationIssue[]>([]);
 
@@ -256,7 +380,7 @@ export function useConfigDraft() {
     }
   }, [rawYaml]);
 
-  const hasConfigErrors = hasYamlErrors || payloadIssues.length > 0;
+  const hasConfigErrors = hasYamlErrors || payloadIssues.length > 0 || hasFieldIssues;
 
   /**
    * saveConfig is the single save path for the whole page.
@@ -287,6 +411,10 @@ export function useConfigDraft() {
       toast.warning(t('cfg.dirty_bar_payload_issues', { n: payloadIssues.length }));
       return Promise.resolve();
     }
+    if (firstFieldErrorMessage) {
+      setShowErrorFeedback(true);
+      return Promise.resolve();
+    }
     saveInFlightRef.current = true;
     // The promise is returned so a Popconfirm can hold its own loading state, and
     // it is settled here rather than left to the caller: a keyboard handler has
@@ -302,6 +430,7 @@ export function useConfigDraft() {
     saveMutation,
     hasYamlErrors,
     payloadIssues.length,
+    firstFieldErrorMessage,
     configQuery.isError,
     rawYaml,
     serverRevision,
@@ -316,7 +445,7 @@ export function useConfigDraft() {
    */
   const requestSaveConfirmation = React.useCallback(() => {
     if (!isDirty || saveMutation.isPending) return;
-    if (hasYamlErrors || payloadIssues.length > 0 || configQuery.isError) {
+    if (hasYamlErrors || payloadIssues.length > 0 || hasFieldIssues || configQuery.isError) {
       saveConfig();
       return;
     }
@@ -331,7 +460,7 @@ export function useConfigDraft() {
         return saveConfig();
       },
     });
-  }, [configQuery.isError, hasYamlErrors, isDirty, modal, payloadIssues.length, saveMutation.isPending, saveConfig, t]);
+  }, [configQuery.isError, hasFieldIssues, hasYamlErrors, isDirty, modal, payloadIssues.length, saveMutation.isPending, saveConfig, t]);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -355,7 +484,11 @@ export function useConfigDraft() {
   const confirmDiscardDraft = React.useCallback(
     () =>
       new Promise<boolean>((resolve) => {
-        if (!(rawYamlRef.current !== serverYamlRef.current)) {
+        if (!(
+          rawYamlRef.current !== serverYamlRef.current
+          || Object.keys(stringMapIssuesRef.current).length > 0
+          || Object.keys(patternRulesIssuesRef.current).length > 0
+        )) {
           resolve(true);
           return;
         }
@@ -383,6 +516,8 @@ export function useConfigDraft() {
         setRawYaml(src.yaml);
         setServerYaml(src.yaml);
         setServerRevision(src.revision);
+        clearStringMapState();
+        clearPatternRulesState();
         try {
           docRef.current = parseDocument(src.yaml);
           serverDocRef.current = parseDocument(src.yaml);
@@ -465,6 +600,17 @@ export function useConfigDraft() {
     handleDiscardChanges,
     payloadIssues,
     setPayloadIssues,
+    stringMapDrafts,
+    setStringMapDraft,
+    stringMapIssues,
+    setStringMapIssue,
+    firstStringMapErrorMessage,
+    patternRulesDrafts,
+    setPatternRulesDraft,
+    patternRulesIssues,
+    setPatternRulesIssue,
+    firstPatternRulesErrorMessage,
+    firstFieldErrorMessage,
     hasYamlErrors,
     hasConfigErrors,
     saveConfig,

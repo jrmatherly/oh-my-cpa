@@ -1,9 +1,12 @@
 packages:
   - 'web'
+  - 'deploy/site/docs'
 allowBuilds:
   # OpenUI's install hook only sends installation telemetry; the console builds offline.
   '@openuidev/lang-core': false
   esbuild: true
+  # Scalar ships a prebuilt browser bundle (`standalone.js`); vue-demi's postinstall hook is unnecessary.
+  vue-demi: false
   # The local demonstration server needs its runtime binary fetched at install time.
   workerd: true
 minimumReleaseAgeExclude:
@@ -19,7 +22,4 @@ overrides:
   undici@^8.0.0: 8.12.3
   # @ag-ui/core@0.0.53 still asks for zod ^3.22.4 and no patched 3.x exists, so
   # its instance is lifted onto the patched 4.x line rather than left vulnerable.
-  zod: 4.6.6
-patchedDependencies:
-  # Avoid remeasuring every mounted row on each virtual-list scroll frame.
-  '@rc-component/virtual-list@1.5.1': patches/@rc-component__virtual-list@1.5.1.patch
+  zod: 4.6.7

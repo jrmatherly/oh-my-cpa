@@ -65,6 +65,7 @@ type TableLifecycle struct {
 // whose rows should roll declares a rule and is deleted by the same batched,
 // horizon-publishing engine as everything else; it does not write its own loop.
 var TABLE_LIFECYCLES = map[string]TableLifecycle{
+	"outbound_proxy_settings":    {Kind: LifecycleReplaced, Reason: "one encrypted outbound proxy configuration, updated in place"},
 	"database_backup_automation": {Kind: LifecycleReplaced, Reason: "one encrypted schedule and bounded destination configuration, updated in place"},
 	"channel_model_prices":       {Kind: LifecycleReplaced, Reason: "operator prices keyed by the usage channel and upstream model; history lives in model_price_versions"},
 	"credential_warmup_policies": {Kind: LifecyclePermanent, Reason: "operator-approved warmup tasks, keyed by task id; rows written by the retired per-credential warmup are no longer read"},
@@ -93,6 +94,8 @@ var TABLE_LIFECYCLES = map[string]TableLifecycle{
 	"schema_migrations":             {Kind: LifecyclePermanent, Reason: "the record of applied migrations"},
 	"client_key_aliases":            {Kind: LifecyclePermanent, Reason: "requests keep their client key fingerprint, so its name must stay resolvable"},
 	"credential_display_names":      {Kind: LifecyclePermanent, Reason: "operator-owned names; a credential signed in again under the same file keeps its name"},
+	"archived_credentials":          {Kind: LifecyclePermanent, Reason: "sanitized credential labels and masks outlive deleted or disabled credentials so historical usage stays readable"},
+	"archived_providers":            {Kind: LifecyclePermanent, Reason: "sanitized provider and plugin portal metadata outlives deleted entries so historical usage keeps names and marks"},
 	"connections":                   {Kind: LifecyclePermanent, Reason: "operator-owned identity"},
 	"cpa_bindings":                  {Kind: LifecyclePermanent, Reason: "operator-owned identity; upstream removal marks a binding missing"},
 	"cpa_instances":                 {Kind: LifecyclePermanent, Reason: "configured gateways"},
@@ -106,7 +109,8 @@ var TABLE_LIFECYCLES = map[string]TableLifecycle{
 	"pricing_model_links":           {Kind: LifecyclePermanent, Reason: "operator-owned price links"},
 	"pricing_match_reviews":         {Kind: LifecyclePermanent, Reason: "operator answers, one per priced model"},
 	"quota_refresh_attempts":        {Kind: LifecycleReplaced, Reason: "one row per credential, overwritten by the next attempt"},
-	"quota_snapshots":               {Kind: LifecycleOwnerBounded, Reason: "trimmed on every write to the newest observations per credential and the cycle anchors capacity estimates use"},
+	"quota_snapshots":               {Kind: LifecycleOwnerBounded, Reason: "trimmed on every write to the newest observations per credential; capacity evidence lives in quota_capacity_cycles"},
+	"quota_capacity_cycles":         {Kind: LifecycleOwnerBounded, Reason: "the newest three cycles per credential window, pruned on write"},
 	"cpa_config_backups":            {Kind: LifecycleOwnerBounded, Reason: "trimmed to the operator's retention in the transaction that stores a copy"},
 	"agent_documents":               {Kind: LifecycleOwnerBounded, Reason: "sessions are capped by turns; terminal operations expire lazily on agent requests"},
 	"cpa_config_backup_settings":    {Kind: LifecycleReplaced, Reason: "one settings row"},

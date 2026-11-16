@@ -21,7 +21,7 @@ const archiveKey = 'omc-11223344-5566-4788-99aa-bbccddeeff00-1800000000000-11223
 function open(server: ReturnType<typeof installOmcApi>, value: BackupAutomation, jobs: () => DatabaseBackupJob[] = () => []) {
   server.on('GET', '/management/system/database-backup-automation', () => value);
   server.on('GET', '/management/system/database-backups', () => ({ items: jobs() }));
-  renderWithOmc(<DatabaseBackups isDemo={false} />);
+  renderWithOmc(<DatabaseBackups />);
   fireEvent.click(screen.getByRole('button', { name: 'Manage backups' }));
 }
 const puts = (server: ReturnType<typeof installOmcApi>) =>
@@ -65,7 +65,7 @@ it('gates automatic backups behind an initial passphrase and saves cloud destina
   });
   server.on('GET', '/management/system/database-backup-automation', () => saved);
   server.on('GET', '/management/system/database-backups', () => ({ items: [] }));
-  renderWithOmc(<DatabaseBackups isDemo={false} />);
+  renderWithOmc(<DatabaseBackups />);
   fireEvent.click(screen.getByRole('button', { name: 'Manage backups' }));
   const save = (await screen.findByRole('button', { name: 'Save and turn on' })) as HTMLButtonElement;
   fireEvent.change(screen.getByLabelText('Backup passphrase'), { target: { value: 'scheduled independent passphrase' } });
@@ -99,6 +99,6 @@ it('validates a retained cloud archive and binds restore confirmation to the pre
   fireEvent.click(screen.getByRole('button', { name: 'Validate backup' }));
   await screen.findByText('Backup validated');
   fireEvent.click(screen.getByRole('button', { name: 'Restore on next restart' }));
-  fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: 'Restore on next restart' }));
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Restore this database backup?' })).getByRole('button', { name: 'Restore on next restart' }));
   await waitFor(() => expect(server.requests.find((r) => r.path.endsWith('/apply'))?.body).toEqual({ digest: preview.digest }));
 });

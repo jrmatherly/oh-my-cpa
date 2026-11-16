@@ -9,12 +9,28 @@ node_modules
 web/public/lobe-icons/
 web/public/lobe-icons.tmp-*/
 
+# Generated Cloudflare demo dataset (built in CI / Cloudflare Workers Builds, never committed).
+deploy/cloudflare/data/responses.json
+deploy/cloudflare/data/responses.stamp
+
 # Production builds
 web/dist/
 dist/
 internal/web/dist/*
 !internal/web/dist/
 !internal/web/dist/.gitkeep
+
+# Fumadocs static docs build and generated source artifacts
+deploy/site/docs/.next/
+deploy/site/docs/.source/
+deploy/site/docs/content/docs/
+deploy/site/docs/public/images/
+deploy/site/docs/public/llms.txt
+deploy/site/docs/public/en/
+deploy/site/docs/public/zh/
+deploy/site/docs/public/brand/
+deploy/site/docs/out/
+deploy/site/docs/next-env.d.ts
 
 # TypeScript build info
 *.tsbuildinfo

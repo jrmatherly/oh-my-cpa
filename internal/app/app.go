@@ -25,6 +25,7 @@ import (
 	"github.com/oh-my-cpa/oh-my-cpa/internal/demo"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/domain"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/exchangerate"
+	"github.com/oh-my-cpa/oh-my-cpa/internal/outbound"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/pricing"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/release"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/repository"
@@ -207,14 +208,19 @@ func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 		}
 	}
 	handler := api.NewHandler(cfg, repo, cipher, logger, authManager)
+	outboundTransport := outbound.NewTransport(repository.OutboundProxyStore{Repo: repo, Cipher: cipher})
+	handler.SetOutboundTransport(outboundTransport)
+	if !cfg.IsDemoMode {
+		_ = handler.EnableStateCoordinator(ctx, api.StateCoordinatorOptions{})
+	}
 
 	// Zero-config pricing: the service syncs from OpenRouter once at startup and
 	// then daily, and custom rows and operator pins always win. Failures degrade
 	// to stale prices, never to wrong ones.
-	pricingService := pricing.NewService(repo, pricing.NewOpenRouterClient(), logger)
+	pricingService := pricing.NewService(repo, pricing.NewOpenRouterClientWithTransport(outboundTransport, pricing.OpenRouterModelsURL), logger)
 	pricingService.SetModelLister(&cpaModelLister{repo: repo, cipher: cipher, cfg: cfg})
 	handler.SetPricing(pricingService)
-	exchangeRateService := exchangerate.NewService(repo, nil, logger)
+	exchangeRateService := exchangerate.NewService(repo, exchangerate.NewFrankfurterClientWithTransport(outboundTransport), logger)
 	if !cfg.IsDemoMode {
 		handler.SetExchangeRates(exchangeRateService)
 	}
@@ -276,6 +282,7 @@ func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 			// The token is the gateway's own `server.github-token`, so a deployment
 			// configures GitHub once. The handler reads and caches it.
 			TokenSource: handler.ReleaseToken,
+			Client:      release.NewClientWithTransport(outboundTransport, "", handler.ReleaseToken),
 			// A recorded outcome tells open consoles to re-read the stored answer, so the
 			// update indicators follow the sweep instead of its next poll.
 			OnOutcome: handler.NotifyUpdateObservations,
@@ -297,7 +304,7 @@ func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 		// containerised one that simply has no sidecar yet.
 		if cfg.Updater.Enabled {
 			_, dockerErr := os.Stat("/.dockerenv")
-			handler.SetUpdater(updater.NewClient(cfg.Updater.URL, cfg.MasterKey), release.NewManifestClient(), dockerErr == nil)
+			handler.SetUpdater(updater.NewClient(cfg.Updater.URL, cfg.MasterKey), release.NewManifestClientWithTransport(outboundTransport, ""), dockerErr == nil)
 			// A console update ends the process that admitted it, so its outcome is
 			// collected here, by the process that replaced it.
 			handler.WatchInterruptedUpdate()
@@ -315,7 +322,17 @@ func newApp(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, 
 
 	var databaseBackups *backup.Manager
 	if !cfg.IsDemoMode {
-		databaseBackups, err = backup.NewManager(ctx, backup.Options{Database: db, DatabasePath: cfg.DatabasePath, Cipher: cipher, WrappingCipher: wrappingCipher, Version: cfg.Version, Logger: logger})
+		databaseBackups, err = backup.NewManager(ctx, backup.Options{
+			Database: db, DatabasePath: cfg.DatabasePath, Cipher: cipher, WrappingCipher: wrappingCipher,
+			Version: cfg.Version, Logger: logger, OutboundTransport: outboundTransport,
+			OutboundProxy: func(ctx context.Context) (repository.OutboundProxySettings, error) {
+				settings, _, err := (repository.OutboundProxyStore{Repo: repo, Cipher: cipher}).Load(ctx)
+				if err == nil {
+					err = outbound.Validate(settings)
+				}
+				return settings, err
+			},
+		})
 		if err != nil {
 			if maintenanceService != nil {
 				maintenanceService.Close()
@@ -655,6 +672,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.handler.CloseUpdateWatchers()
 	// Event streams never go idle, so they are ended before Shutdown waits on connections.
 	a.handler.CloseUpdateStreams()
+	a.handler.CloseStateCoordinator(shutdownContext)
 	select {
 	case <-dataRefreshDone:
 	case <-shutdownContext.Done():
@@ -697,6 +715,9 @@ func (a *App) Close() error {
 	a.handler.CloseBrowserRuns()
 	a.handler.CloseUpdateWatchers()
 	a.handler.CloseUpdateStreams()
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	a.handler.CloseStateCoordinator(closeCtx)
+	closeCancel()
 	// The fixture listens on a loopback socket, so it has to be closed with the
 	// database it describes.
 	if a.upstream != nil {

@@ -3,7 +3,7 @@
 .log-level-chip {
   height: 28px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -18,10 +18,11 @@
 .log-level-chip.is-active { color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); }
 .log-level-chip.is-warn.is-active { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .log-level-chip.is-error.is-active, .log-level-chip.is-fatal.is-active { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.logs-counts { margin-left: auto; color: var(--meta); font-size: var(--text-sm); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.logs-counts { color: var(--meta); font-size: var(--text-sm); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 .logs-tail { position: relative; }
 .logs-alert { margin-bottom: 10px; }
 .log-list {
+  border: 0;
   /* `dvh` rather than `vh`: the logs tail is sized against a fixed chrome budget, and on a
      phone the URL bar changes what `100vh` means continuously - the list grew and shrank
      under the reader as they scrolled. The `vh` line stays first as the fallback for a
@@ -31,8 +32,8 @@
   min-height: 300px;
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background: var(--bg);
 }
 .log-more {
@@ -54,7 +55,7 @@
 .log-line { display: flex; gap: 8px; padding: 4px 12px; font-size: var(--text-md); line-height: 1.6; white-space: pre; }
 .log-time, .log-req, .log-latency { flex: none; color: var(--meta); font-variant-numeric: tabular-nums; }
 /* The request id opens that request's log file; it reads as the id it is until pointed at. */
-.log-req.is-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.log-req.is-link { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .log-req.is-link:hover, .log-req.is-link:focus-visible { color: var(--accent); text-decoration-style: solid; }
 .log-level { flex: none; font-size: var(--text-xs); letter-spacing: .04em; text-transform: uppercase; }
 .log-level.is-info { color: var(--muted); }
@@ -89,9 +90,8 @@
 .log-state { padding: 24px 12px; color: var(--muted); font-size: var(--text-sm); }
 @media (max-width: 900px) {
   .logs-search { width: 148px; }
-  .logs-counts { margin-left: 0; width: 100%; }
-  .log-list { height: calc(100vh - 380px); height: calc(100dvh - 380px); }
+  .log-list { border: 0; height: calc(100vh - 380px); height: calc(100dvh - 380px); }
 }
 @media (pointer: coarse) and (max-height: 640px) {
-  .log-list { min-height: 240px; }
+  .log-list { border: 0; min-height: 240px; }
 }

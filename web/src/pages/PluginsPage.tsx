@@ -1,11 +1,11 @@
 import React from 'react';
-import { Button, Segmented } from 'antd';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { UPDATE_STATUS_QUERY_KEY } from '../hooks/useUpdateNotice';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError, apiErrorCode, describeError } from '../api/client';
 import { useT } from '../i18n';
-import { isDemoMode } from '../types/demoMode';
 import type { PluginItem } from '../types/plugin';
 import { PageHeader } from '../components/common/PageHeader';
 import { InstalledPluginsPanel } from '../components/plugins/InstalledPluginsPanel';
@@ -54,7 +54,6 @@ export const PluginsPage: React.FC = () => {
   const t = useT();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const isDemo = isDemoMode();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,7 +130,7 @@ export const PluginsPage: React.FC = () => {
         if (store.source_errors.length > 0) {
           toast.warning(t(isUpdateCheck && count > 0 ? 'plugin.check_updates_found' : 'plugin.store_refresh_partial', { n: count }), {
             items: store.source_errors.map((source) => ({ name: source.source_name, reason: source.message })),
-            actions: <Button size="small" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button>,
+            actions: <Button size="sm" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button>,
           });
         } else if (isUpdateCheck) {
           // CPA can retain a previous version after a failed release lookup; zero is not proof of freshness.
@@ -148,7 +147,7 @@ export const PluginsPage: React.FC = () => {
           ? t('plugin.retry_after_seconds', { n: Math.ceil(retryAfter) }) : ''].filter(Boolean).join(' ');
         toast.error(t(isRateLimited ? 'plugin.rate_limited' : isUpdateCheck ? 'plugin.check_updates_failed' : 'plugin.store_refresh_failed'), {
           detail,
-          actions: isRateLimited ? <Button size="small" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button> : undefined,
+          actions: isRateLimited ? <Button size="sm" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button> : undefined,
         });
       } finally {
         setIsRefreshingStore(false);
@@ -158,7 +157,13 @@ export const PluginsPage: React.FC = () => {
     return storeRefreshRef.current;
   };
 
-  const manage = (pluginId: string) => navigate(`${TAB_PATHS.installed}?plugin=${encodeURIComponent(pluginId)}`);
+  // The store opens an installed plugin's settings where the operator stands; only a plugin the list
+  // has not read yet goes through the installed tab's `?plugin=` address, which opens it once it has.
+  const manage = (pluginId: string) => {
+    const match = plugins.find((plugin) => plugin.id === pluginId);
+    if (match) setConfiguring(match);
+    else navigate(`${TAB_PATHS.installed}?plugin=${encodeURIComponent(pluginId)}`);
+  };
 
   // The head names the destination, not the surface: the store is its own entry in the
   // navigation (`/plugins/store`), so it reads as the store here while the installed list
@@ -221,7 +226,7 @@ export const PluginsPage: React.FC = () => {
           tone="warning"
           title={t('plugin.system_disabled_title')}
           description={t('plugin.system_disabled_desc')}
-          action={<Button size="small" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button>}
+          action={<Button size="sm" onClick={() => selectTab('settings')}>{t('plugin.open_settings')}</Button>}
         />
       )}
 
@@ -240,7 +245,7 @@ export const PluginsPage: React.FC = () => {
             isLoading={pluginsQuery.isLoading}
             isPluginSystemEnabled={isSystemEnabled}
             catalog={catalog}
-            isDemo={isDemo}
+            isDemo={false}
             onConfigure={setConfiguring}
             onBrowseStore={() => selectTab('store')}
             onOpenSettings={() => selectTab('settings')}
@@ -253,20 +258,20 @@ export const PluginsPage: React.FC = () => {
         <PluginStorePanel
           store={storeQuery.data}
           isLoading={storeQuery.isPending}
-          isDemo={isDemo}
+          isDemo={false}
           onRefresh={() => void refreshStore(false)}
           isRefreshing={isRefreshingStore}
           onManage={manage}
           onOpenSettings={() => selectTab('settings')}
         />
       )}
-      {tab === 'settings' && <PluginSettingsPanel isDemo={isDemo} />}
+      {tab === 'settings' && <PluginSettingsPanel isDemo={false} />}
 
       <PluginConfigDrawer
         plugin={configuring}
         listing={configuring ? catalog.get(configuring.id) : undefined}
         isPluginSystemEnabled={isSystemEnabled}
-        isDemo={isDemo}
+        isDemo={false}
         onClose={() => setConfiguring(null)}
       />
     </div>

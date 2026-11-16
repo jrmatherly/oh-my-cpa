@@ -1,11 +1,14 @@
 import type { MessageKey } from '../i18n/catalog';
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { Button, Input, Segmented, Spin } from 'antd';
+import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Segmented } from '@/components/ui/segmented';
 import { LoadingRegion, Placeholder } from './common/Placeholder';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorCode } from '../api/client';
 import { useT } from '../i18n';
-import { isDemoMode } from '../types/demoMode';
 import {
   CUSTOM_ICONS_QUERY_KEY,
   MAX_CUSTOM_ICON_BYTES,
@@ -72,7 +75,6 @@ export const CustomIconLibrary: React.FC<Props> = ({
   const addButton = useRef<HTMLButtonElement>(null);
   const cancelDeleteButton = useRef<HTMLButtonElement>(null);
   const shouldRestoreFocus = useRef(false);
-  const isDemo = isDemoMode();
   const visibleIcons = filterCustomIcons(icons.data ?? [], search);
   const isNew = editor === 'new';
   const hasReplacement = Boolean(source.trim() || fileName);
@@ -224,7 +226,10 @@ export const CustomIconLibrary: React.FC<Props> = ({
         cached?.filter((icon) => icon.id !== id),
       );
       onDeleted?.(id);
-      await queryClient.invalidateQueries({ queryKey: CUSTOM_ICONS_QUERY_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: CUSTOM_ICONS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['management-identity-directory'] }),
+      ]);
       returnToLibrary();
       toast.success(t('icons.deleted'));
     } catch (reason) {
@@ -259,7 +264,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
       >
         <header className={styles['view-header']}>
           <Button
-            type="text"
+            variant="ghost"
             icon={<ArrowLeftOutlined />}
             disabled={isBusy}
             onClick={returnToLibrary}
@@ -289,8 +294,8 @@ export const CustomIconLibrary: React.FC<Props> = ({
               <span>{t('icons.artwork')}</span>
               {editor !== 'new' && hasReplacement && (
                 <Button
-                  type="link"
-                  size="small"
+                  variant="link"
+                  size="sm"
                   disabled={isBusy}
                   onClick={resetReplacement}
                 >
@@ -322,7 +327,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
                 onFiles={(files) => void readFile(files[0])}
               >
                 {fileName && (
-                  <span className={styles['file-name']} title={fileName}>
+                  <span className={styles['file-name']} data-tip={fileName} data-tip-overflow="">
                     {fileName}
                   </span>
                 )}
@@ -333,7 +338,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
                   <span className="sr-only">
                     {t('icons.base64')}
                   </span>
-                  <Input.TextArea
+                  <Textarea
                     rows={6}
                     value={source}
                     disabled={isBusy}
@@ -377,7 +382,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
           >
             <h4>{t('icons.preview_title')}</h4>
             <div className={styles['preview-large']}>
-              {isBusy ? <Spin /> : renderArtwork(64)}
+              {isBusy ? <Spinner /> : renderArtwork(64)}
             </div>
             <span className={styles['preview-caption']}>64 × 64</span>
             <div className={styles['preview-small']}>
@@ -400,7 +405,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
             {t('common.cancel')}
           </Button>
           <Button
-            type="primary"
+            variant="primary"
             icon={<CheckOutlined />}
             loading={isBusy}
             disabled={!canSave}
@@ -455,7 +460,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
             {t('common.cancel')}
           </Button>
           <Button
-            type="primary"
+            variant="primary"
             danger
             icon={<DeleteOutlined />}
             loading={isBusy}
@@ -485,10 +490,10 @@ export const CustomIconLibrary: React.FC<Props> = ({
         </div>
         <Button
           ref={addButton}
-          type="primary"
+          variant="primary"
           icon={<PlusOutlined />}
           disabled={
-            isDemo || isSelecting || isBusy || (icons.data?.length ?? 0) >= 100
+            isSelecting || isBusy || (icons.data?.length ?? 0) >= 100
           }
           onClick={() => openEditor('new')}
         >
@@ -501,7 +506,6 @@ export const CustomIconLibrary: React.FC<Props> = ({
         value={search}
         onChange={setSearch}
       />
-      {isDemo && <Notice tone="info" title={t('icons.demo')} />}
       {icons.isError ? (
         <LoadFailure
           title={t('icons.load_failed')}
@@ -534,7 +538,6 @@ export const CustomIconLibrary: React.FC<Props> = ({
           ) : (
             <Button
               icon={<PlusOutlined />}
-              disabled={isDemo}
               onClick={() => openEditor('new')}
             >
               {t('icons.add_first')}
@@ -564,7 +567,7 @@ export const CustomIconLibrary: React.FC<Props> = ({
                     disabled={isSelecting || isBusy}
                     aria-pressed={isSelected}
                     onClick={() => void onSelect(`custom:${icon.id}`)}
-                    title={icon.name}
+                    data-tip={icon.name}
                   >
                     <span className={styles['tile-artwork']}>
                       <LobeIcon
@@ -596,22 +599,22 @@ export const CustomIconLibrary: React.FC<Props> = ({
                   </div>
                   <div className={styles['actions']}>
                     <Button
-                      size="small"
-                      type="text"
+                      size="sm"
+                      variant="ghost"
                       icon={<EditOutlined />}
-                      disabled={isDemo || isBusy || isSelecting}
+                      disabled={isBusy || isSelecting}
                       onClick={() => openEditor(icon)}
                     >
                       {t('common.edit')}
                     </Button>
                     <Button
-                      size="small"
-                      type="text"
+                      size="sm"
+                      variant="ghost"
                       danger
                       icon={<DeleteOutlined />}
                       aria-label={t('common.delete')}
-                      title={t('icons.delete_action')}
-                      disabled={isDemo || isBusy || isSelecting}
+                      data-tip={t('icons.delete_action')}
+                      disabled={isBusy || isSelecting}
                       onClick={() => {
                         setError('');
                         setDeletingIcon(icon);

@@ -1,6 +1,7 @@
 import { useTimeZone } from '../../utils/TimeZoneProvider';
+import { MetaLine } from '../common/MetaLine';
 import React from 'react';
-import { Button, Typography } from 'antd';
+import { Button } from '@/components/ui/button';
 import dayjs from '../../utils/time';
 import { PauseCircleOutlined, PlayCircleOutlined } from '../icons';
 import { useT } from '../../i18n';
@@ -16,7 +17,6 @@ import { Toolbar } from '../common/Toolbar';
 import './logs.css';
 import { Tooltip } from '../common/Tooltip';
 
-const { Text } = Typography;
 
 type ServiceLogLevel = (typeof SERVICE_LOG_LEVELS)[number];
 
@@ -109,22 +109,24 @@ export const ServiceLogPanel: React.FC = () => {
             </button>
           ))}
         </div>
-        <Text className="logs-counts">
-          {t('logs.service_counts', { shown: rows.length, total: tail.records.length })}
-          {tail.capacity && tail.startedAtMS
-            ? ` · ${t('logs.service_retention', { capacity: tail.capacity, since: dayjs(tail.startedAtMS).format('MM-DD HH:mm') })}`
-            : ''}
-        </Text>
-        <div className={styles['toolbar-actions']}>
-          <Tooltip title={tail.paused ? t('logs.resume') : t('logs.pause')}>
-            <Button
-              icon={tail.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              disabled={isBlocked}
-              onClick={() => tail.setPaused(!tail.paused)}
-              aria-label={tail.paused ? t('logs.resume') : t('logs.pause')}
-            />
-          </Tooltip>
-          <RefreshButton label={t('logs.reload')} onRefresh={tail.reload} />
+        <div className={styles['toolbar-summary']}>
+          <MetaLine className="logs-counts">
+            <b>{t('logs.service_counts', { shown: rows.length, total: tail.records.length })}</b>
+            {tail.capacity && tail.startedAtMS
+              ? t('logs.service_retention', { capacity: tail.capacity, since: dayjs(tail.startedAtMS).format('MM-DD HH:mm') })
+              : ''}
+          </MetaLine>
+          <div className={styles['toolbar-actions']}>
+            <Tooltip title={tail.paused ? t('logs.resume') : t('logs.pause')}>
+              <Button
+                icon={tail.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                disabled={isBlocked}
+                onClick={() => tail.setPaused(!tail.paused)}
+                aria-label={tail.paused ? t('logs.resume') : t('logs.pause')}
+              />
+            </Tooltip>
+            <RefreshButton label={t('logs.reload')} onRefresh={tail.reload} />
+          </div>
         </div>
       </Toolbar>
 

@@ -1,18 +1,14 @@
 import React from 'react';
-import { Input } from 'antd';
+import { Input } from '@/components/ui/input';
 import { RenameOutlined } from '../icons';
 import { useT } from '../../i18n';
 import { Tooltip } from './Tooltip';
 import styles from './InlineName.module.css';
 
-/** The class a row's identity block takes so its rename glyph can sit beside the name. */
 export const inlineNameEditableClass = styles.editable;
-
-/** Added beside the editable class where no row menu offers the same rename, so touch can reach it. */
 export const inlineNamePersistentClass = styles.persistent;
 
 interface RenameButtonProps {
-  /** What the glyph renames, for assistive tech. */
   label: string;
   disabled?: boolean;
   onClick: () => void;
@@ -20,9 +16,8 @@ interface RenameButtonProps {
 }
 
 /**
- * The glyph that opens a row's name editor. It appears while the pointer is over the name's cell
- * or the block has focus. On a touch screen it is hidden where a row menu offers the same rename,
- * and stays painted where nothing else does (`inlineNamePersistentClass`).
+ * The way into renaming, placed right after the name it renames. It holds its width while hidden,
+ * so revealing it on hover moves nothing.
  */
 export function RenameButton({ label, disabled, onClick, 'data-testid': testId }: RenameButtonProps) {
   const t = useT();
@@ -46,22 +41,20 @@ interface InlineNameEditorProps {
   initial: string;
   label: string;
   placeholder?: string;
-  /** Saves the draft; resolves whether it was saved, so a refused name keeps the field open. */
   onCommit: (next: string) => Promise<boolean>;
   onCancel: () => void;
   'data-testid'?: string;
 }
 
 /**
- * A row's name, edited where it stands. Enter or leaving the field saves, Escape abandons; an
- * unchanged or failed save leaves the name as it was, and a failure keeps the field open with what
- * the operator typed.
+ * The name, editable in place. The field takes the name's own type and starts where its text
+ * started, and its box overhangs the line instead of growing it, so entering and leaving editing
+ * shifts nothing around it. The whole name is selected on entry, Enter or leaving the field saves,
+ * and Escape restores the name.
  */
 export function InlineNameEditor({ initial, label, placeholder, onCommit, onCancel, 'data-testid': testId }: InlineNameEditorProps) {
   const [draft, setDraft] = React.useState(initial);
   const [isSaving, setIsSaving] = React.useState(false);
-  // Enter saves and then the field unmounts, which blurs it; Escape unmounts it too. Either way the
-  // blur that follows must not save a second time, and neither may a blur during the save.
   const isSettledRef = React.useRef(false);
   const isSavingRef = React.useRef(false);
   const commit = async () => {
@@ -80,8 +73,10 @@ export function InlineNameEditor({ initial, label, placeholder, onCommit, onCanc
   };
   return (
     <Input
-      size="small"
+      size="sm"
       autoFocus
+      onFocus={(event) => event.currentTarget.select()}
+      data-saving={isSaving || undefined}
       className={styles.input}
       value={draft}
       placeholder={placeholder}

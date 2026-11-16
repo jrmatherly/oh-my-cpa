@@ -1,7 +1,11 @@
 import type { MessageKey } from '../../i18n/catalog';
 import clsx from 'clsx';
 import React from 'react';
-import { Button, Input, Segmented, Select, Space } from 'antd';
+import { Select } from '@/components/ui/select';
+import { ButtonGroup } from '@/components/ui/button-group';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Segmented } from '@/components/ui/segmented';
 import { NumberInput } from '../common/NumberInput';
 import type {
   UsageCostFilter,
@@ -39,6 +43,7 @@ import { SearchSelect } from '../common/SearchSelect';
 import { SectionHeading } from '../common/SectionHeading';
 import './requestMarks.css';
 import { Tooltip } from '../common/Tooltip';
+import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 
 /**
  * canonicalViewKey gives the committed view a stable identity so the drawer can
@@ -89,6 +94,12 @@ const ROUTING_FACETS: FacetSpec[] = [
  * it as a text box would leave every edit silently ignored, so it gets the same
  * multi-select as the other exact dimensions.
  */
+/** The two facets the desktop bar draws inline; a phone's bar has no room for them, so the panel does. */
+const INLINE_FACETS: FacetSpec[] = [
+  { key: 'model', facet: 'models', labelKey: 'events.col_model' },
+  { key: 'provider', facet: 'providers', labelKey: 'events.provider' },
+];
+
 const ALIAS_FACETS: FacetSpec[] = [
   { key: 'model_alias', facet: 'model_aliases', labelKey: 'events.call_model' },
 ];
@@ -145,6 +156,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
   onApply,
 }) => {
   const t = useT();
+  const isPhone = useIsPhoneViewport();
   const [draft, setDraft] = React.useState<UsageEventsFilterDraft>(EMPTY_FILTER_DRAFT);
   const [pendingRegexField, setPendingRegexField] = React.useState<UsageRegexField>('model');
 
@@ -196,7 +208,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
       value: entry.value,
       label:
         spec.key === 'auth_index'
-          ? `${credentialName(entry.value)} · ${usageFacetLabel(entry)}`
+          ? usageFacetLabel({ ...entry, alias: credentialName(entry.value) })
           : spec.key === 'provider'
             ? providerFacetLabel(providerName(entry.value), entry.requests)
             : spec.key === 'reasoning'
@@ -211,7 +223,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
         value,
         label:
           spec.key === 'auth_index'
-            ? `${credentialName(value)} · ${value}`
+            ? (credentialName(value) === value ? value : `${credentialName(value)} (${value})`)
             : spec.key === 'provider'
               ? providerName(value)
               : spec.key === 'reasoning'
@@ -306,7 +318,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
     'events.regex',
     'req-regex-pattern',
     <>
-      <Space.Compact className={styles['regex']}>
+      <ButtonGroup className={styles['regex']}>
         <Select<UsageRegexField>
           className={styles['regex-field']}
           aria-label={t('events.regex_field')}
@@ -332,7 +344,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
           onChange={(event) => setText('regex', formatUsageRegex(regexField, event.target.value))}
           onPressEnter={handleApply}
         />
-      </Space.Compact>
+      </ButtonGroup>
       <p className={styles['hint']}>{t('events.regex_hint')}</p>
     </>,
     ['regex'],
@@ -365,7 +377,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
           <Input
             id={`req-range-${key}-min`}
             className={styles['range-input']}
-            aria-label={`${t(labelKey)} · ${t('events.range_min')}`}
+            aria-label={t('common.action_on', { action: t(labelKey), target: t('events.range_min') })}
             placeholder={t('events.range_min')}
             value={bound('min')}
             status={errors[`${key}_min`] ? 'error' : undefined}
@@ -375,7 +387,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
           <NumberInput
             id={`req-range-${key}-min`}
             className={styles['range-input']}
-            aria-label={`${t(labelKey)} · ${t('events.range_min')}`}
+            aria-label={t('common.action_on', { action: t(labelKey), target: t('events.range_min') })}
             placeholder={t('events.range_min')}
             min={0}
             precision={0}
@@ -391,7 +403,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
           <Input
             id={`req-range-${key}-max`}
             className={styles['range-input']}
-            aria-label={`${t(labelKey)} · ${t('events.range_max')}`}
+            aria-label={t('common.action_on', { action: t(labelKey), target: t('events.range_max') })}
             placeholder={t('events.range_max')}
             value={bound('max')}
             status={errors[`${key}_max`] ? 'error' : undefined}
@@ -401,7 +413,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
           <NumberInput
             id={`req-range-${key}-max`}
             className={styles['range-input']}
-            aria-label={`${t(labelKey)} · ${t('events.range_max')}`}
+            aria-label={t('common.action_on', { action: t(labelKey), target: t('events.range_max') })}
             placeholder={t('events.range_max')}
             min={0}
             precision={0}
@@ -432,7 +444,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
             </Button>
             <Button
               data-testid="req-filter-apply"
-              type="primary"
+              variant="primary"
               disabled={!isDirty || Object.keys(errors).length > 0}
               onClick={handleApply}
             >
@@ -546,6 +558,7 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
       {section(
         'events.group_routing',
         <>
+          {isPhone && INLINE_FACETS.map(multiRow)}
           {ROUTING_FACETS.map(multiRow)}
           {TEXT_FIELDS.map(textRow)}
           {regexRow}
@@ -573,9 +586,8 @@ export const RequestFilterDrawer: React.FC<RequestFilterDrawerProps> = ({
               onChange={(value) => setDraft((prev) => ({ ...prev, cost: value as UsageCostFilter }))}
               options={[
                 { value: 'all', label: t('events.cost_any') },
-                // "Unpriced" is permanent: no later price backfills the record, so
-                // the option says so rather than letting it read as a transient
-                // state the operator can wait out.
+                // "Unpriced" does not clear by waiting: a record keeps it until an operator
+                // prices it from Model Pricing, so the option's hint names that place.
                 {
                   value: 'priced',
                   label: (

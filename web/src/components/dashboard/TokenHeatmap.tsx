@@ -1,13 +1,18 @@
 import type { MessageKey } from '../../i18n/catalog';
 import { useTimeZone } from '../../utils/TimeZoneProvider';
 import React from 'react';
-import { Tooltip } from 'antd';
-import type { TooltipRef } from 'antd/es/tooltip';
-import { createPortal } from 'react-dom';
+import { TooltipContent, TooltipReadout, TooltipRoot } from '@/components/ui/tooltip';
 import { RightOutlined } from '../icons';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { ApiError } from '../../api/client';
+import { useIsRouteActive } from '../../performance/routeContract';
+import { sharedResizeObserverHub } from '../../performance/resizeObserverHub';
+import { useSwrQuery } from '../../performance/swrContract';
+import {
+  dashboardHeatmapSwr,
+  TOKEN_HEATMAP_QUERY_KEY,
+  TOKEN_HEATMAP_REFRESH_MS,
+} from './dashboardQueries';
 import { Link } from 'react-router-dom';
-import { api, ApiError } from '../../api/client';
 import { heatmapRampMax, heatmapRampPosition } from '../../theme/heatmapRamp';
 import { languageLocale, useT, useI18n, type Lang } from '../../i18n';
 import { formatTokens, formatTokensFull } from '../../types/tokenDisplay';
@@ -31,6 +36,9 @@ import { Panel } from '../common/Panel';
 import './dashboard.css';
 
 const FULL_NUMBER_FORMAT = new Intl.NumberFormat('en');
+const TOOLTIP_DAY_OPTIONS: Intl.DateTimeFormatOptions = Object.freeze({ year: 'numeric', month: 'long', day: 'numeric' });
+const MONTH_LABEL_OPTIONS: Intl.DateTimeFormatOptions = Object.freeze({ month: 'short' });
+const CELL_DAY_OPTIONS: Intl.DateTimeFormatOptions = Object.freeze({ year: 'numeric', month: 'short', day: 'numeric' });
 
 /**
  * The weekday labels, Monday first, matching the grid's rows.
@@ -60,7 +68,9 @@ const WEEKDAY_KEYS: readonly MessageKey[] = [
 const HEATMAP_SCROLL_END = 1_000_000;
 
 /** Quiet-stop weights of the legend's swatches, from an empty day to the window's busiest. */
-const HEATMAP_LEGEND_SHARES = ['100%', '75%', '50%', '25%', '0%'];
+/** Steps of the measured ramp; `dashboard.css` carries one `.is-q*` rule per step. */
+const HEATMAP_RAMP_STEPS = 20;
+const HEATMAP_LEGEND_STEPS = [20, 15, 10, 5, 0];
 
 /**
  * The panel's own refresh cadence.
@@ -71,7 +81,6 @@ const HEATMAP_LEGEND_SHARES = ['100%', '75%', '50%', '25%', '0%'];
  * dashboard's poll cadence, which is for a windowed aggregate that changes every few
  * seconds.
  */
-const HEATMAP_REFRESH_MS = 5 * 60_000;
 
 /**
  * Grouped digits, deliberately outside the console's token unit style.
@@ -125,34 +134,37 @@ export const HeatmapTooltipContent: React.FC<{
 }> = ({ day, lang, href }) => {
   const t = useT();
   const { style: tokenStyle } = useTokenDisplayStyle();
-  const date = formatDay(day.day, lang, { year: 'numeric', month: 'long', day: 'numeric' });
-  // A day with nothing recorded says so in place of the two counts. Reporting "Requests 0 / Tokens 0"
-  // would be a measurement the panel cannot make - nothing is stored for that day, which is not the
-  // same claim as a day that carried no traffic - and the distinction is the one thing a reader
-  // comparing days needs to be able to see.
+  const date = formatDay(day.day, lang, TOOLTIP_DAY_OPTIONS);
   const isRecorded = day.requests > 0 || day.tokens > 0;
+  const compactTokens = formatTokens(day.tokens, tokenStyle);
+  const exactTokens = formatTokensFull(day.tokens);
   return (
-    <dl className="heatmap-tip">
-      <div className="heatmap-tip-day">{date}</div>
-      {isRecorded ? (
-        <>
-          <div className="heatmap-tip-row">
-            <dt>{t('dash.heatmap.tip_requests')}</dt>
-            <dd>{full(day.requests)}</dd>
-          </div>
-          <div className="heatmap-tip-row">
-            <dt>{t('dash.heatmap.tip_tokens')}</dt>
-            <dd title={formatTokensFull(day.tokens)}>{formatTokens(day.tokens, tokenStyle)}</dd>
-          </div>
-          <Link className="heatmap-tip-link" to={href}>
+    <TooltipReadout
+      heading={date}
+      rows={
+        isRecorded
+          ? [
+              { name: t('dash.heatmap.tip_requests'), value: full(day.requests) },
+              {
+                name: t('dash.heatmap.tip_tokens'),
+                value: (
+                  <span data-tip={exactTokens !== compactTokens ? exactTokens : undefined}>
+                    {compactTokens}
+                  </span>
+                ),
+              },
+            ]
+          : [{ value: t('dash.heatmap.tip_no_requests') }]
+      }
+      footer={
+        isRecorded ? (
+          <Link className="heatmap-tip-link inline-flex items-center gap-1" to={href}>
             {t('dash.heatmap.open_requests')}
             <RightOutlined className="heatmap-tip-link-icon" />
           </Link>
-        </>
-      ) : (
-        <div className="heatmap-tip-empty">{t('dash.heatmap.tip_no_requests')}</div>
-      )}
-    </dl>
+        ) : undefined
+      }
+    />
   );
 };
 
@@ -173,17 +185,17 @@ const ActiveHeatmapTooltip: React.FC<{
   lang: Lang;
   onClose: () => void;
 }> = ({ target, entry, lang, onClose }) => {
-  const popupRef = React.useRef<TooltipRef>(null);
+  const popupRef = React.useRef<HTMLDivElement | null>(null);
   const popupId = React.useId();
   const { element, isOpen } = target;
 
   React.useLayoutEffect(() => {
     if (!isOpen) return;
     element.setAttribute('aria-describedby', popupId);
-    element.classList.add('ant-tooltip-open');
+    element.classList.add('omc-tooltip-open');
     return () => {
       element.removeAttribute('aria-describedby');
-      element.classList.remove('ant-tooltip-open');
+      element.classList.remove('omc-tooltip-open');
     };
   }, [element, isOpen, popupId, entry]);
 
@@ -191,12 +203,12 @@ const ActiveHeatmapTooltip: React.FC<{
     if (!isOpen) return;
     const dismissOutside = (event: PointerEvent) => {
       const node = event.target;
-      if (!(node instanceof Node) || element.contains(node) || popupRef.current?.popupElement?.contains(node)) return;
+      if (!(node instanceof Node) || element.contains(node) || popupRef.current?.contains(node)) return;
       onClose();
     };
     const dismissEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (popupRef.current?.popupElement?.contains(document.activeElement)) element.focus({ preventScroll: true });
+      if (popupRef.current?.contains(document.activeElement)) element.focus({ preventScroll: true });
       onClose();
     };
     document.addEventListener('pointerdown', dismissOutside, true);
@@ -207,21 +219,22 @@ const ActiveHeatmapTooltip: React.FC<{
     };
   }, [element, isOpen, onClose]);
 
-  return createPortal(
-    <Tooltip
-      ref={popupRef}
-      id={popupId}
-      open={isOpen}
-      trigger={[]}
-      placement="top"
-      classNames={{ root: 'heatmap-tip-popper' }}
-      styles={{ container: { maxWidth: 'none' } }}
-      title={<HeatmapTooltipContent day={entry} lang={lang} href={heatmapDrillDown(entry)} />}
-      destroyOnHidden
-    >
-      <span className="heatmap-tooltip-anchor" aria-hidden="true" />
-    </Tooltip>,
-    element,
+  if (!isOpen) return null;
+
+  return (
+    <TooltipRoot open>
+      <TooltipContent
+        ref={popupRef}
+        id={popupId}
+        anchor={element}
+        side="top"
+        sideOffset={6}
+        interactive
+        className="min-w-[180px] max-w-none rounded-lg px-3 py-2"
+      >
+        <HeatmapTooltipContent day={entry} lang={lang} href={heatmapDrillDown(entry)} />
+      </TooltipContent>
+    </TooltipRoot>
   );
 };
 
@@ -234,73 +247,27 @@ const ActiveHeatmapTooltip: React.FC<{
  * the warning is additive. A prefix is enough because the full key also carries the viewer's
  * zone, which the page has no reason to know.
  */
-export const TOKEN_HEATMAP_QUERY_KEY = 'dashboard-token-heatmap';
+export { TOKEN_HEATMAP_QUERY_KEY };
 
-/**
- * TokenHeatmap is the dashboard's contribution graph of daily token volume, below the six KPI
- * tiles.
- *
- * Five decisions are worth stating, because each is a place where the obvious implementation is
- * wrong.
- *
- * **The shape is a field, not a timeline.** Seven weekday rows by a year of week columns. The
- * rows are the whole point: they make a weekly rhythm a *row* and a trend a *direction*, which a
- * single-row strip cannot show - and the shape and the span are one decision, since at seven rows
- * a quarter's worth of days would be thirteen columns rather than a field.
- *
- * **The year is drawn in full, and the newest weeks are what is in view.** A panel narrower than
- * a year of comfortable cells shows the weeks that fit and scrolls to the rest. Days after today are simply days nothing is stored for: they are
- * not queried, so they render as `unrecorded` alongside every other day with no record. The panel
- * does not distinguish a day that has not happened from one whose records were pruned, because a
- * reader comparing days can only act on one thing - whether there is data for it.
- *
- * **The cells are DOM, not a chart mark.** The SVG chart runtime is lazy;
- * the calendar does not depend on it. A field of ~370 cells needs per-cell
- * text, focus and hit areas, so a canvas mark would need a parallel DOM layer for all three.
- *
- * **Its span is a rolling fifty-three whole weeks**, ending on the week containing today. Fixed
- * rather than derived from the window picker: a field whose width is its own data's age is not a
- * calendar, and at the 24h default it would be a single column. A calendar year was the alternative
- * and it spends every January almost entirely empty while saying nothing about the December that
- * just ended - which is exactly the comparison a reader wants at that moment. The span is a whole
- * number of weeks so the current week is drawn complete, and the window picker still governs the
- * tiles above.
- *
- * **The days are the viewer's local days, built by the server in the viewer's zone.** A day is not
- * 24 hours in every zone on every date, and a single fixed offset is wrong for every day on the
- * far side of a daylight-saving transition. The response carries each day's exact bounds, and
- * those same bounds are what a click opens, so the cell and the list cannot disagree.
- *
- * Colour is a density ramp rather than a verdict; the browser probe checks the painted pixels.
- */
-export const TokenHeatmap: React.FC = () => {
+export const TokenHeatmap: React.FC = React.memo(function TokenHeatmap() {
   const t = useT();
   const { lang } = useI18n();
 
-  // A timezone change selects a different calendar query, while unrelated renders
-  // keep the shared zone string and cached daily totals stable.
   const timezone = useTimeZone();
+  const isRouteActive = useIsRouteActive();
   const [focusDay, setFocusDay] = React.useState<string | null>(null);
   const [popupTarget, setPopupTarget] = React.useState<HeatmapPopupTarget | null>(null);
-  // The hover ring is pure CSS and no state records it, so the only writes to this panel's own state
-  // are moving the tab stop and opening a tooltip. The cell elements are memoized below, which keeps
-  // either of them from reconciling all ~370 cells.
+  React.useEffect(() => {
+    if (!isRouteActive) {
+      setPopupTarget((current) => (current?.isOpen ? { ...current, isOpen: false } : current));
+    }
+  }, [isRouteActive]);
   const gridRef = React.useRef<HTMLDivElement | null>(null);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const isPinnedToNewest = React.useRef(true);
-  const { data, isError, error, isFetching, refetch } = useQuery({
-    queryKey: [TOKEN_HEATMAP_QUERY_KEY, timezone],
-    queryFn: () => api.getTokenHeatmap(timezone),
-    // The strip re-reads on its own cadence, on window focus, and when the page's
-    // refresh button is pressed (through the key above).
-    refetchInterval: HEATMAP_REFRESH_MS,
+  const { data, isError, error, isFetching, refetch } = useSwrQuery(dashboardHeatmapSwr, timezone, {
+    refetchInterval: TOKEN_HEATMAP_REFRESH_MS,
     refetchOnWindowFocus: true,
-    staleTime: HEATMAP_REFRESH_MS / 2,
-    // A refresh that fails keeps the strip the operator is reading: replacing a month
-    // of history with an error panel because one poll timed out is worse than showing
-    // slightly old data with its readout still answering.
-    placeholderData: keepPreviousData,
-    meta: { silent: true },
   });
 
   const cells = React.useMemo(() => (data ? buildHeatmapGrid(data.days) : []), [data]);
@@ -324,7 +291,7 @@ export const TokenHeatmap: React.FC = () => {
     [data],
   );
   const monthLabels = React.useMemo(
-    () => heatmapMonthLabels(cells, columns, (day) => formatDay(day, lang, { month: 'short' })),
+    () => heatmapMonthLabels(cells, columns, (day) => formatDay(day, lang, MONTH_LABEL_OPTIONS)),
     [cells, columns, lang],
   );
   const resolvedFocus = heatmapFocusDay(cells, focusDay);
@@ -360,86 +327,128 @@ export const TokenHeatmap: React.FC = () => {
    * resize nor a background re-read moves the field.
    */
   React.useEffect(() => {
-    if (cells.length === 0) return;
+    if (cells.length === 0) return undefined;
     const container = scrollRef.current;
-    if (!container) return;
-    let fittedSize = '';
-    // How far the field scrolls, known from the fit itself. Reading the container's extent for it
-    // would force layout from inside a scroll handler on every frame of a swipe.
+    if (!container) return undefined;
+    let fittedWidth = -1;
+    let fittedHeight = -1;
+    let isScrollable = false;
     let newestOffset = 0;
-    const fitCells = (width: number, height: number) => {
-      // Custom properties resolve without layout, and the observer delivers after it anyway.
+    let pinFrame: number | undefined;
+    const appliedVars = { fieldMin: '', cell: '', columnGap: '' };
+
+    const setVar = (key: keyof typeof appliedVars, name: string, nextValue: string) => {
+      if (appliedVars[key] === nextValue) return;
+      appliedVars[key] = nextValue;
+      if (nextValue === '') container.style.removeProperty(name);
+      else container.style.setProperty(name, nextValue);
+    };
+
+    const markOlderWeeks = (hasOlderWeeks: boolean) => {
+      if (container.hasAttribute('data-has-older') !== hasOlderWeeks) {
+        container.toggleAttribute('data-has-older', hasOlderWeeks);
+      }
+    };
+
+    let cachedStyleBand: 'narrow' | 'wide' | null = null;
+    let cachedTokens = { gutter: 0, gap: 0, axis: 0, target: 0, max: 0 };
+
+    const readLayoutTokens = () => {
+      const band: 'narrow' | 'wide' = typeof window !== 'undefined' && window.innerWidth <= 900 ? 'narrow' : 'wide';
+      if (cachedStyleBand === band) return cachedTokens;
       const tokens = getComputedStyle(container);
       const readToken = (name: string) => Number.parseFloat(tokens.getPropertyValue(name)) || 0;
-      const gutter = readToken('--heatmap-label') + readToken('--heatmap-label-gap');
-      const gap = readToken('--heatmap-gap');
-      const axis = readToken('--heatmap-axis');
-      const fit = fitHeatmapField(width - gutter, height - axis, columns, readToken('--heatmap-cell-target'), gap, readToken('--heatmap-cell-max'));
-      // The field is as tall as the panel gives it, never shorter than its rows: the height it
-      // needs travels as its minimum, so a panel too short for the fitted squares grows instead of
-      // clipping the last weekday.
+      cachedStyleBand = band;
+      cachedTokens = {
+        gutter: readToken('--heatmap-label') + readToken('--heatmap-label-gap'),
+        gap: readToken('--heatmap-gap'),
+        axis: readToken('--heatmap-axis'),
+        target: readToken('--heatmap-cell-target'),
+        max: readToken('--heatmap-cell-max'),
+      };
+      return cachedTokens;
+    };
+
+    const fitCells = (width: number, height: number): boolean => {
+      const { gutter, gap, axis, target, max } = readLayoutTokens();
+      const fit = fitHeatmapField(width - gutter, height - axis, columns, target, gap, max);
       const cell = fit?.cell ?? (width - gutter - (columns - 1) * gap) / columns;
-      container.style.setProperty('--heatmap-field-min', `${axis + 7 * cell + 6 * gap}px`);
+      setVar('fieldMin', '--heatmap-field-min', `${axis + 7 * cell + 6 * gap}px`);
       if (fit === null) {
-        container.style.removeProperty('--heatmap-cell');
-        container.style.removeProperty('--heatmap-column-gap');
+        setVar('cell', '--heatmap-cell', '');
+        setVar('columnGap', '--heatmap-column-gap', '');
         newestOffset = 0;
       } else {
-        container.style.setProperty('--heatmap-cell', `${fit.cell}px`);
-        container.style.setProperty('--heatmap-column-gap', `${fit.columnGap}px`);
-        newestOffset = gutter + columns * fit.cell + (columns - 1) * fit.columnGap - width;
+        setVar('cell', '--heatmap-cell', `${fit.cell}px`);
+        setVar('columnGap', '--heatmap-column-gap', `${fit.columnGap}px`);
+        newestOffset = Math.max(0, gutter + columns * fit.cell + (columns - 1) * fit.columnGap - width);
       }
       return fit !== null;
     };
-    const markOlderWeeks = (hasOlderWeeks: boolean) => {
-      container.toggleAttribute('data-has-older', hasOlderWeeks);
-    };
+
     const recordReaderPosition = () => {
       const offset = container.scrollLeft;
-      // Browsers round a scroll offset to a whole pixel, hence the tolerance.
       isPinnedToNewest.current = offset >= newestOffset - 2;
       markOlderWeeks(offset > 1);
     };
-    // ResizeObserver delivers after layout and before paint, so the first painted frame already
-    // has its cell size. An extent read in the mount effect instead forces the entire dashboard's
-    // pending layout into the navigation commit.
-    const observer = new ResizeObserver((observations) => {
-      const width = observations.reduce((widest, entry) => Math.max(widest, entry.contentRect.width), 0);
-      const height = observations.reduce((tallest, entry) => Math.max(tallest, entry.contentRect.height), 0);
-      if (width <= 0) return;
-      // The field's height comes from the panel, not from its cells, so a fit settles in one pass:
-      // the minimum it writes equals the height it was fitted to, and an unchanged box is no new fit.
-      const size = `${width}x${height}`;
-      const isScrollable = size === fittedSize ? container.hasAttribute('data-scrollable') : fitCells(width, height);
-      fittedSize = size;
-      container.toggleAttribute('data-scrollable', isScrollable);
-      if (isPinnedToNewest.current) container.scrollLeft = HEATMAP_SCROLL_END;
-      // Read where the field ended up rather than assuming the pinned edge: a panel that grew until
-      // the whole year fits clamps the offset to zero without firing a scroll event, and the fade
-      // it left behind would claim older weeks that are no longer off screen.
-      markOlderWeeks(container.scrollLeft > 1);
-    });
-    observer.observe(container);
+
+    // Use the shared ResizeObserver hub and schedule scrollLeft pinning after browser layout rather
+    // than reading/writing scrollLeft synchronously after mutating inherited CSS custom properties,
+    // which previously forced 200ms+ full-document UpdateLayoutTree passes across all 371 cells.
+    const unsubscribe = sharedResizeObserverHub.observe(
+      container,
+      ({ width, height }) => {
+        const w = Math.round(width);
+        const h = Math.round(height);
+        if (w <= 0) return;
+        if (w !== fittedWidth || Math.abs(h - fittedHeight) > 1) {
+          fittedWidth = w;
+          fittedHeight = h;
+          isScrollable = fitCells(width, height);
+        }
+        if (container.hasAttribute('data-scrollable') !== isScrollable) {
+          container.toggleAttribute('data-scrollable', isScrollable);
+        }
+        if (!isScrollable) {
+          markOlderWeeks(false);
+          return;
+        }
+        if (isPinnedToNewest.current) {
+          markOlderWeeks(newestOffset > 1);
+          if (pinFrame !== undefined) cancelAnimationFrame(pinFrame);
+          pinFrame = requestAnimationFrame(() => {
+            pinFrame = undefined;
+            if (!container.isConnected || !isPinnedToNewest.current) return;
+            // Write `scrollLeft` without immediately reading `container.scrollLeft` back: reading
+            // after mutating DOM/styles forced a synchronous ~150ms full-document layout pass, while
+            // `newestOffset > 1` already predicts older-week overflow and the passive `'scroll'`
+            // listener reconciles any manual scroll offset after layout.
+            container.scrollLeft = HEATMAP_SCROLL_END;
+          });
+        }
+      },
+      { freezeOnTransition: true, epsilonPx: 1 },
+    );
+
     container.addEventListener('scroll', recordReaderPosition, { passive: true });
     return () => {
-      observer.disconnect();
+      unsubscribe();
+      if (pinFrame !== undefined) cancelAnimationFrame(pinFrame);
       container.removeEventListener('scroll', recordReaderPosition);
     };
   }, [cells.length, columns]);
 
-  /**
-   * Focusing a cell also claims the tab stop.
-   *
-   * Without this the two can diverge: a click or a programmatic focus moves the browser's
-   * focus without moving `resolvedFocus`, so the next arrow key or Enter acts on the day
-   * the grid still thinks it is on rather than the one the operator is looking at.
-   */
   // Stable across renders that do not move the tab stop, which is what lets the grid's elements be
   // reused: an inline arrow here would be a new identity every render and would invalidate the
   // `cellRows` memo below on every one of them.
   const handleCellFocus = React.useCallback((day: string) => {
     setFocusDay((current) => (heatmapFocusDay(cells, current) === day ? current : day));
   }, [cells]);
+  const handleGridFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof HTMLElement)) return;
+    const day = event.target.dataset.day;
+    if (day) handleCellFocus(day);
+  }, [handleCellFocus]);
 
   const closePopup = React.useCallback(() => {
     setPopupTarget((current) => current?.isOpen ? { ...current, isOpen: false } : current);
@@ -492,6 +501,7 @@ export const TokenHeatmap: React.FC = () => {
     return rows;
   }, [cells]);
 
+
   const classifyCell = React.useMemo(
     () => createHeatmapCellClassifier(data?.first_stored_ms ?? null, data?.as_of_ms ?? null),
     [data?.first_stored_ms, data?.as_of_ms, timezone],
@@ -514,54 +524,53 @@ export const TokenHeatmap: React.FC = () => {
       // "0 requests, 0 tokens" for a day nothing is stored for - asserting a measurement that does
       // not exist, and disagreeing with the cell's own tooltip and colour. A measured day reports
       // its counts; every other day says nothing is stored, in the words the tooltip uses.
+      const formattedDay = entry ? formatDay(entry.day, lang, CELL_DAY_OPTIONS) : '';
       const label = entry
-        ? t(state === 'measured' ? 'dash.heatmap.cell_label' : 'dash.heatmap.cell_label_empty', {
-          day: formatDay(entry.day, lang, { year: 'numeric', month: 'short', day: 'numeric' }),
-          requests: full(entry.requests),
-          tokens: full(entry.tokens),
-        })
+        ? state === 'measured'
+          ? t('dash.heatmap.cell_label', {
+            day: formattedDay,
+            requests: full(entry.requests),
+            tokens: full(entry.tokens),
+          })
+          : t('dash.heatmap.cell_label_empty', { day: formattedDay })
         : undefined;
       // The continuous ramp: the weight of the quiet stop, as a percentage. A measured cell carries
       // it as a custom property and CSS mixes the two stops; every other state is drawn by its class
       // and gets no ramp at all, so "no traffic" can never be confused with a light measured shade.
-      const quietShare = state === 'measured'
-        ? `${Math.round((1 - heatmapRampPosition(entry?.tokens ?? 0, rampMax)) * 10000) / 100}%`
+      // Quantised to the ramp's twenty-one steps, which a reader cannot tell apart, so that cells
+      // of a step carry identical styles and the browser computes each step's colour once instead
+      // of once per cell (see `.heatmap-cell.is-q*`).
+      const quietStep = state === 'measured'
+        ? Math.round((1 - heatmapRampPosition(entry?.tokens ?? 0, rampMax)) * HEATMAP_RAMP_STEPS)
         : null;
-      // The visual square is an inner element, and the hover scale applies to *it* rather than to
-      // the cell, because the cell is what antd measures to place the tooltip: a transform on the
-      // anchor is a moving target, and the box would be placed against whichever rect existed when
-      // it was opened rather than the one on screen afterwards. The mark is `pointer-events: none`
-      // so the hover target stays the stationary cell.
       const node = (
         <div
           key={cell.day}
           data-day={cell.day}
           role="gridcell"
-          className={`heatmap-cell is-${state}${quietShare ? ' is-measured' : ''} is-interactive`}
-          // The ramp weight travels as a custom property rather than an inline `background`, which
-          // keeps the two stops in the stylesheet and the mixing in the browser's OKLCH.
-          style={{
-            gridColumn: cell.column + 1,
-            gridRow: cell.row + 1,
-            ...(quietShare ? { '--heatmap-quiet-share': quietShare } : {}),
-          } as React.CSSProperties}
+          className={`heatmap-cell is-${state}${quietStep === null ? '' : ` is-measured is-q${quietStep}`} is-interactive`}
           // Only interactive cells take a tab stop. A field where every cell were focusable would
           // put ~370 stops in the tab order, and one where a dead cell were focusable would make
           // the keyboard promise an interaction that cannot happen.
           tabIndex={cell.day === resolvedFocus ? 0 : -1}
           aria-label={label}
-          onFocus={() => handleCellFocus(cell.day)}
-        >
-          <span className="heatmap-cell-mark" aria-hidden="true" />
-        </div>
+        />
       );
       return node;
-  }, [entries, rampMax, t, lang, resolvedFocus, classifyCell, handleCellFocus]);
+  }, [entries, rampMax, t, lang, resolvedFocus, classifyCell]);
 
   const cellRows = React.useMemo(
+    // A cell carries no inline style, so cells of one ramp step share one computed style: the row
+    // places its cells (`grid-row: inherit`) and the grid's flow gives each the next column. A
+    // column the row has no day for - the start of a partial week - is held by an inert gap.
     () => cellsByRow.map((row, index) => (
-      <div key={index} className="heatmap-row" role="row">
-        {row.map(renderCell)}
+      <div key={index} className="heatmap-row" role="row" style={{ gridRow: index + 1 }}>
+        {row.flatMap((cell, at) => {
+          const gap = cell.column - (at === 0 ? 0 : row[at - 1]!.column + 1);
+          return gap > 0
+            ? [<span key={`gap-${cell.day}`} className="heatmap-gap" aria-hidden="true" style={{ gridColumn: `span ${gap}` }} />, renderCell(cell)]
+            : [renderCell(cell)];
+        })}
       </div>
     )),
     [cellsByRow, renderCell],
@@ -655,6 +664,7 @@ export const TokenHeatmap: React.FC = () => {
                 aria-readonly="true"
                 onKeyDown={handleKeyDown}
                 onClick={handleCellClick}
+                onFocus={handleGridFocus}
               >
                 {cellRows}
               </div>
@@ -677,12 +687,8 @@ export const TokenHeatmap: React.FC = () => {
           <div className="heatmap-legend" aria-hidden="true">
             <span>{t('dash.heatmap.legend_less')}</span>
             <span className="heatmap-legend-scale">
-              {HEATMAP_LEGEND_SHARES.map((share) => (
-                <i
-                  key={share}
-                  className="heatmap-legend-swatch"
-                  style={{ '--heatmap-quiet-share': share } as React.CSSProperties}
-                />
+              {HEATMAP_LEGEND_STEPS.map((step) => (
+                <i key={step} className={`heatmap-legend-swatch is-q${step}`} />
               ))}
             </span>
             <span>{t('dash.heatmap.legend_more')}</span>
@@ -694,6 +700,6 @@ export const TokenHeatmap: React.FC = () => {
       </div>
     </Panel>
   );
-};
+});
 
 export type { DashboardTokenHeatmap };

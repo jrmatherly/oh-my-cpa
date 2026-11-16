@@ -26,7 +26,6 @@
   background: transparent;
 }
 
-
 .toolbar-spaced {
   margin-top: 12px;
 }
@@ -48,52 +47,28 @@
   gap: 6px 10px;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-  color: var(--fg-2);
-  font-size: var(--text-xs);
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.badge-warn {
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  color: var(--warn);
-}
-
-.badge-success {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
-}
-
-.badge-accent {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-}
-
 .meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 8px;
+  gap: 2px 14px;
   color: var(--meta);
   font-size: var(--text-sm);
 }
 
-.meta-strong {
-  color: var(--fg);
-  font-variant-numeric: tabular-nums;
+.meta-item {
+  min-width: 0;
 }
 
-.meta-item + .meta-item::before {
-  margin-right: 8px;
-  color: var(--meta);
-  content: '·';
+/* A card's quiet facts, at the size of the prose beside them. */
+.card-facts {
+  font-size: var(--text-sm);
+}
+
+/* A version leads a card's secondary line in the reading ink. */
+.meta-strong {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .plugin-id {
@@ -109,8 +84,9 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--muted);
+  font-size: var(--text-lg);
   transition: color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
 }
 
@@ -148,59 +124,11 @@
 
 /* ── installed list ────────────────────────────────────────────────────── */
 
-.installed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 12px -14px 0;
-}
-
-.installed-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px 14px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  transition: background-color var(--motion-fast) var(--ease-standard);
-}
-
-/* Rows of the card that holds them, not cards of their own: a frame inside a frame said the list
-   twice. The pointer brings a wash, as it does on every other list. */
-.installed-row:hover {
-  background: color-mix(in srgb, var(--fg) 3%, transparent);
-}
-
-.installed-row[data-dragging] {
-  background: var(--elevated);
-}
-
-.installed-row .logo {
-  width: 44px;
-  height: 44px;
-}
-
-.installed-main,
-.installed-identity {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .installed-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-}
-
-.installed-name {
-  color: var(--fg);
-  font-size: var(--text-base);
-  font-weight: 600;
-  overflow-wrap: anywhere;
 }
 
 .description {
@@ -209,21 +137,6 @@
   font-size: var(--text-sm);
   line-height: 1.55;
   overflow-wrap: anywhere;
-}
-
-.installed-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-/* The cluster may wrap, so the actions inside it must too: a long release label would otherwise
-   push the row past the viewport instead of moving to a line of its own. */
-.installed-actions :global(.row-actions) {
-  min-width: 0;
-  flex-wrap: wrap;
 }
 
 /* An available update is an action, so it sits in the action cluster rather than adding a chip
@@ -248,15 +161,6 @@
 
 .update-button.update-button:disabled {
   color: var(--meta) !important;
-}
-
-.switch-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-soft);
 }
 
 .bulk-update-item {
@@ -312,12 +216,13 @@
 /* Oh My CPA's registry is the store's featured section: one enclosure, washed with ink and
    lit from the top edge with the accent, its cards set on the page colour inside it. */
 .showcase {
+  border: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 140px),
     color-mix(in srgb, var(--fg) 2.5%, transparent);
@@ -331,13 +236,14 @@
 }
 
 .showcase-mark {
+  border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
   background: var(--bg);
 }
 
@@ -375,13 +281,14 @@
 }
 
 .tag-filter {
+  border: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--fg);
   font-size: var(--text-sm);
@@ -410,55 +317,15 @@
   overflow-wrap: anywhere;
 }
 
+/* The installed plugins sit under their toolbar, the store's cards under their section heading. */
+.installed-grid {
+  margin-top: 12px;
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
-}
-
-.store-card {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg);
-  transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
-}
-
-/* A store card is something to open, so the pointer raises it a step: its edge darkens and the
-   raised shadow comes under it, without moving it. */
-.store-card:hover {
-  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
-  box-shadow: var(--shadow-raised);
-}
-
-.card-head {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-}
-
-.card-head .logo {
-  width: 48px;
-  height: 48px;
-}
-
-.store-card-featured {
-  gap: 12px;
-  padding: 16px;
-}
-
-.store-card-featured .card-head {
-  grid-template-columns: 56px minmax(0, 1fr);
-}
-
-.store-card-featured .card-head .logo {
-  width: 56px;
-  height: 56px;
 }
 
 .card-title {
@@ -466,15 +333,6 @@
   min-width: 0;
   flex-direction: column;
   gap: 2px;
-}
-
-.card-name {
-  overflow: hidden;
-  color: var(--fg);
-  font-size: var(--text-base);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .card-description {
@@ -494,7 +352,6 @@
 
 .card-description-muted {
   color: var(--meta);
-  font-style: italic;
 }
 
 .text-toggle {
@@ -513,15 +370,6 @@
   gap: 4px;
 }
 
-.tag {
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  background: var(--hover);
-  color: var(--fg-2);
-  font-size: var(--text-xs);
-  line-height: 20px;
-}
-
 /* A card's tag narrows the store to its kind. */
 .tag-button {
   border: 0;
@@ -535,17 +383,6 @@
   color: var(--fg);
 }
 
-.card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.card-actions,
 .card-links {
   display: inline-flex;
   flex-wrap: wrap;
@@ -645,13 +482,14 @@
 }
 
 .source-fixed {
+  border: 0;
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--fg) 2.5%, transparent);
 }
 
@@ -667,9 +505,10 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--bg);
   color: var(--success);
+  font-size: var(--text-lg);
 }
 
 .source-fixed-text {
@@ -707,12 +546,13 @@
 }
 
 .rule-card {
+  border: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
   background: var(--bg);
 }
 
@@ -765,14 +605,15 @@
 /* ── config drawer ─────────────────────────────────────────────────────── */
 
 .config-hero {
+  border: 0;
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: start;
   gap: 14px;
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--fg) 2.5%, transparent);
 }
 
@@ -825,7 +666,7 @@
   margin: 0 -8px;
   padding-right: 8px;
   padding-left: 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
@@ -883,12 +724,6 @@
   margin-right: auto;
 }
 
-.config-field-default {
-  margin-top: 4px;
-  color: var(--meta);
-  font-size: var(--text-sm);
-}
-
 .config-json {
   font-family: var(--font-mono) !important;
   font-size: var(--text-sm) !important;
@@ -902,13 +737,13 @@
 }
 
 .extra-key {
+  border: 0;
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
   padding: 2px 8px;
-  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
@@ -945,38 +780,13 @@
     min-height: 40px;
   }
 
-  .installed-row {
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: 10px 12px;
-  }
-
-  .installed-main {
-    display: contents;
-  }
-
-  .installed-identity {
-    grid-column: 2;
-  }
-
-  .installed-row .description {
-    grid-column: 1 / -1;
-  }
-
-  .installed-row .logo {
-    width: 40px;
-    height: 40px;
-  }
-
-  .installed-actions {
-    grid-column: 1 / -1;
-  }
-
   .card-grid,
   .showcase-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .showcase {
+    border: 0;
     padding: 12px;
   }
 
@@ -986,6 +796,7 @@
   }
 
   .config-hero {
+    border: 0;
     grid-template-columns: 44px minmax(0, 1fr);
   }
 
@@ -1004,22 +815,10 @@
   }
 }
 
-/* A plugin's own pages, offered in its settings drawer. */
+/* A plugin's own pages, offered in its settings drawer's head. */
 .page-links {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.config-pages {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  margin-bottom: 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  background: var(--bg);
+  margin-top: 4px;
 }

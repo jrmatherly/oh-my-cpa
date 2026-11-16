@@ -5,7 +5,8 @@ import styles from './Switch.module.css';
 export type SwitchSize = 'default' | 'small';
 
 export interface SwitchProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'type' | 'role' | 'children' | 'value'> {
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'type' | 'role' | 'children' | 'value' | 'title'> {
+  'data-tip'?: string;
   checked?: boolean;
   onChange?: (checked: boolean, event: React.MouseEvent<HTMLButtonElement>) => void;
   /** `small` is the row density: a list, a table cell or a toolbar. */
@@ -17,9 +18,8 @@ export interface SwitchProps
 /**
  * The console's one on/off control.
  *
- * It is drawn for the console - a rounded rectangle with a concentric thumb - rather than taken
- * as a pill, and it states its value three ways: the side the thumb is on, the track's fill,
- * and a bar or ring on the track, so the reading never rests on colour. The element is a native button
+ * A round knob in a pill-shaped slot. It states its value by the side the knob is on as well as by
+ * the track's fill, so the reading never rests on colour. The element is a native button
  * with `role="switch"`, which is what keeps a wrapping `<label>`, `htmlFor`, Space/Enter and a
  * `Form.Item` with `valuePropName="checked"` working without any wiring of their own.
  */

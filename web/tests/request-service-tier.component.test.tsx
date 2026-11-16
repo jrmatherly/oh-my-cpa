@@ -1,6 +1,18 @@
-import type { ReactNode } from 'react';
-import { fireEvent, screen, within } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { useState, type ReactNode } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  RequestBackToTop,
+  RequestCollapsibleHeader,
+  RequestFoldToggle,
+  RequestRestoreButton,
+} from '../src/components/usage/RequestFoldControls';
+import { RequestVirtualList } from '../src/components/usage/RequestVirtualList';
+import { useRequestListScroll } from '../src/components/usage/useRequestListScroll';
+import { UsageEventsPage } from '../src/pages/UsageEventsPage';
+import { ThemeProvider } from '../src/theme/ThemeContext';
+import { setReducedMotionPreference } from '../src/utils/motionPreference';
 import usageEventMessages from '../src/i18n/locales/en/usageEvents';
 import { StructuredUsageView } from '../src/components/usage/StructuredUsageView';
 import { UsageEventDrawer } from '../src/components/usage/UsageEventDrawer';
@@ -8,7 +20,7 @@ import { CostBreakdownView } from '../src/components/pricing/CostBreakdownView';
 import type { RequestCostBreakdown } from '../src/types/pricing';
 import { RequestRow } from '../src/components/usage/RequestRow';
 import { TokenDisplayProvider } from '../src/types/tokenDisplayContext';
-import type { UsageEvent } from '../src/types/usageEvents';
+import { USAGE_FACET_KEYS, type UsageEvent } from '../src/types/usageEvents';
 import { installOmcApi } from './support/omcApi';
 import { createTestQueryClient, renderWithOmc } from './support/render';
 
@@ -108,4 +120,452 @@ it('reads structured detail in the drawer without merging observations into cano
 it('keeps legacy structured usage unknown instead of fabricating zero-valued counters', () => {
   renderWithOmc(<StructuredUsageView />);
   expect(within(screen.getByRole('region', { name: 'Upstream usage details' })).getByText('Not captured')).toBeTruthy();
+});
+
+describe('request stream virtualization and desktop/mobile header fold', () => {
+  const originalMatchMedia = window.matchMedia;
+  const originalAnimate = Element.prototype.animate;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+    Element.prototype.animate = originalAnimate;
+    setReducedMotionPreference('system');
+  });
+
+  function installTouchMatchMedia(isCoarse: boolean) {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(any-pointer: coarse)' ? isCoarse : false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+  }
+
+  function StreamHarness({
+    items,
+    arrivedCount,
+    onParentRender,
+  }: {
+    items: UsageEvent[];
+    arrivedCount?: number;
+    onParentRender?: () => void;
+  }) {
+    onParentRender?.();
+    const scroll = useRequestListScroll({ viewScope: 'preset=1h', cursor: undefined });
+    scroll.observeLatest(items);
+    if (arrivedCount !== undefined) {
+      scroll.noteFetchedBoundaryID(scroll.getHeldBoundaryID());
+    }
+    const displayed = scroll.resolveDisplayedItems(items);
+    const pendingCount = scroll.pendingArrivals(arrivedCount);
+    return (
+      <div ref={scroll.pageRef} className="request-events-page">
+        <RequestCollapsibleHeader collapse={scroll.collapse} pageRef={scroll.pageRef}>
+          <div className="request-header-content">
+            <input aria-label="Search requests" />
+            <RequestFoldToggle collapse={scroll.collapse} onToggle={scroll.handleToggleExpand} />
+          </div>
+        </RequestCollapsibleHeader>
+        <div className="request-stream-slot">
+          <section className="request-stream">
+            <div ref={scroll.scrollAreaRef} className="request-table-scroll-area">
+              <RequestVirtualList
+                ref={scroll.listRef}
+                overscanPx={144}
+                items={displayed}
+                getItemKey={(item) => item.id}
+                onScroll={scroll.handleScroll}
+                renderItem={(item) => <div data-testid="virtual-req-row">row-{item.id}</div>}
+              />
+            </div>
+            <footer className="request-pagination">
+              <RequestRestoreButton collapse={scroll.collapse} onRestore={scroll.handleToggleExpand} />
+            </footer>
+          </section>
+          <RequestBackToTop scrolledDown={scroll.scrolledDown} pendingCount={pendingCount} onBackToTop={scroll.handleBackToTop} />
+        </div>
+      </div>
+    );
+  }
+
+  function makeSyntheticEvents(count: number): UsageEvent[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: count - index,
+      event_key: `evt-${index}`,
+      timestamp_ms: 1_800_000_000_000 - index * 1_000,
+      provider: 'openai',
+      model: 'gpt-5',
+      failed: false,
+      generate: true,
+      latency_ms: 420,
+      has_request_log: false,
+      tokens: { input: 10, output: 10, reasoning: 0, cached: 0, cache_read: 0, cache_creation: 0, total: 20 },
+    }));
+  }
+
+  it('folds and restores on desktop wheel gestures without re-rendering parent on scroll thresholds, and respects reduced motion', () => {
+    installTouchMatchMedia(false);
+    let animateCalls = 0;
+    Element.prototype.animate = vi.fn().mockImplementation(() => {
+      animateCalls += 1;
+      return {
+        cancel: vi.fn(),
+        finished: Promise.resolve(),
+      } as unknown as Animation;
+    });
+
+    let parentRenders = 0;
+    const events = makeSyntheticEvents(80);
+    const { container } = renderWithOmc(
+      <StreamHarness items={events} onParentRender={() => { parentRenders += 1; }} />,
+    );
+
+    const header = container.querySelector<HTMLElement>('.request-collapsible-header')!;
+    const scrollArea = container.querySelector<HTMLElement>('.request-table-scroll-area')!;
+    const list = container.querySelector<HTMLElement>('.request-list')!;
+    Object.defineProperty(header, 'offsetHeight', { configurable: true, value: 132 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 5_760 });
+
+    // Virtualization mounts only the overscanned window, not all 80 rows.
+    const mountedInitial = screen.getAllByTestId('virtual-req-row');
+    expect(mountedInitial.length).toBeLessThan(30);
+    expect(mountedInitial[0].textContent).toBe('row-80');
+
+    const rendersBeforeScroll = parentRenders;
+    // Wheel-down at the top collapses the header via compositor WAAPI.
+    act(() => {
+      scrollArea.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
+    });
+    expect(header.classList.contains('is-collapsed')).toBe(true);
+    expect(animateCalls).toBeGreaterThan(0);
+
+    // Scrolling past HOLD_FROM_PX (60px) updates only ViewFlag subscribers without re-rendering StreamHarness.
+    list.scrollTop = 720;
+    fireEvent.scroll(list);
+    expect(parentRenders).toBe(rendersBeforeScroll);
+    expect(container.querySelector('.req-back-to-top-btn')).not.toBeNull();
+    expect(screen.getAllByTestId('virtual-req-row')[0].textContent).not.toBe('row-80');
+
+    // Under reduced motion, wheel-up at the top restores immediately without calling Element.animate.
+    setReducedMotionPreference('on');
+    const callsBeforeReduced = animateCalls;
+    list.scrollTop = 0;
+    fireEvent.scroll(list);
+    act(() => {
+      scrollArea.dispatchEvent(new WheelEvent('wheel', { deltaY: -80, bubbles: true, cancelable: true }));
+    });
+    expect(header.classList.contains('is-collapsed')).toBe(false);
+    expect(animateCalls).toBe(callsBeforeReduced);
+    // A trackpad flick drifts sideways and coasts into the top as a tail of small deltas; their sum
+    // still restores the header.
+    act(() => {
+      scrollArea.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
+    });
+    expect(header.classList.contains('is-collapsed')).toBe(true);
+    act(() => {
+      for (const deltaY of [-9, -8, -6, -5]) {
+        scrollArea.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaX: 1.5, bubbles: true, cancelable: true }));
+      }
+    });
+    expect(header.classList.contains('is-collapsed')).toBe(false);
+  });
+
+  it('auto-collapses on mobile downward touch scroll and restores on top pull-down or footer restore tap', () => {
+    installTouchMatchMedia(true);
+    const events = makeSyntheticEvents(60);
+    const { container } = renderWithOmc(<StreamHarness items={events} />);
+
+    const page = container.querySelector<HTMLElement>('.request-events-page')!;
+    const header = container.querySelector<HTMLElement>('.request-collapsible-header')!;
+    const scrollArea = container.querySelector<HTMLElement>('.request-table-scroll-area')!;
+    const list = container.querySelector<HTMLElement>('.request-list')!;
+    page.dataset.headerSpace = '220';
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 600 });
+    // Overflow (200px) smaller than headerSpace (220px) + 140px must NOT auto-collapse or clamp scrollTop.
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 800 });
+    list.scrollTop = 64;
+    fireEvent.scroll(list);
+    expect(header.classList.contains('is-collapsed')).toBe(false);
+
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 4_320 });
+    const searchInput = screen.getByLabelText('Search requests');
+    searchInput.focus();
+    expect(document.activeElement).toBe(searchInput);
+
+    // Downward touch scroll past 50px with ample overflow auto-collapses the header, marks it inert,
+    // and rescues focus from any active header control onto the visible restore button.
+    list.scrollTop = 96;
+    fireEvent.scroll(list);
+    expect(header.classList.contains('is-collapsed')).toBe(true);
+    expect(header.hasAttribute('inert')).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('.req-restore-header-btn'));
+
+    // Returning to row 1 and pulling down >= 28px restores the header on touch screens.
+    list.scrollTop = 0;
+    fireEvent.scroll(list);
+    fireEvent.touchStart(scrollArea, {
+      touches: [{ identifier: 1, clientX: 180, clientY: 220 }],
+    });
+    fireEvent.touchMove(scrollArea, {
+      touches: [{ identifier: 1, clientX: 182, clientY: 256 }],
+    });
+    fireEvent.touchEnd(scrollArea, { touches: [] });
+    expect(header.classList.contains('is-collapsed')).toBe(false);
+
+    // Activating the focused expand button transfers keyboard focus to the footer restore button, and back on restore.
+    const expandBtn = container.querySelector<HTMLElement>('[data-fold-control="expand"]')!;
+    const restoreBtn = container.querySelector<HTMLElement>('.req-restore-header-btn')!;
+    expandBtn.focus();
+    expect(document.activeElement).toBe(expandBtn);
+    fireEvent.click(expandBtn);
+    expect(header.classList.contains('is-collapsed')).toBe(true);
+    expect(restoreBtn.style.display).not.toBe('none');
+    expect(document.activeElement).toBe(restoreBtn);
+    fireEvent.click(restoreBtn);
+    expect(header.classList.contains('is-collapsed')).toBe(false);
+    expect(header.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(expandBtn);
+  });
+
+  it('compensates scrollTop when an overscanned row above the viewport measures taller than default', () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+
+    installTouchMatchMedia(false);
+    const events = makeSyntheticEvents(40);
+    const { container } = renderWithOmc(<StreamHarness items={events} />);
+    const list = container.querySelector<HTMLElement>('.request-list')!;
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, left: 0, right: 800, width: 800, height: 400, x: 0, y: 100, toJSON: () => ({}),
+    });
+
+    list.scrollTop = 300;
+    fireEvent.scroll(list);
+
+    const rows = container.querySelectorAll<HTMLElement>('.request-list-item');
+    const aboveRow = rows[0]!;
+    vi.spyOn(aboveRow, 'getBoundingClientRect').mockReturnValue({
+      top: -10, bottom: 90, left: 0, right: 800, width: 800, height: 100, x: 0, y: -10, toJSON: () => ({}),
+    });
+
+    act(() => {
+      for (const callback of callbacks) {
+        callback(
+          [{ target: aboveRow, contentRect: { width: 800, height: 100 } } as unknown as ResizeObserverEntry],
+          {} as ResizeObserver,
+        );
+      }
+    });
+
+    // Default row height is 72px; measuring 100px above viewportTop (100) adds +28px to scrollTop.
+    expect(list.scrollTop).toBe(328);
+  });
+
+  it('holds scrolled rows steady when live updates arrive and reveals them on back-to-top', () => {
+    installTouchMatchMedia(false);
+    const initial = makeSyntheticEvents(40);
+    let pushItems: ((next: UsageEvent[], arrived: number) => void) | undefined;
+    function LiveHarness() {
+      const [state, setState] = useState<{ items: UsageEvent[]; arrivedCount?: number }>({
+        items: initial,
+      });
+      pushItems = (next, arrived) => setState({ items: next, arrivedCount: arrived });
+      return <StreamHarness items={state.items} arrivedCount={state.arrivedCount} />;
+    }
+    const { container } = renderWithOmc(<LiveHarness />);
+    const list = container.querySelector<HTMLElement>('.request-list')!;
+
+    list.scrollTop = 240;
+    fireEvent.scroll(list);
+    const snapshotBeforeArrival = screen.getAllByTestId('virtual-req-row').map((el) => el.textContent);
+
+    const newer: UsageEvent[] = [
+      { ...initial[0], id: 42, event_key: 'evt-new-2' },
+      { ...initial[0], id: 41, event_key: 'evt-new-1' },
+      ...initial,
+    ];
+    act(() => {
+      pushItems!(newer, 2);
+    });
+
+    // Held rows and scroll offset remain frozen while reading down the list.
+    expect(list.scrollTop).toBe(240);
+    expect(screen.getAllByTestId('virtual-req-row').map((el) => el.textContent)).toEqual(snapshotBeforeArrival);
+    expect(screen.queryByText('row-42')).toBeNull();
+    const backBtn = container.querySelector<HTMLButtonElement>('.req-back-to-top-btn.is-live');
+    expect(backBtn).not.toBeNull();
+    expect(backBtn?.textContent).toContain('2 new records');
+
+    fireEvent.click(backBtn!);
+    expect(screen.getAllByTestId('virtual-req-row')[0].textContent).toBe('row-42');
+  });
+
+  it('bands records within each group, so interleaved groups still alternate from their header', () => {
+    const items = [
+      { id: 'a1', group: 'A' },
+      { id: 'b1', group: 'B' },
+      { id: 'a2', group: 'A' },
+      { id: 'a3', group: 'A' },
+    ];
+    const { container } = renderWithOmc(
+      <RequestVirtualList
+        items={items}
+        getItemKey={(item) => item.id}
+        group={{ key: (item) => item.group, title: (key) => key }}
+        renderItem={(item) => <div data-testid="grouped-row">{item.id}</div>}
+      />,
+    );
+    expect(screen.getAllByTestId('grouped-row').map((row) => row.textContent)).toEqual(['a1', 'a2', 'a3', 'b1']);
+    const bandsByGroup = [...container.querySelectorAll('.request-group-body')].map((body) =>
+      [...body.querySelectorAll('.request-list-item')].map((row) => (row.classList.contains('is-odd') ? 'odd' : 'even')));
+    expect(bandsByGroup).toEqual([['odd', 'even', 'odd'], ['odd']]);
+  });
+
+  it('loads records before facets and cancels obsolete reads when the window changes', async () => {
+    const api = installOmcApi({
+      preferences: { usage_events_view: { preset: '24h', limit: 100, grouping: 'time' } },
+    });
+    api.on('GET', '/usage/ingest-status', () => ({ enabled: false }));
+    api.on('GET', '/usage/events', () => ({ items: makeSyntheticEvents(2), has_more: false }));
+    api.on('GET', '/usage/facets', () => ({
+      facets: Object.fromEntries(USAGE_FACET_KEYS.map(key => [key, []])),
+    }));
+    const firstPage = api.hold('GET', '/usage/events');
+    const firstFacets = api.hold('GET', '/usage/facets');
+    const router = createMemoryRouter([{ path: '/usage/events', element: <UsageEventsPage /> }], {
+      initialEntries: ['/usage/events?preset=30d'],
+    });
+    const { container } = renderWithOmc(<ThemeProvider><TokenDisplayProvider><RouterProvider router={router} /></TokenDisplayProvider></ThemeProvider>);
+
+    await firstPage.arrived;
+    expect(api.requests.filter(request => request.path === '/usage/facets')).toHaveLength(0);
+    firstPage.release();
+    const obsoleteFacets = await firstFacets.arrived;
+    expect(container.querySelector('.request-pagination')?.textContent).toContain('Page 1, 2 records');
+
+    const nextPage = api.hold('GET', '/usage/events');
+    const nextFacets = api.hold('GET', '/usage/facets');
+    await act(async () => { await router.navigate('/usage/events?preset=90d'); });
+    const obsoletePage = await nextPage.arrived;
+    expect(obsoleteFacets.init.signal?.aborted).toBe(true);
+    expect(api.requests.filter(request => request.path === '/usage/facets')).toHaveLength(1);
+
+    const latestPage = api.hold('GET', '/usage/events');
+    await act(async () => { await router.navigate('/usage/events?preset=7d'); });
+    await latestPage.arrived;
+    expect(obsoletePage.init.signal?.aborted).toBe(true);
+    expect(api.requests.filter(request => request.path === '/usage/facets')).toHaveLength(1);
+    firstFacets.release();
+    nextPage.release();
+    latestPage.release();
+    expect((await nextFacets.arrived).query.get('preset')).toBe('7d');
+    nextFacets.release();
+    await waitFor(() => expect(container.querySelector('.request-pagination')?.textContent).not.toContain('Updating'));
+  });
+
+  it('refetches live SSE signals in place without blinking Updating in the footer, while still showing Updating on page changes', async () => {
+    const sseListeners = new Map<string, Set<() => void>>();
+    vi.stubGlobal('EventSource', class {
+      static readonly CLOSED = 2;
+      readyState = 1;
+      addEventListener(type: string, handler: () => void) {
+        const set = sseListeners.get(type) ?? new Set();
+        set.add(handler);
+        sseListeners.set(type, set);
+      }
+      removeEventListener(type: string, handler: () => void) {
+        sseListeners.get(type)?.delete(handler);
+      }
+      close() {}
+    });
+
+    const initialEvents = makeSyntheticEvents(2);
+    const api = installOmcApi({
+      preferences: {
+        omc_models_view: 'model',
+        omc_request_model_icons: false,
+        usage_events_view: { preset: '24h', limit: 100, grouping: 'time' },
+      },
+    });
+    api.on('GET', '/usage/ingest-status', () => ({ enabled: true, healthy: true, collector: { mode: 'subscribe', running: true, captured: 2 }, stats: { pending: 0 } }));
+    api.on('GET', '/usage/facets', () => ({ facets: Object.fromEntries(USAGE_FACET_KEYS.map(key => [key, []])) }));
+    api.on('GET', '/usage/events', (req) => {
+      const cursor = req.query.get('cursor');
+      if (cursor === 'page-2') {
+        return { items: [{ ...initialEvents[0], id: 99, event_key: 'evt-p2' }], has_more: false };
+      }
+      return { items: initialEvents, has_more: true, next_cursor: 'page-2' };
+    });
+
+    const router = createMemoryRouter([{ path: '/usage/events', element: <UsageEventsPage /> }], { initialEntries: ['/usage/events?preset=24h'] });
+    const { container } = renderWithOmc(<ThemeProvider><TokenDisplayProvider><RouterProvider router={router} /></TokenDisplayProvider></ThemeProvider>);
+
+    const pagination = () => container.querySelector<HTMLElement>('.request-pagination')!;
+    await waitFor(() => expect(pagination().textContent).toContain('Page 1, 2 records'));
+
+    // Connect SSE (`ready` sets liveState = 'live'), then hold the next `/usage/events` fetch
+    // and emit a `usage` signal as the demo Worker and live gateway do.
+    const liveReadHold = api.hold('GET', '/usage/events');
+    act(() => {
+      for (const listener of sseListeners.get('ready') ?? []) listener();
+      for (const listener of sseListeners.get('usage') ?? []) listener();
+    });
+    await liveReadHold.arrived;
+
+    // Footer must remain calm: no "Updating", no "Previous results", refresh button not busy,
+    // and Next page stays clickable during a background live refresh.
+    expect(pagination().textContent).not.toContain('Updating');
+    expect(pagination().textContent).not.toContain('Previous results');
+    const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
+    expect(refreshBtn.getAttribute('aria-busy')).toBe('false');
+    const nextBtn = screen.getByRole('button', { name: 'Next' });
+    expect((nextBtn as HTMLButtonElement).disabled).toBe(false);
+
+    await act(async () => {
+      liveReadHold.release();
+      await Promise.resolve();
+    });
+
+    // By contrast, navigating to page 2 IS a reader view change and DOES show Updating while pending.
+    const nextPageHold = api.hold('GET', '/usage/events');
+    fireEvent.click(nextBtn);
+    const nextPageRequest = await nextPageHold.arrived;
+    expect(nextPageRequest.query.get('cursor')).toBe('page-2');
+    await waitFor(() => expect(pagination().textContent).toContain('Updating'));
+
+    nextPageHold.release();
+    await waitFor(() => {
+      expect(pagination().textContent).toContain('Page 2, 1 records');
+      expect(pagination().textContent).not.toContain('Updating');
+    });
+
+    for (const limit of [25, 50]) {
+      fireEvent.click(screen.getByRole('combobox', { name: 'Page size' }));
+      expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
+        '25 / page', '50 / page', '100 / page', '250 / page', '500 / page',
+      ]);
+      fireEvent.click(screen.getByRole('option', { name: `${limit} / page` }));
+      await waitFor(() => expect(pagination().textContent).toContain('Page 1, 2 records'));
+      await waitFor(() => expect(api.preferenceWrites()).toContainEqual(expect.objectContaining({
+        key: 'usage_events_view', value: expect.objectContaining({ limit }),
+      })));
+      expect(api.requests.filter(request => request.path === '/usage/events').at(-1)?.query.get('limit')).toBe(String(limit));
+      expect(api.requests.filter(request => request.path === '/usage/events').at(-1)?.query.has('cursor')).toBe(false);
+    }
+  });
 });

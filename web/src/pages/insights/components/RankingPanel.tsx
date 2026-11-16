@@ -1,7 +1,7 @@
 import { useInsightsFormat } from '../useInsightsFormat';
 import React from 'react';
 import clsx from 'clsx';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { Panel } from '../../../components/common/Panel';
 import { PanelTitle } from '../../../components/common/PanelTitle';
 import { EmptyState } from '../../../components/common/EmptyState';
@@ -13,10 +13,10 @@ import { PanelNarrowing } from './PanelNarrowing';
 import { useT } from '../../../i18n';
 import type { InsightsCompareWindow } from '../../../types/insights';
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
-import { compareMetric, NO_COMPARISON, rankingMetric, type InsightsDimension, type InsightsMetric, type RankedGroup } from '../insightsCube';
-import { formatShare } from '../insightsFormat';
+import { compareMetric, NO_COMPARISON, rankingMetric, type InsightsDimension, type InsightsMetric, type RankedGroup } from '../../../types/insightsCube';
+import { formatShare } from '../../../types/insightsFormat';
 import { ComparisonText } from './ComparisonText';
-import type { InsightsLabels } from '../useInsightsLabels';
+import type { InsightsLabels } from '../../../hooks/useInsightsLabels';
 import styles from '../insights.module.css';
 
 /** Past this many groups an unfolded ranking can be searched; a hundred credentials are not scanned by eye. */
@@ -99,7 +99,7 @@ export const RankingPanel: React.FC<RankingPanelProps> = ({
           <FilterTransition itemKeys={shown.map((group) => group.id)}>
             {shown.map((group) => {
               const color = colorOf?.(group.id);
-              const comparison = group.previous ? compareMetric(group.measures, group.previous, ranking) : NO_COMPARISON;
+              const comparison = group.previous ? compareMetric(group.measures, group.previous, ranking, group.previousRaw ?? undefined) : NO_COMPARISON;
               const isSelected = selected.includes(group.id);
               const width = top > 0 && group.value !== null ? Math.max(2, (group.value / top) * 100) : 0;
               return (
@@ -109,12 +109,11 @@ export const RankingPanel: React.FC<RankingPanelProps> = ({
                       type: 'button' as const,
                       'aria-pressed': isSelected,
                       onClick: () => onSelect(dimension, group.id),
-                      title: t(isSelected ? 'insights.click_to_unfilter' : 'insights.click_to_filter'),
                     } : {})}
                     className={clsx(styles['ranking-row'], onSelect && styles['ranking-row-interactive'], isSelected && styles['ranking-row-selected'])}
                   >
                     <InsightsValue dimension={dimension} id={group.id} labels={labels} hasDetail />
-                    <span className={styles['ranking-value']} title={formatMetricExact(ranking, group.value)}>
+                    <span className={styles['ranking-value']} data-tip={formatMetricExact(ranking, group.value)}>
                       {formatMetric(ranking, group.value, style)}
                     </span>
                     <span className={styles['ranking-share']}>
@@ -133,7 +132,7 @@ export const RankingPanel: React.FC<RankingPanelProps> = ({
                       className={styles['ranking-open']}
                       onClick={() => onOpen(group.id)}
                       aria-label={t('insights.open_detail')}
-                      title={t('insights.open_detail')}
+                      data-tip={t('insights.open_detail')}
                     >
                       <RightOutlined />
                     </button>
@@ -146,8 +145,8 @@ export const RankingPanel: React.FC<RankingPanelProps> = ({
       )}
       {groups.length > limit && (
         <Button
-          type="text"
-          size="small"
+          variant="ghost"
+          size="sm"
           className={styles['ranking-more']}
           onClick={() => { setExpanded((value) => !value); setSearch(''); }}
           aria-expanded={isExpanded}

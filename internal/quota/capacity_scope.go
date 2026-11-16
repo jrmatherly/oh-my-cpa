@@ -7,7 +7,7 @@ import (
 	"github.com/oh-my-cpa/oh-my-cpa/internal/usage"
 )
 
-var CLAUDE_FAMILY_PATTERN = regexp.MustCompile(`^claude-(?:(sonnet|opus|haiku)(?:-|$)|[0-9]+(?:[.-][0-9]+)*-(sonnet|opus|haiku)(?:-|$))`)
+var CLAUDE_FAMILY_PATTERN = regexp.MustCompile(`^claude-(?:(sonnet|opus|haiku|fable|mythos)(?:-|$)|[0-9]+(?:[.-][0-9]+)*-(sonnet|opus|haiku|fable|mythos)(?:-|$))`)
 
 // ModelWindowUsage groups traffic by the best available upstream identity. A
 // client alias without a served model is not evidence of its metered family.
@@ -49,6 +49,9 @@ func capacityModelFamily(model string) string {
 	if model == "fable" {
 		return "fable"
 	}
+	if model == "o1" || model == "o3" || model == "o4" || strings.HasPrefix(model, "o1-") || strings.HasPrefix(model, "o3-") || strings.HasPrefix(model, "o4-") {
+		return "openai-o"
+	}
 	return ""
 }
 
@@ -89,10 +92,31 @@ func windowModelFamilies(window QuotaWindow) []string {
 
 func isKnownCapacityFamily(family string) bool {
 	switch family {
-	case "claude", "claude-sonnet", "claude-opus", "claude-haiku", "gemini", "gemini-3-pro", "gemini-3-flash", "gemini-4-argon", "gpt", "fable":
+	case "claude", "claude-sonnet", "claude-opus", "claude-haiku", "claude-fable", "claude-mythos", "gemini", "gemini-3-pro", "gemini-3-flash", "gemini-4-argon", "gpt", "openai-o", "fable":
 		return true
 	}
 	return false
+}
+
+func matchWindowModelScope(families []string, exactModel, rawModel string) (isMatch bool, isUnknownFamily bool) {
+	model := normalizeCapacityModel(rawModel)
+	family := capacityModelFamily(model)
+	if len(families) == 0 {
+		// Only harmless spelling differences are removed; fuzzy aliases never
+		// expand an exact model's quota scope.
+		isMatch = model != "" && !usage.IsModelSubstituted(exactModel, model)
+	} else {
+		for _, meteredFamily := range families {
+			if family == meteredFamily ||
+				meteredFamily == "claude" && strings.HasPrefix(family, "claude-") ||
+				meteredFamily == "gpt" && family == "openai-o" ||
+				meteredFamily == "fable" && family == "claude-fable" ||
+				strings.HasPrefix(meteredFamily, "gemini-") && (model == meteredFamily || strings.HasPrefix(model, meteredFamily+"-")) {
+				isMatch = true
+			}
+		}
+	}
+	return isMatch, !isMatch && family == ""
 }
 
 // SelectWindowUsage counts identified models and records unclassified traffic
@@ -111,29 +135,43 @@ func SelectWindowUsage(window QuotaWindow, groups []ModelWindowUsage) (WindowUsa
 		}
 	}
 	for _, group := range groups {
-		model := normalizeCapacityModel(group.Model)
-		family := capacityModelFamily(model)
-		isMatch := false
-		if len(families) == 0 {
-			// Only harmless spelling differences are removed; fuzzy aliases never
-			// expand an exact model's quota scope.
-			isMatch = model != "" && !usage.IsModelSubstituted(exactModel, model)
-		} else {
-			for _, meteredFamily := range families {
-				if family == meteredFamily || meteredFamily == "claude" && strings.HasPrefix(family, "claude-") || strings.HasPrefix(meteredFamily, "gemini-") && (model == meteredFamily || strings.HasPrefix(model, meteredFamily+"-")) {
-					isMatch = true
-				}
-			}
-		}
-		if !isMatch && family == "" {
+		isMatch, isUnknown := matchWindowModelScope(families, exactModel, group.Model)
+		if isUnknown {
 			total.UnmatchedRequests += group.Usage.Requests
 		}
 		if isMatch {
 			total.Requests += group.Usage.Requests
 			total.PricedRequests += group.Usage.PricedRequests
 			total.Tokens += group.Usage.Tokens
+			total.PromptTokens += group.Usage.PromptTokens
+			total.CachedTokens += group.Usage.CachedTokens
 			total.CostNanos += group.Usage.CostNanos
 		}
 	}
+	total.CacheRate = ComputeCacheRate(total.CachedTokens, total.PromptTokens)
 	return total, ""
+}
+
+// IsModelInWindowScope reports whether a model name belongs to the quota pool
+// that window meters.
+func IsModelInWindowScope(window QuotaWindow, rawModel string) bool {
+	name := strings.TrimSpace(rawModel)
+	if name == "" || strings.EqualFold(name, "unknown") {
+		return false
+	}
+	if window.Scope != "model" && window.Scope != "group" {
+		return window.Scope == "standard"
+	}
+	families := windowModelFamilies(window)
+	exactModel := normalizeCapacityModel(window.Model)
+	if window.Scope == "group" && len(families) == 0 || window.Scope == "model" && len(families) == 0 && exactModel == "" {
+		return false
+	}
+	for _, family := range families {
+		if !isKnownCapacityFamily(family) {
+			return false
+		}
+	}
+	isMatch, _ := matchWindowModelScope(families, exactModel, name)
+	return isMatch
 }

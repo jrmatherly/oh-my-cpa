@@ -27,28 +27,74 @@ export interface LanguageOption {
   readonly id: string;
   readonly name: string;
   readonly code: string;
-  readonly country: string;
   readonly locale: string;
 }
 
 export const LANGUAGES = [
-  { id: 'zh', name: '简体中文', code: '中', country: 'CN', locale: 'zh-CN' },
+  { id: 'zh', name: '简体中文', code: '中', locale: 'zh-CN' },
   // Hong Kong usage (軟件, 網絡, 密鑰, 帳戶). The id stays `zh-Hant` because stored preferences
   // already name it; the locale says which Traditional Chinese the catalog is written in.
-  { id: 'zh-Hant', name: '繁體中文', code: '繁', country: 'HK', locale: 'zh-HK' },
-  { id: 'en', name: 'English', code: 'EN', country: 'US', locale: 'en' },
-  { id: 'ms', name: 'Bahasa Melayu', code: 'MS', country: 'MY', locale: 'ms-MY' },
+  { id: 'zh-Hant', name: '繁體中文', code: '繁', locale: 'zh-HK' },
+  { id: 'en', name: 'English', code: 'EN', locale: 'en' },
+  { id: 'ms', name: 'Bahasa Melayu', code: 'MS', locale: 'ms-MY' },
 ] as const satisfies readonly LanguageOption[];
 
 export type Lang = (typeof LANGUAGES)[number]['id'];
 
-/** The language a first visit reads, and the one a catalog that cannot be fetched falls back to. */
+/**
+ * The language a visit reads when nothing else names one: no choice saved in this browser, no
+ * language pinned by the deployment, and a browser asking for a language the console does not
+ * read. It is shipped with the entry, which is what makes it a fallback at all: a deferred
+ * catalog that failed is exactly the one that could not be fetched.
+ */
 export const DEFAULT_LANG: Lang = 'zh';
 
 export const LANG_KEY = 'omc-lang';
 
 export function isLang(value: unknown): value is Lang {
   return LANGUAGES.some((language) => language.id === value);
+}
+
+/**
+ * The registered language a browser's preferred tags ask for, or `undefined` when they name none.
+ *
+ * Tags are matched by primary subtag, because a region is not a reading language: `en-GB` and
+ * `en-US` both read `en`, and `ms-SG` reads `ms`. Chinese is the one language whose two catalogs
+ * are two scripts rather than two regions, so the tags that ask for the Traditional script -
+ * `zh-Hant*`, and the regions that write it, Taiwan, Hong Kong and Macao - read `zh-Hant`, and
+ * every other Chinese tag reads `zh`.
+ */
+export function matchBrowserLanguage(tags: readonly string[]): Lang | undefined {
+  for (const tag of tags) {
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) continue;
+    const primary = normalized.split('-')[0];
+    if (primary === 'zh') {
+      return /(^|-)hant(-|$)/.test(normalized) || /^zh-(tw|hk|mo)(-|$)/.test(normalized) ? 'zh-Hant' : 'zh';
+    }
+    const match = LANGUAGES.find((language) => language.locale.toLowerCase().split('-')[0] === primary);
+    if (match) return match.id;
+  }
+  return undefined;
+}
+
+/**
+ * The reading language a visit starts in: the choice this browser saved, else the language the
+ * deployment pinned (`OMCPA_DEFAULT_LANGUAGE`), else the first language the browser asks for that
+ * the console reads, else the built-in one.
+ *
+ * An unrecognized value falls through to the next source, so a stale stored id, or a document
+ * served without runtime configuration, still renders a language the console has rather than
+ * nothing.
+ */
+export function resolveInitialLang(
+  stored: unknown,
+  configuredDefault: unknown,
+  browserLanguages: readonly string[],
+): Lang {
+  if (isLang(stored)) return stored;
+  if (isLang(configuredDefault)) return configuredDefault;
+  return matchBrowserLanguage(browserLanguages) ?? DEFAULT_LANG;
 }
 
 /**

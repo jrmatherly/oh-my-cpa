@@ -1,11 +1,18 @@
 
-import { Button, Select } from 'antd';
+import { MetaLine } from '../common/MetaLine';
+import React from 'react';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { LeftOutlined, RightOutlined } from '../icons';
 
 import { useT } from '../../i18n';
 import { Tooltip } from '../common/Tooltip';
+import { RequestRestoreButton } from './RequestFoldControls';
+import type { ViewFlag } from './viewFlag';
 
 interface RequestPaginationProps {
+  collapse?: ViewFlag;
+  onRestoreHeader?: () => void;
   /** The last successful page is on screen while a newer one is in flight. */
   stale: boolean;
   isPlaceholderData: boolean;
@@ -21,6 +28,9 @@ interface RequestPaginationProps {
   onPageSizeChange: (limit: number) => void;
   onPrev: () => void;
   onNext: () => void;
+  /** Floats over the list's foot (the selection bar). Hung from this footer, it rides the header
+   *  fold with it instead of the stream's offset, so it always stands just above the footer. */
+  dock?: React.ReactNode;
 }
 
 /**
@@ -31,7 +41,9 @@ interface RequestPaginationProps {
  * back down the stack they already walked up: the control states come from that
  * stack, not from a total count the list never asks the server for.
  */
-export function RequestPagination({
+export const RequestPagination = React.memo(function RequestPagination({
+  collapse,
+  onRestoreHeader,
   stale,
   isPlaceholderData,
   page,
@@ -45,24 +57,31 @@ export function RequestPagination({
   onPageSizeChange,
   onPrev,
   onNext,
+  dock,
 }: RequestPaginationProps) {
   const t = useT();
 
   return (
 
         <footer className="request-pagination">
+          {dock && <div className="request-selection-dock">{dock}</div>}
           <span aria-live="polite">
-            {stale
-              ? t('events.previous_results')
-              : t('events.page_loaded', { page, n: count })}
-            {isPlaceholderData && ` · ${t('events.updating')}`}
+            <MetaLine>
+              {stale
+                ? t('events.previous_results')
+                : t('events.page_loaded', { page, n: count })}
+              {isPlaceholderData && t('events.updating')}
+            </MetaLine>
           </span>
           <div className="request-actions">
+            {collapse && onRestoreHeader && (
+              <RequestRestoreButton collapse={collapse} onRestore={onRestoreHeader} />
+            )}
             <Select
               aria-label={t('events.page_size')}
               value={limit}
               onChange={onPageSizeChange}
-              options={Array.from(new Set([100, 250, 500, limit]))
+              options={Array.from(new Set([25, 50, 100, 250, 500, limit]))
                 .sort((a, b) => a - b)
                 .map((value) => ({ value, label: t('events.per_page', { n: value }) }))}
             />
@@ -85,4 +104,4 @@ export function RequestPagination({
           </div>
         </footer>
   );
-}
+});

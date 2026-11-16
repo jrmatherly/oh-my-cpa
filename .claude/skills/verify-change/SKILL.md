@@ -1,6 +1,6 @@
 ---
 name: verify-change
-description: Choose and run the verification checks that cover the files changed in this repo, following the test pyramid in docs/testing.md. Use before declaring any code change in oh-my-cpa complete, when asked to "verify", "run the checks", "what tests should I run", or after editing Go, web/src, migrations, scripts or docs.
+description: Choose and run the verification checks that cover the files changed in this repo, following the test pyramid in docs/dev/testing.md. Use before declaring any code change in oh-my-cpa complete, when asked to "verify", "run the checks", "what tests should I run", or after editing Go, web/src, migrations, scripts or docs.
 argument-hint: "[base-ref] [--run]"
 ---
 
@@ -14,13 +14,13 @@ Run the lowest layer that can detect the real failure, and only the layers the c
 
 The script lists the commands that cover the diff against the base ref (default `HEAD`, including untracked files). With `--run` it executes them in order and reports each failure.
 
-How the mapping follows docs/testing.md:
+How the mapping follows docs/dev/testing.md:
 
 | Changed | Checks |
 | --- | --- |
 | `*.go` | `gofmt -l`, `go test -short` on the touched packages, `golangci-lint run` on them |
 | `migrations/` | repository tests, which open a fresh database through the whole chain |
-| `web/src`, `web/tests` | `type-check`, `test:logic`; `test:components` for components; `check-css-modules`, `check:feedback`, `lint:antd` for TSX; `check-i18n` for catalogs |
+| `web/src`, `web/tests` | `type-check`, `test:logic`; `test:components` for components; `check-css-modules`, `check:feedback` for TSX; `check-i18n` for catalogs |
 | `scripts/` | `type-check:tooling`, `test:self` |
 | `*.md` | `check-docs` |
 | `internal/api`, `internal/demo` | `check:demo` (the Cloudflare demo dataset is generated from these handlers) |

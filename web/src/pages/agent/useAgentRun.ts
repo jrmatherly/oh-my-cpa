@@ -108,9 +108,9 @@ export function useAgentRun(options: AgentRunOptions): AgentRunControls {
   const [startedAtMS, setStartedAtMS] = React.useState(0);
   const [replacedTurnID, setReplacedTurnID] = React.useState('');
 
-  const controllerRef = React.useRef<AbortController>();
+  const controllerRef = React.useRef<AbortController | undefined>(undefined);
   const runIDRef = React.useRef('');
-  const publishTimerRef = React.useRef<ReturnType<typeof setTimeout>>();
+  const publishTimerRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The live frame. Held outside React state so a burst of tokens costs one render per
   // publish interval rather than one per token.
   const frameRef = React.useRef<RunFrame>(EMPTY_FRAME);
@@ -197,7 +197,13 @@ export function useAgentRun(options: AgentRunOptions): AgentRunControls {
         frameRef.current = applyAgentEvent(frameRef.current, event);
         // A capability that changed something names the views it invalidated; refreshing them
         // here is what keeps the rest of the console consistent with what the agent just did.
-        for (const key of invalidatedKeys(event)) void queryClient.invalidateQueries({ queryKey: [key] });
+        for (const key of invalidatedKeys(event)) {
+          void queryClient.invalidateQueries({ queryKey: [key] });
+          if (key === 'management-providers' || key === 'management-auth-files' || key === 'management-plugins') {
+            void queryClient.invalidateQueries({ queryKey: ['management-providers-sanitized'] });
+            void queryClient.invalidateQueries({ queryKey: ['management-identity-directory'] });
+          }
+        }
         schedule();
       }
       if (controllerRef.current !== controller) return;

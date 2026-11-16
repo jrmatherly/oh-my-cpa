@@ -1,18 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { App as AntdApp, Button, Segmented } from 'antd';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { DeleteOutlined, SaveOutlined } from '../icons';
 import { CredentialMark } from '../LobeIcon';
 import { providerDisplayName } from '../../types/providerMetadata';
 import { type PluginOAuthLogos } from '../../types/pluginOAuthProviders';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import {
+  useOptimisticOAuthAliasesMutation,
+  useOptimisticOAuthExcludedModelsMutation,
+} from '../../hooks/useConfigMutations';
 import { api, ApiError } from '../../api/client';
 import { useT, type TFunc } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
-import type {
-  ManagementOAuthExcludedModelsResponse,
-  ManagementOAuthModelAlias,
-  ManagementOAuthModelAliasesResponse,
-} from '../../types/managementOAuthModelAlias';
 import {
   createOAuthModelAliasDrafts,
   isValidOAuthModelAliasProvider,
@@ -26,10 +25,11 @@ import { excludedModelRulesEqual, normalizeExcludedModelRules } from './oauthExc
 import { OAuthExcludedModelsPanel, type OAuthModelCatalogState } from './OAuthExcludedModelsPanel';
 import { OAuthModelAliasPanel } from './OAuthModelAliasPanel';
 import styles from './OAuthModelRulesDrawer.module.css';
-import { LoadFailure, Notice, useToast } from '../feedback';
+import { LoadFailure, Notice, useConfirmModal, useToast } from '../feedback';
 import { EmptyState } from '../common/EmptyState';
 import { ListLoading } from '../common/PageLoading';
 import { SearchSelect } from '../common/SearchSelect';
+import { Tooltip } from '../common/Tooltip';
 import { AppDrawer } from '../common/AppDrawer';
 
 export type OAuthModelRulesSection = 'aliases' | 'excluded';
@@ -41,6 +41,8 @@ interface OAuthModelRulesDrawerProps {
   providerOptions: string[];
   pluginLogos?: PluginOAuthLogos;
   pluginTitles?: ReadonlyMap<string, string>;
+  /** The provider to open on, when the drawer is reached from a scoped view or one credential. */
+  initialProvider?: string;
 }
 
 const ALIASES_QUERY_KEY = ['management-oauth-model-aliases'] as const;
@@ -89,13 +91,12 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
   providerOptions,
   pluginLogos,
   pluginTitles,
+  initialProvider,
 }) => {
   const t = useT();
-  const isDemo = isDemoMode();
-  const { modal } = AntdApp.useApp();
+  const modal = useConfirmModal();
   const toast = useToast();
-  const queryClient = useQueryClient();
-  const [section, setSection] = useState<OAuthModelRulesSection>('aliases');
+  const [section, setSection] = useState<OAuthModelRulesSection>('excluded');
   const [selectedProvider, setSelectedProvider] = useState('');
   const [providerSearch, setProviderSearch] = useState('');
   const [aliasDrafts, setAliasDrafts] = useState<ManagementOAuthModelAliasDraft[]>([]);
@@ -176,17 +177,19 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
   const isSettled = !aliasesQuery.isLoading && !excludedQuery.isLoading;
   useEffect(() => {
     if (!open || !isSettled || selectedProvider) return;
-    // Open on a provider that already carries rules, so the drawer shows the
-    // configuration that exists rather than an empty editor for the first name.
-    const first = knownProviders.find((value) => savedAliases?.[value]?.length || savedRules?.[value]?.length)
+    // Open on the provider asked for, else one that already carries rules, so the drawer
+    // shows the configuration that exists rather than an empty editor for the first name.
+    const requested = normalizeOAuthModelAliasProvider(initialProvider ?? '');
+    const first = (requested && isValidOAuthModelAliasProvider(requested) ? requested : undefined)
+      ?? knownProviders.find((value) => savedAliases?.[value]?.length || savedRules?.[value]?.length)
       ?? knownProviders[0]
       ?? '';
     if (first) loadProvider(first);
-  }, [isSettled, knownProviders, loadProvider, open, savedAliases, savedRules, selectedProvider]);
+  }, [initialProvider, isSettled, knownProviders, loadProvider, open, savedAliases, savedRules, selectedProvider]);
 
   useEffect(() => {
     if (!open) {
-      setSection('aliases');
+      setSection('excluded');
       setSelectedProvider('');
       setProviderSearch('');
       setAliasDrafts([]);
@@ -196,34 +199,20 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
     }
   }, [open]);
 
-  const aliasMutation = useMutation({
-    mutationFn: ({ target, aliases }: { target: string; aliases: ManagementOAuthModelAlias[] }) =>
-      api.patchManagementOAuthModelAliases(target, aliases),
-    onSuccess: (response, variables) => {
-      queryClient.setQueryData(ALIASES_QUERY_KEY, (current: ManagementOAuthModelAliasesResponse | undefined) => {
-        const aliases = { ...(current?.aliases ?? {}) };
-        if (response.aliases.length > 0) aliases[variables.target] = response.aliases;
-        else delete aliases[variables.target];
-        return { aliases };
-      });
-      const next = createOAuthModelAliasDrafts(response.aliases);
+  const aliasMutation = useOptimisticOAuthAliasesMutation({
+    formatError: (error) => safeError(error, t),
+    onSuccess: (_provider, aliases) => {
+      const next = createOAuthModelAliasDrafts(aliases);
       setAliasDrafts(next);
       setAliasBaseline(next);
       onSaved();
     },
   });
-  const ruleMutation = useMutation({
-    mutationFn: ({ target, models }: { target: string; models: string[] }) =>
-      api.patchManagementOAuthExcludedModels(target, models),
-    onSuccess: (response, variables) => {
-      queryClient.setQueryData(EXCLUDED_QUERY_KEY, (current: ManagementOAuthExcludedModelsResponse | undefined) => {
-        const excluded = { ...(current?.excluded_models ?? {}) };
-        if (response.models.length > 0) excluded[variables.target] = response.models;
-        else delete excluded[variables.target];
-        return { excluded_models: excluded };
-      });
-      setRuleDrafts(response.models);
-      setRuleBaseline(response.models);
+  const ruleMutation = useOptimisticOAuthExcludedModelsMutation({
+    formatError: (error) => safeError(error, t),
+    onSuccess: (_provider, models) => {
+      setRuleDrafts(models);
+      setRuleBaseline(models);
       onSaved();
     },
   });
@@ -236,10 +225,10 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
       return;
     }
     try {
-      await aliasMutation.mutateAsync({ target: validation.provider, aliases: validation.aliases });
+      await aliasMutation.mutateAsync({ provider: validation.provider, aliases: validation.aliases });
       toast.success(t('af.alias_saved'));
-    } catch (error) {
-      toast.error(safeError(error, t));
+    } catch {
+      // Error toast & cache rollback handled by useOptimisticOAuthAliasesMutation.
     }
   };
 
@@ -249,10 +238,10 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
       return;
     }
     try {
-      await ruleMutation.mutateAsync({ target: provider, models: normalizeExcludedModelRules(ruleDrafts) });
+      await ruleMutation.mutateAsync({ provider, models: normalizeExcludedModelRules(ruleDrafts) });
       toast.success(t('af.excluded_saved'));
-    } catch (error) {
-      toast.error(safeError(error, t));
+    } catch {
+      // Error toast & cache rollback handled by useOptimisticOAuthExcludedModelsMutation.
     }
   };
 
@@ -268,17 +257,12 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
       cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
-        try {
-          if (isAliases) {
-            await aliasMutation.mutateAsync({ target: provider, aliases: [] });
-            toast.success(t('af.alias_delete_success', { provider }));
-          } else {
-            await ruleMutation.mutateAsync({ target: provider, models: [] });
-            toast.success(t('af.excluded_delete_success', { provider }));
-          }
-        } catch (error) {
-          toast.error(safeError(error, t));
-          throw error;
+        if (isAliases) {
+          await aliasMutation.mutateAsync({ provider, aliases: [] });
+          toast.success(t('af.alias_delete_success', { provider }));
+        } else {
+          await ruleMutation.mutateAsync({ provider, models: [] });
+          toast.success(t('af.excluded_delete_success', { provider }));
         }
       },
     });
@@ -392,11 +376,10 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
   const footerStart = (
     <Button
       danger
-      type="text"
+      variant="ghost"
       icon={<DeleteOutlined />}
       data-testid="oauth-model-rules-clear"
-      disabled={!isSectionReady || !hasSavedSection || isSectionDirty || isSaving || isDemo}
-      title={isDemo ? t('demo.blocked') : undefined}
+      disabled={!isSectionReady || !hasSavedSection || isSectionDirty || isSaving}
       onClick={confirmClear}
     >
       {t(section === 'aliases' ? 'af.alias_delete_provider' : 'af.excluded_delete_provider')}
@@ -412,12 +395,11 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
         {t('af.rules_revert')}
       </Button>
       <Button
-        type="primary"
+        variant="primary"
         icon={<SaveOutlined />}
         data-testid="oauth-model-rules-save"
         loading={isSaving}
-        disabled={!isSectionReady || !isSectionDirty || isDemo}
-        title={isDemo ? t('demo.blocked') : undefined}
+        disabled={!isSectionReady || !isSectionDirty}
         onClick={() => void (section === 'aliases' ? saveAliases() : saveRules())}
       >
         {t(section === 'aliases' ? 'af.alias_save' : 'af.excluded_save')}
@@ -444,35 +426,45 @@ export const OAuthModelRulesDrawer: React.FC<OAuthModelRulesDrawerProps> = ({
             <p className={styles['intro']}>{t('af.rules_intro')}</p>
             <div className={styles['scope']}>
               <label className={styles['scope-label']} htmlFor="oauth-model-rules-provider">{t('af.rules_provider_label')}</label>
-              <div data-testid="oauth-model-rules-provider" data-provider={provider} className={styles['scope-control']}>
-                <SearchSelect
-                  label={t('af.rules_provider_label')}
-                  id="oauth-model-rules-provider"
-                  className={styles['provider-select']}
-                  value={provider || undefined}
-                  placeholder={t('af.rules_provider_placeholder')}
-                  options={providerSelectOptions}
-                  // Counts belong to the options and tabs; the selected identity matches the page's provider tabs.
-                  labelRender={(option) => <ProviderIdentity provider={String(option.value ?? '')} pluginLogos={pluginLogos} pluginTitles={pluginTitles} />}
-                  showSearch={{
-                    searchValue: providerSearch,
-                    onSearch: setProviderSearch,
-                    filterOption: (input, option) => (option?.searchText ?? '').includes(input.trim().toLowerCase()) || String(option?.value ?? '').includes(normalizeOAuthModelAliasProvider(input)),
-                  }}
-                  onChange={(value) => loadProvider(String(value))}
-                  disabled={isDirty || isSaving}
-                />
-              </div>
+              {/* Explains the locked picker where it is locked, instead of a notice that would push
+                  the editor down the moment the first change is made. */}
+              <Tooltip title={isDirty ? t('af.rules_dirty_hint') : undefined}>
+                <div
+                  data-testid="oauth-model-rules-provider"
+                  data-provider={provider}
+                  className={styles['scope-control']}
+                  // The locked picker takes no focus, so the wrapper does: a keyboard reaches the reason.
+                  tabIndex={isDirty ? 0 : undefined}
+                >
+                  <SearchSelect
+                    label={t('af.rules_provider_label')}
+                    id="oauth-model-rules-provider"
+                    className={styles['provider-select']}
+                    value={provider || undefined}
+                    placeholder={t('af.rules_provider_placeholder')}
+                    options={providerSelectOptions}
+                    // Counts belong to the options and tabs; the selected identity matches the page's provider tabs.
+                    labelRender={(option) => <ProviderIdentity provider={String(option.value ?? '')} pluginLogos={pluginLogos} pluginTitles={pluginTitles} />}
+                    showSearch={{
+                      searchValue: providerSearch,
+                      onSearch: setProviderSearch,
+                      filterOption: (input, option) => (option?.searchText ?? '').includes(input.trim().toLowerCase()) || String(option?.value ?? '').includes(normalizeOAuthModelAliasProvider(input)),
+                    }}
+                    onChange={(value) => loadProvider(String(value))}
+                    disabled={isDirty || isSaving}
+                  />
+                </div>
+              </Tooltip>
             </div>
-            {isDirty && <Notice tone="info" description={t('af.rules_dirty_hint')} />}
             <Segmented
               block
               className={styles['sections']}
               value={section}
               onChange={(value) => setSection(value as OAuthModelRulesSection)}
               options={[
-                { value: 'aliases', label: sectionLabel('aliases', aliasDrafts.length, isAliasDirty) },
+                // Disabling models is what operators come here for most, so it leads.
                 { value: 'excluded', label: sectionLabel('excluded', ruleDrafts.length, isRuleDirty) },
+                { value: 'aliases', label: sectionLabel('aliases', aliasDrafts.length, isAliasDirty) },
               ]}
             />
             {renderSection()}

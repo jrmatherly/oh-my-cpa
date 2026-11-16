@@ -1,15 +1,9 @@
 import { DatabaseBackups } from './SystemPage/DatabaseBackups';
 import { useTimeZone } from '../utils/TimeZoneProvider';
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Button,
-  Typography,
-  Spin,
-} from 'antd';
+import { Button } from '@/components/ui/button';
 import {
   DownloadOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   CloudServerOutlined,
   SafetyCertificateOutlined,
   DashboardOutlined,
@@ -19,17 +13,14 @@ import {
   CloudDownloadOutlined,
   CompressOutlined,
   ClearOutlined,
-  WarningOutlined,
-  CloseOutlined,
   BellOutlined,
   BellOffOutlined,
 } from '../components/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from '../utils/time';
-import { api, describeError } from '../api/client';
+import { api, apiErrorCode, describeError } from '../api/client';
 import { useT } from '../i18n';
 import type { MessageKey } from '../i18n/catalog';
-import { isDemoMode } from '../types/demoMode';
 import type {
   SystemInfoResponse,
   SystemProductVersion,
@@ -53,6 +44,7 @@ import type { UpdateOutcome } from './SystemPage/useConsoleUpdate';
 import { UpdateAction, UpdateStatusLine, UpdaterSetup } from './SystemPage/UpdateControls';
 import { DATA_RETENTION_QUERY_KEY } from './SystemPage/DataRetention';
 import { StorageFootprint } from './SystemPage/StorageFootprint';
+import { INCOMPLETE_REASON_KEYS, MaintenanceOutcome, MaintenanceRunning } from './SystemPage/MaintenanceOutcome';
 import { UPDATE_STATUS_QUERY_KEY, useUpdateDismissals } from '../hooks/useUpdateNotice';
 import { isUpdateDismissed } from '../utils/updateDismissals';
 import styles from './SystemPage.module.css';
@@ -61,7 +53,6 @@ import { AppDrawer } from '../components/common/AppDrawer';
 import { Panel } from '../components/common/Panel';
 import { AppModal } from '../components/common/AppModal';
 
-const { Text, Paragraph } = Typography;
 
 // The change log renders release notes as Markdown, and the Markdown renderer is the largest
 // dependency on this page. It is only needed once a reader opens a log, so it is loaded then.
@@ -160,8 +151,8 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
           <div className={styles['version-actions']}>
             {canDismiss && (
               <Button
-                type="text"
-                size="small"
+                variant="ghost"
+                size="sm"
                 // A pressed toggle rather than a label that swaps: the wording, and so the
                 // button's width and everything beside it, stays put, and the outcome of each
                 // press is said in a toast instead of in a line that would push the card down.
@@ -178,8 +169,8 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
             )}
             {presentation.hasChangelog && (
               <Button
-                type="text"
-                size="small"
+                variant="ghost"
+                size="sm"
                 className={styles['version-action']}
                 icon={<FileTextOutlined />}
                 aria-label={t('sys.open_changelog', { product: productTitle, count: version.merge_count })}
@@ -221,7 +212,6 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
 export const SystemPage: React.FC = () => {
   useTimeZone();
   const t = useT();
-  const isDemo = isDemoMode();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { dismissals, isLoaded: areDismissalsLoaded, dismiss, restore } = useUpdateDismissals();
@@ -262,12 +252,22 @@ export const SystemPage: React.FC = () => {
   // The health row states the sidecar's last answer, not the progress the version card keeps drawing
   // while a followed update restarts it, and not a verdict a failed read can no longer certify.
   const updaterVerdict = isUpdaterError ? UPDATER_READ_FAILED : latestUpdater ? UPDATER_VERDICTS[latestUpdater.state] : UPDATER_UNREPORTED;
+
+  /** Start the chosen update and translate actionable proxy configuration failures. */
   const handleApplyUpdate = async (product: ReleaseProduct) => {
     try {
       await applyUpdate(product);
       toast.info(t('sys.update_started', { product: productLabel(product) }));
     } catch (err: unknown) {
-      toast.error(t('sys.update_failed', { product: productLabel(product), msg: describeError(err) }));
+      // Configuration and protocol failures have actionable translations without returning proxy credentials.
+      const code = apiErrorCode(err);
+      const msg = code === 'outbound_proxy_unavailable'
+        ? t('sys.outbound_proxy_unavailable')
+        : code === 'image_pull_proxy_unsupported'
+          ? t('sys.image_pull_proxy_unsupported')
+          : describeError(err);
+
+      toast.error(t('sys.update_failed', { product: productLabel(product), msg }));
     }
   };
 
@@ -483,11 +483,9 @@ export const SystemPage: React.FC = () => {
     } else if (job.incomplete) {
       // The statement ran but did not fully do its job, which is a different claim from
       // success and from failure.
-      toast.warning(
-        t('sys.maintenance_incomplete_warning', {
-          detail: job.detail || t('sys.maintenance_incomplete_default'),
-        }),
-      );
+      toast.warning(t('sys.maintenance_incomplete_title', { action: label }), {
+        detail: job.incomplete_reason ? t(INCOMPLETE_REASON_KEYS[job.incomplete_reason]) : undefined,
+      });
     } else {
       toast.success(t('sys.maintenance_success', { action: label }));
     }
@@ -543,19 +541,12 @@ export const SystemPage: React.FC = () => {
   // server refuses the route: the fixture already supplies the index, so checking there
   // would spend a request to receive a refusal.
   useEffect(() => {
-    // Waiting for the page's own response, because whether this deployment allows an automatic
-    // check is a server decision: the switch exists so that opening a page cannot spend requests
-    // from a budget shared per address, and a page that checked regardless would defeat it.
-    //
-    // The decision is marked as taken only once there is a response to decide on. Setting the ref
-    // on a failed first load would consume it while `sysInfo` was undefined, so a later successful
-    // refresh could never perform the check this deployment had authorised.
     if (!sysInfo || hasMountedCheckRef.current) return;
     hasMountedCheckRef.current = true;
-    if (!isDemo && sysInfo.update_check_on_page_load) {
+    if (sysInfo.update_check_on_page_load) {
       void handleCheckUpdates(false);
     }
-  }, [isDemo, sysInfo]);
+  }, [sysInfo]);
 
   const handleRunCheckpoint = async () => {
     setSubmittingAction('checkpoint');
@@ -657,16 +648,13 @@ export const SystemPage: React.FC = () => {
                   sheds its label rather than pushing it onto a row of its own: a title has to
                   stay readable in every language, and the accessible name keeps the meaning. */}
               <Button
-                type="link"
-                size="small"
+                variant="ghost"
+                size="sm"
                 className={styles['check-updates-action']}
                 icon={<CloudDownloadOutlined />}
                 loading={isCheckingUpdates || Boolean(sysInfo?.omc_version.checking || sysInfo?.cpa_version.checking)}
-                // The demonstration refuses this route on the server, so the control is
-                // disabled rather than offered: a button whose only outcome is a refusal
-                // teaches the reader something untrue about the product.
-                disabled={isDemo || isCheckingUpdates || Boolean(sysInfo?.omc_version.checking || sysInfo?.cpa_version.checking)}
-                title={isDemo ? t('demo.blocked') : checkUpdatesLabel}
+                disabled={isCheckingUpdates || Boolean(sysInfo?.omc_version.checking || sysInfo?.cpa_version.checking)}
+                data-tip={checkUpdatesLabel}
                 aria-label={checkUpdatesLabel}
                 onClick={() => void handleCheckUpdates()}
               >
@@ -799,7 +787,7 @@ export const SystemPage: React.FC = () => {
             {sysInfo && (
               <>
                 <StorageFootprint database={sysInfo.database} />
-                <DatabaseBackups isDemo={isDemo} />
+                <DatabaseBackups />
               </>
             )}
           </Panel>
@@ -830,7 +818,7 @@ export const SystemPage: React.FC = () => {
                     (effectiveMaintenance?.running &&
                       (effectiveMaintenance.action === 'checkpoint' || effectiveMaintenance.action === 'wal_checkpoint'))
                   }
-                  disabled={isDemo || isMaintenanceActive}
+                  disabled={isMaintenanceActive}
                   onClick={() => void handleRunCheckpoint()}
                 >
                   {t('sys.action_run')}
@@ -849,7 +837,7 @@ export const SystemPage: React.FC = () => {
                     submittingAction === 'vacuum' ||
                     (effectiveMaintenance?.running && effectiveMaintenance.action === 'vacuum')
                   }
-                  disabled={isDemo || isMaintenanceActive || (effectiveAdmission ? !effectiveAdmission.allowed : false)}
+                  disabled={isMaintenanceActive || (effectiveAdmission ? !effectiveAdmission.allowed : false)}
                   onClick={() => setIsVacuumModalOpen(true)}
                 >
                   {t('sys.action_run')}
@@ -869,8 +857,6 @@ export const SystemPage: React.FC = () => {
                   icon={<DownloadOutlined />}
                   aria-label={t('sys.download_diag')}
                   loading={downloadingDiag}
-                  disabled={isDemo}
-                  title={isDemo ? t('demo.blocked') : undefined}
                   onClick={() => void handleDownloadDiagnostics()}
                 >
                   {t('sys.action_download')}
@@ -883,89 +869,24 @@ export const SystemPage: React.FC = () => {
           {/* The running job, from the live server status. It is always shown, including one
               that was already running when the page was opened, and it is never dismissible:
               the page must not let a reader hide a job that is still holding the write gate. */}
-          {effectiveMaintenance?.running && (
-            <Notice
-              tone="info"
-              icon={<Spin size="small" />}
-              className={styles['maintenance-running']}
-              title={t('sys.maintenance_in_progress', { action: actionLabel(effectiveMaintenance.action) })}
-            />
-          )}
+          {/* The live region stays mounted so a job adopted from another tab - which disables the
+              actions without a toast - is announced when it appears, not only when it is clicked. */}
+          <div role="status" aria-live="polite">
+            {effectiveMaintenance?.running && (
+              <MaintenanceRunning actionLabel={actionLabel(effectiveMaintenance.action)} />
+            )}
+          </div>
 
           {/* The completed outcome, rendered from this page's own snapshot rather than from the
               server's retained last job. The server keeps that record for the life of the process,
               so rendering it directly would resurrect a result the reader has already cleared on
               every reload. */}
           {!effectiveMaintenance?.running && displayedOutcome && displayedOutcome.job_id !== dismissedOutcomeJobID && (
-            <div className={styles['maintenance-box']} data-testid="sys-maintenance-outcome">
-              <div className={styles['maintenance-box-title']}>
-                {displayedOutcome.error ? (
-                  <CloseCircleOutlined className={styles['outcome-danger']} />
-                ) : displayedOutcome.incomplete ? (
-                  // A partial result is its own outcome, not a qualified success. SQLite reports
-                  // a blocked checkpoint in the statement's result row rather than as an error,
-                  // so a green checkmark here would claim the log was truncated when it was not.
-                  <WarningOutlined className={styles['outcome-warn']} />
-                ) : (
-                  <CheckCircleOutlined className={styles['outcome-success']} />
-                )}
-                <span>
-                  {displayedOutcome.error
-                    ? t('sys.maintenance_failed', {
-                        action: actionLabel(displayedOutcome.action),
-                        msg: displayedOutcome.error,
-                      })
-                    : displayedOutcome.incomplete
-                      ? t('sys.maintenance_incomplete_title', {
-                          action: actionLabel(displayedOutcome.action),
-                        })
-                      : t('sys.maintenance_success', { action: actionLabel(displayedOutcome.action) })}
-                </span>
-                <Button
-                  type="text"
-                  // The console's square row-action size, not `small`: a 28px control gains only 36px
-                  // from the coarse-pointer 4px hit inset, and the floor this console measures is
-                  // ~40px. The drawn box is what a finger has to hit here.
-                  className={styles['maintenance-box-close']}
-                  icon={<CloseOutlined />}
-                  aria-label={t('common.close')}
-                  title={t('common.close')}
-                  onClick={() => setDismissedOutcomeJobID(displayedOutcome.job_id)}
-                />
-              </div>
-
-              <div className={styles['maintenance-box-meta']}>
-                {t('sys.maintenance_reclaimed', {
-                  before: formatBytes(displayedOutcome.size_before_bytes),
-                  after: formatBytes(displayedOutcome.size_after_bytes),
-                  reclaimed: formatBytes(displayedOutcome.reclaimed_bytes),
-                })}
-              </div>
-
-              {displayedOutcome.detail && (
-                <Text type="secondary" className={styles['maintenance-detail']}>
-                  {displayedOutcome.detail}
-                </Text>
-              )}
-
-              {displayedOutcome.incomplete && (
-                <Notice
-                  tone="warning"
-                  className={styles['maintenance-outcome-alert']}
-                  title={t('sys.maintenance_incomplete_warning', {
-                    detail: displayedOutcome.detail || t('sys.maintenance_incomplete_default'),
-                  })}
-                />
-              )}
-
-              {displayedOutcome.error && (
-                <Notice
-                  tone="error"
-                  className={styles['maintenance-outcome-alert']}
-                  title={displayedOutcome.error}
-                />
-              )}
-            </div>
+            <MaintenanceOutcome
+              job={displayedOutcome}
+              actionLabel={actionLabel(displayedOutcome.action)}
+              onDismiss={() => setDismissedOutcomeJobID(displayedOutcome.job_id)}
+            />
           )}
         </Panel>
       </div>
@@ -1000,9 +921,9 @@ export const SystemPage: React.FC = () => {
         cancelText={t('common.cancel')}
       >
         <div className={styles['vacuum-modal-content']}>
-          <Paragraph type="secondary" className={styles['vacuum-desc']}>
+          <p className={`m-0 text-muted-foreground ${styles['vacuum-desc']}`}>
             {t('sys.vacuum_confirm_desc')}
-          </Paragraph>
+          </p>
 
           <div className={styles['vacuum-space-table']}>
             <div className={styles['vacuum-space-row']}>

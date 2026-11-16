@@ -2,8 +2,10 @@ import { translateOr } from '../../i18n/catalog';
 import { FilterDisclosure } from '../common/FilterDisclosure';
 import { useTimeZone } from '../../utils/TimeZoneProvider';
 import React from 'react';
-import { Button, Segmented, Select } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
+import type { ColumnsType } from '@/components/ui/table';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import dayjs from '../../utils/time';
 import clsx from 'clsx';
@@ -137,8 +139,8 @@ function dayHeading(key: string, t: ReturnType<typeof useT>): string {
   const today = dayKey(Date.now());
   const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const date = dayjs(key).format('YYYY-MM-DD');
-  if (key === today) return `${t('audit.today')} · ${date}`;
-  if (key === yesterday) return `${t('audit.yesterday')} · ${date}`;
+  if (key === today) return t('audit.day_relative', { day: t('audit.today'), date });
+  if (key === yesterday) return t('audit.day_relative', { day: t('audit.yesterday'), date });
   return date;
 }
 
@@ -249,7 +251,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFilter
       title: t('audit.field_time'),
       width: 96,
       render: (_, event) => (
-        <span className={styles['audit-time']} title={dayjs(event.occurred_at_ms).format('YYYY-MM-DD HH:mm:ss.SSS')}>
+        <span className={styles['audit-time']} data-tip={dayjs(event.occurred_at_ms).format('YYYY-MM-DD HH:mm:ss.SSS')}>
           {dayjs(event.occurred_at_ms).format('HH:mm:ss')}
         </span>
       ),
@@ -275,7 +277,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFilter
       render: (_, event) => {
         const target = readableTarget(event);
         return target
-          ? <span className={styles['audit-target']} title={event.target_id}>{target}</span>
+          ? <span className={styles['audit-target']} data-tip={event.target_id} data-tip-overflow="">{target}</span>
           : <span className={styles['audit-none']}>—</span>;
       },
     },
@@ -303,21 +305,24 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFilter
     {
       key: 'actions',
       title: t('common.details'),
-      width: 92,
+      width: 64,
       align: 'right',
       render: (_, event) => (
-        <Button
-          size="small"
-          icon={<ProfileOutlined />}
-          onClick={(clickEvent) => {
-            clickEvent.stopPropagation();
-            setOpenId(event.id);
-          }}
-          aria-label={`${t('common.details')}: ${auditActionLabel(event.action, t)}`}
-          data-testid="audit-open"
-        >
-          {t('common.details')}
-        </Button>
+        <div className="row-actions">
+          <ToolButton
+            variant="ghost"
+            size="sm"
+            className="row-action-btn"
+            icon={<ProfileOutlined />}
+            label={`${t('common.details')}: ${auditActionLabel(event.action, t)}`}
+            tooltip={t('common.details')}
+            onClick={(clickEvent) => {
+              clickEvent.stopPropagation();
+              setOpenId(event.id);
+            }}
+            data-testid="audit-open"
+          />
+        </div>
       ),
     },
   ];
@@ -369,7 +374,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFilter
         <FilterDisclosure activeLabel={[
           category ? translateOr(t, `audit.cat.${category}`, category) : '',
           filters.range !== 'all' ? t(`audit.range_${filters.range}`) : '',
-        ].filter(Boolean).join(' · ')}>
+        ]}>
           <Select
             className={styles['audit-category']}
             value={category ?? 'all'}
@@ -408,7 +413,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ title, filters, onFilter
             />
           )}
           {isFiltered && (
-            <Button type="link" className={styles['clear-filters']} onClick={() => update({ categories: [], outcome: 'all', search: '', range: 'all' })}>
+            <Button variant="link" className={styles['clear-filters']} onClick={() => update({ categories: [], outcome: 'all', search: '', range: 'all' })}>
               {t('audit.clear_filters')}
             </Button>
           )}

@@ -15,6 +15,7 @@ import (
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/management"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/operations"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/security"
+	"github.com/oh-my-cpa/oh-my-cpa/internal/statecoord"
 )
 
 const (
@@ -55,6 +56,8 @@ type managementAuthFileResponse struct {
 	OAuthProvider     string                                `json:"oauth_provider,omitempty"`
 	Status            string                                `json:"status,omitempty"`
 	StatusMessage     string                                `json:"status_message,omitempty"`
+	TOSAppealURL      string                                `json:"tos_appeal_url,omitempty"`
+	TOSAppealURLText  string                                `json:"tos_appeal_url_text,omitempty"`
 	Disabled          bool                                  `json:"disabled"`
 	Unavailable       bool                                  `json:"unavailable"`
 	RuntimeOnly       bool                                  `json:"runtime_only"`
@@ -160,21 +163,94 @@ type managementAuthFileSafeFields struct {
 	OpenAPILegacyModels []string `json:"openapi_legacy_models,omitempty"`
 }
 
+// AuthFileStatusPatchRequestDTO toggles disabled status for a credential auth file.
+type AuthFileStatusPatchRequestDTO struct {
+	Name      string `json:"name"`
+	AuthIndex string `json:"auth_index,omitempty"`
+	Disabled  *bool  `json:"disabled"`
+}
+
+// AuthFileStatusPatchResponseDTO reports the updated credential status and optional state version.
+type AuthFileStatusPatchResponseDTO struct {
+	Status   string `json:"status"`
+	Disabled bool   `json:"disabled"`
+	Version  uint64 `json:"version,omitempty"`
+}
+
+// AuthFileRefreshRequestDTO identifies a credential auth file to refresh upstream tokens for.
+type AuthFileRefreshRequestDTO struct {
+	Name      string `json:"name"`
+	AuthIndex string `json:"auth_index,omitempty"`
+}
+
+// AuthFileModelsResponseDTO lists models advertised by a credential auth file.
+type AuthFileModelsResponseDTO struct {
+	Models []managementAuthFileModel `json:"models"`
+}
+
+// @Summary List credential auth files
+// @Description Return sanitized projections of CPA credential auth files, optionally filtered by name or auth_index.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Param name query string false "Filter by auth file name or ID"
+// @Param auth_index query string false "Filter by runtime auth_index"
+// @Success 200 {object} managementAuthFilesResponse
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files [get]
 func (h *Handler) listManagementAuthFiles(writer http.ResponseWriter, request *http.Request) {
 	client, ok := h.managementClientOrError(writer, request)
 	if !ok {
 		return
 	}
-	files, err := client.AuthFiles(request.Context())
-	if err != nil {
+	var (
+		rawFiles     []management.AuthFile
+		stateVersion uint64
+	)
+	if files, err := client.AuthFiles(request.Context()); err == nil {
+		rawFiles = files.Files
+		if h.stateCoord != nil {
+			if envelope, coordErr := h.stateCoord.Read(request.Context()); coordErr == nil {
+				stateVersion = envelope.Version
+				if len(envelope.Data.PendingAuthStatus) > 0 {
+					for idx := range rawFiles {
+						for _, pending := range envelope.Data.PendingAuthStatus {
+							if rawFiles[idx].Name != pending.Name && rawFiles[idx].ID != pending.Name {
+								continue
+							}
+							if pending.AuthIndex != "" && rawFiles[idx].AuthIndex != pending.AuthIndex {
+								continue
+							}
+							rawFiles[idx].Disabled = pending.Disabled
+							if pending.Disabled {
+								rawFiles[idx].Status = "disabled"
+							} else if rawFiles[idx].Status == "disabled" {
+								rawFiles[idx].Status = "ready"
+							}
+						}
+					}
+				}
+			}
+		}
+	} else if h.stateCoord != nil {
+		if envelope, coordErr := h.stateCoord.Read(request.Context()); coordErr == nil && !envelope.Data.AuthFilesUnavailable {
+			rawFiles = envelope.Data.AuthFiles
+			stateVersion = envelope.Version
+		} else {
+			writeCPAFacadeError(writer, err)
+			return
+		}
+	} else {
 		writeCPAFacadeError(writer, err)
 		return
 	}
 
 	nameFilter := strings.TrimSpace(request.URL.Query().Get("name"))
 	authIndexFilter := strings.TrimSpace(request.URL.Query().Get("auth_index"))
-	projected := make([]managementAuthFileResponse, 0, len(files.Files))
-	for _, file := range files.Files {
+	projected := make([]managementAuthFileResponse, 0, len(rawFiles))
+	for _, file := range rawFiles {
 		if nameFilter != "" && file.Name != nameFilter && file.ID != nameFilter {
 			continue
 		}
@@ -182,9 +258,6 @@ func (h *Handler) listManagementAuthFiles(writer http.ResponseWriter, request *h
 			continue
 		}
 		projected = append(projected, projectManagementAuthFile(file))
-		if len(projected) >= managementAuthFileListLimit {
-			break
-		}
 	}
 	if h.repo != nil {
 		names, namesErr := h.repo.ListCredentialDisplayNames(request.Context(), defaultInstanceID())
@@ -199,18 +272,35 @@ func (h *Handler) listManagementAuthFiles(writer http.ResponseWriter, request *h
 			}
 		}
 	}
+	if nameFilter == "" && authIndexFilter == "" {
+		_ = h.observeAuthFileIdentities(request.Context(), projected)
+	}
 	sort.Slice(projected, func(i, j int) bool {
 		return strings.ToLower(projected[i].Name) < strings.ToLower(projected[j].Name)
 	})
+	if len(projected) > managementAuthFileListLimit {
+		projected = projected[:managementAuthFileListLimit]
+	}
+	setStateVersionHeader(writer, stateVersion)
 	writeJSON(writer, http.StatusOK, managementAuthFilesResponse{Files: projected, Total: len(projected)})
 }
 
+// @Summary Enable or disable a credential auth file
+// @Description Toggle the disabled state of a CPA credential auth file and return the updated state version.
+// @Tags AuthFiles
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body AuthFileStatusPatchRequestDTO true "Auth file status update"
+// @Success 200 {object} AuthFileStatusPatchResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 409 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/status [patch]
 func (h *Handler) patchManagementAuthFileStatus(writer http.ResponseWriter, request *http.Request) {
-	var payload struct {
-		Name      string `json:"name"`
-		AuthIndex string `json:"auth_index"`
-		Disabled  *bool  `json:"disabled"`
-	}
+	var payload AuthFileStatusPatchRequestDTO
 	if err := decodeManagementJSON(writer, request, managementAuthFileRequestLimit, &payload); err != nil {
 		return
 	}
@@ -234,21 +324,135 @@ func (h *Handler) patchManagementAuthFileStatus(writer http.ResponseWriter, requ
 		writeInternalError(writer, err)
 		return
 	}
-	if err := h.operationsService().SetCredentialStatus(request.Context(), operations.CredentialTarget{Name: name, AuthIndex: strings.TrimSpace(payload.AuthIndex)}, *payload.Disabled, ""); err != nil {
+	trimmedAuthIndex := strings.TrimSpace(payload.AuthIndex)
+	if h.stateCoord != nil {
+		var useFallback bool
+		var canonicalSelector string
+		if env, readErr := statecoord.ProjectTyped(request.Context(), h.stateCoord, func(state projectedConfigState, _ uint64) (string, error) {
+			if state.AuthFilesUnavailable {
+				return "", errStateSliceUnavailable
+			}
+			matches := 0
+			var matched management.AuthFile
+			for idx := range state.AuthFiles {
+				file := state.AuthFiles[idx]
+				if file.Name != name && file.ID != name {
+					continue
+				}
+				if trimmedAuthIndex != "" && file.AuthIndex != trimmedAuthIndex {
+					continue
+				}
+				matched = file
+				matches++
+			}
+			if matches != 1 {
+				return "", errStateSliceUnavailable
+			}
+			canonicalName := firstNonEmpty(matched.Name, matched.ID)
+			return encodeAuthFileSelector(canonicalName, strings.TrimSpace(matched.AuthIndex)), nil
+		}); readErr == nil {
+			canonicalSelector = env.Data
+		} else {
+			useFallback = true
+		}
+
+		if !useFallback {
+			domain := statecoord.DomainKey(stateDomainAuthFileStatusPrefix + canonicalSelector)
+			version, mutErr := h.mutateCoordinatorWithAudit(
+				request,
+				domain,
+				"auth_file.status_update",
+				"auth_file",
+				name,
+				map[string]any{"disabled": *payload.Disabled},
+				func(state *projectedConfigState) error {
+					if state.AuthFilesUnavailable {
+						useFallback = true
+						return errStateSliceUnavailable
+					}
+					matches := 0
+					var matchedIdx int
+					for idx := range state.AuthFiles {
+						file := &state.AuthFiles[idx]
+						if file.Name != name && file.ID != name {
+							continue
+						}
+						if trimmedAuthIndex != "" && file.AuthIndex != trimmedAuthIndex {
+							continue
+						}
+						matchedIdx = idx
+						matches++
+					}
+					if matches != 1 {
+						useFallback = true
+						return errStateSliceUnavailable
+					}
+					matched := &state.AuthFiles[matchedIdx]
+					canonicalName := firstNonEmpty(matched.Name, matched.ID)
+					canonicalAuthIndex := strings.TrimSpace(matched.AuthIndex)
+					if encodeAuthFileSelector(canonicalName, canonicalAuthIndex) != canonicalSelector {
+						useFallback = true
+						return errStateSliceUnavailable
+					}
+					matched.Disabled = *payload.Disabled
+					if state.PendingAuthStatus == nil {
+						state.PendingAuthStatus = make(map[string]pendingAuthFileStatus)
+					}
+					state.AuthStatusSeq++
+					state.PendingAuthStatus[canonicalSelector] = pendingAuthFileStatus{
+						Name:      canonicalName,
+						AuthIndex: canonicalAuthIndex,
+						Disabled:  *payload.Disabled,
+						Seq:       state.AuthStatusSeq,
+					}
+					return nil
+				},
+			)
+			if !useFallback {
+				if mutErr != nil {
+					_ = h.recordAudit(request, "auth_file.status_update", "auth_file", name, "failure", map[string]any{"error": mutErr.Error()})
+					writeProviderWriteError(writer, mutErr)
+					return
+				}
+				setStateVersionHeader(writer, version)
+				writeJSON(writer, http.StatusOK, AuthFileStatusPatchResponseDTO{
+					Status:   "ok",
+					Disabled: *payload.Disabled,
+					Version:  version,
+				})
+				return
+			}
+		}
+	}
+	if err := h.operationsService().SetCredentialStatus(request.Context(), operations.CredentialTarget{Name: name, AuthIndex: trimmedAuthIndex}, *payload.Disabled, ""); err != nil {
+		_ = h.recordAudit(request, "auth_file.status_update", "auth_file", name, "failure", map[string]any{"error": publicCPAErrorMessage(err)})
 		writeCPAFacadeError(writer, err)
 		return
 	}
+	_ = h.recordAudit(request, "auth_file.status_update", "auth_file", name, "success", map[string]any{"disabled": *payload.Disabled})
 
-	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "disabled": *payload.Disabled})
+	writeJSON(writer, http.StatusOK, AuthFileStatusPatchResponseDTO{Status: "ok", Disabled: *payload.Disabled})
 }
 
 // refreshManagementAuthFile renews one credential's tokens on demand. The
 // response states the outcome only: CPA's own answer carries the new tokens.
+//
+// @Summary Refresh a credential's OAuth tokens
+// @Description Trigger an on-demand upstream token refresh for the named auth file.
+// @Tags AuthFiles
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body AuthFileRefreshRequestDTO true "Auth file selector"
+// @Success 200 {object} StatusOKResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 404 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/refresh [post]
 func (h *Handler) refreshManagementAuthFile(writer http.ResponseWriter, request *http.Request) {
-	var payload struct {
-		Name      string `json:"name"`
-		AuthIndex string `json:"auth_index"`
-	}
+	var payload AuthFileRefreshRequestDTO
 	if err := decodeManagementJSON(writer, request, managementAuthFileRequestLimit, &payload); err != nil {
 		return
 	}
@@ -288,9 +492,24 @@ func (h *Handler) refreshManagementAuthFile(writer http.ResponseWriter, request 
 	// The upstream mutation has landed; an outcome-audit failure must not invite
 	// a retry that renews or replaces the credential again.
 	_ = h.recordAudit(request, "auth_file.refresh", "auth_file", name, "success", nil)
-	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok"})
+	h.invalidateCoordinator("management-auth-files", "management-quota")
+	writeJSON(writer, http.StatusOK, StatusOKResponseDTO{Status: "ok"})
 }
 
+// @Summary Read allowlisted auth file settings
+// @Description Return non-secret editable fields (priority, weight, prefix, proxy, aliases, OpenAPI overrides) for a credential auth file.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Param name query string true "Auth file name"
+// @Param auth_index query string false "Optional runtime auth_index"
+// @Success 200 {object} managementAuthFileSafeFields
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 404 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/safe-fields [get]
 func (h *Handler) getManagementAuthFileSafeFields(writer http.ResponseWriter, request *http.Request) {
 	name, selectorErr := validateAuthSelector(request.URL.Query().Get("name"))
 	if selectorErr != nil {
@@ -361,6 +580,18 @@ func findManagementAuthFile(files []management.AuthFile, name, authIndex string)
 	return management.AuthFile{}, false
 }
 
+// @Summary Download raw auth file JSON
+// @Description Download a credential auth file as JSON attachment after recording a fail-closed audit event.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Param name query string true "Auth file name (*.json)"
+// @Success 200 {file} binary
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/download [get]
 func (h *Handler) downloadManagementAuthFile(writer http.ResponseWriter, request *http.Request) {
 	name, validationErr := validateJSONUploadName(request.URL.Query().Get("name"))
 	if validationErr != nil {
@@ -389,6 +620,17 @@ func (h *Handler) downloadManagementAuthFile(writer http.ResponseWriter, request
 	_, _ = writer.Write(data)
 }
 
+// @Summary List models served by an auth file
+// @Description Return the model definitions supported by a specific credential auth file.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Param name query string true "Auth file name"
+// @Success 200 {object} AuthFileModelsResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/models [get]
 func (h *Handler) listManagementAuthFileModels(writer http.ResponseWriter, request *http.Request) {
 	name, selectorErr := validateAuthSelector(request.URL.Query().Get("name"))
 	if selectorErr != nil {
@@ -415,7 +657,7 @@ func (h *Handler) listManagementAuthFileModels(writer http.ResponseWriter, reque
 			break
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"models": projected})
+	writeJSON(writer, http.StatusOK, AuthFileModelsResponseDTO{Models: projected})
 }
 
 func validateAuthSelector(raw string) (string, error) {

@@ -1,7 +1,10 @@
 
+import React from 'react';
 import type { MessageKey } from '../../i18n/catalog';
-import { Button, Segmented, Select } from 'antd';
-import { FilterOutlined } from '../icons';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
+import { ClearOutlined, FilterOutlined } from '../icons';
 
 import { useT } from '../../i18n';
 import { useTokenDisplayStyle } from '../../types/tokenDisplayContext';
@@ -21,6 +24,7 @@ import { renderFacetOption, type FacetMarkRenderer } from './RequestFacetMark';
 import { ResultMarker } from './ResultMarker';
 import { TimeRangeControl } from './TimeRangeControl';
 import { SearchInput } from '../common/SearchInput';
+import { ToolButton } from '../common/ToolButton';
 import { SearchSelect } from '../common/SearchSelect';
 import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import './RequestToolbar.css';
@@ -56,7 +60,7 @@ interface RequestToolbarProps {
  * survive a capped response, and that is a property of the control rather than of
  * the page that supplies the facets.
  */
-export function RequestToolbar({
+export const RequestToolbar = React.memo(function RequestToolbar({
   search,
   onSearchChange,
   query,
@@ -117,7 +121,7 @@ export function RequestToolbar({
             key === 'provider'
               ? resolveProviderName(value)
               : key === 'auth_index'
-                ? `${credentialOptionLabel(credentials.get(value)) || value} · ${value}`
+                ? (credentialOptionLabel(credentials.get(value)) ? `${credentialOptionLabel(credentials.get(value))} (${value})` : value)
                 : value,
         )}
         notFoundContent={facetsFailed ? t('events.facets_error') : undefined}
@@ -183,12 +187,16 @@ export function RequestToolbar({
       {t('events.facets_error')}
     </span>
   );
-  const resetFilters = hasActiveFilter && (
-    <Button type="text" className="req-reset-filters" onClick={onClearFilters}>
+  // The reset comes last in its row, so its arrival moves nothing that was already there. On a
+  // phone it is the glyph beside the filter button; the search field gives up the room.
+  const resetFilters = hasActiveFilter && (isPhone ? (
+    <ToolButton variant="ghost" className="req-reset-filters" onClick={onClearFilters} icon={<ClearOutlined />} label={t('events.reset')} />
+  ) : (
+    <Button variant="ghost" className="req-reset-filters" onClick={onClearFilters} aria-label={t('events.reset')}>
       {t('events.reset')}
       <span className="req-reset-count">{activeFilterCount || 1}</span>
     </Button>
-  );
+  ));
   const groupingSelect = (
     <Select
       aria-label={t('events.group_by')}
@@ -213,23 +221,25 @@ export function RequestToolbar({
     />
   );
 
-  // A phone gets the same controls in two rows instead of five: what is typed or opened stays
-  // put, and every choice that is a single tap swipes in one strip.
+  // A phone gets the same controls in three fixed rows, each filling the width: what is typed and
+  // the way into every filter; the window and the verdict; how the list is grouped and named. The
+  // model and provider facets are in the filter panel there, beside the other facets. Nothing slides
+  // sideways under the thumb, which fought the list's own scroll.
   if (isPhone) {
     return (
       <section className="request-toolbar is-phone" aria-label={t('events.filters')}>
         <div className="request-filters">
           {searchInput}
           {moreFilters}
+          {resetFilters}
         </div>
-        <div className="request-filter-strip">
+        <div className="request-phone-row">
           {timeWindow}
           {resultFilter}
-          {facetMulti('model', 'events.col_model', facets?.models)}
-          {facetMulti('provider', 'events.provider', facets?.providers)}
+        </div>
+        <div className="request-phone-row">
           {groupingSelect}
           {modelViewToggle}
-          {resetFilters}
         </div>
         {facetsNote}
       </section>
@@ -249,11 +259,11 @@ export function RequestToolbar({
       <div className="request-toolbar-bottom">
         {facetsNote}
         <div className="request-actions">
-          {resetFilters}
           {groupingSelect}
           {modelViewToggle}
+          {resetFilters}
         </div>
       </div>
     </section>
   );
-}
+});

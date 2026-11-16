@@ -73,6 +73,7 @@ import {
   parseUsageEventsColumns,
   SHEET_GRID_CHROME,
   buildGridTemplateColumns,
+  LIST_GRID_CHROME,
   computeGridMinWidth,
 } from '../../src/components/usage/requestColumns.ts';
 import {
@@ -578,10 +579,10 @@ test('usage event view', () => {
     result: 'all',
     limit: 100,
     grouping: 'time',
-    autoRefresh: false,
   });
 
-  // Full valid document in the current shape.
+  // Full valid document in the current shape (plus retired fields like autoRefresh
+  // which are safely ignored on parse).
   const fullDoc = {
     preset: '24h',
     result: 'failed',
@@ -625,7 +626,6 @@ test('usage event view', () => {
     // pins the migration: a saved view keeps its shape instead of reverting to
     // chronological order.
     grouping: 'source',
-    autoRefresh: true,
     filterValues: {
       model: ['gpt-4o', 'o3'],
       provider: ['openai'],
@@ -691,7 +691,7 @@ test('usage event view', () => {
   });
   // An unwritable preference document is still rejected outright.
   assert.equal(parseUsageEventsView({ cost: 'nonsense' })?.cost, undefined);
-  assert.equal(parseUsageEventsView({ autoRefresh: 'yes' })?.autoRefresh, false);
+  assert.equal((parseUsageEventsView({ autoRefresh: true }) as Record<string, unknown>)?.autoRefresh, undefined);
 
   // A nested cost value is adopted when no top-level one exists. An earlier revision
   // persisted it that way, and discarding it would silently drop a filter the
@@ -1093,6 +1093,9 @@ test('usage event view', () => {
   assert.equal(requestFailureCause(undefined, 'stream_truncated'), 'stream_truncated');
   assert.equal(requestFailureCause(200, 'stream_truncated'), 'stream_truncated');
   assert.equal(requestFailureCause(502, 'stream_truncated'), 'stream_truncated');
+  assert.equal(requestFailureCause(undefined, 'force_cooldown'), 'forced_cooldown');
+  assert.equal(requestFailureCause(400, 'force_cooldown'), 'forced_cooldown');
+  assert.equal(requestFailureCause(429, 'force_cooldown'), 'forced_cooldown');
   assert.equal(requestFailureCause(400, 'future_classification'), 'bad_request');
   assert.equal(requestFailureCause(undefined, 'future_classification'), 'unknown');
   assert.equal(requestFailureCause(undefined, ''), 'unknown');
@@ -1558,10 +1561,10 @@ test('usage event view', () => {
   assert.equal(parsedWidths.model, 210);
   assert.equal(parsedWidths.latency, 85);
 
-  // buildGridTemplateColumns: the two name columns share the spare room; every figure is a rigid track
+  // buildGridTemplateColumns: the two name columns share the spare room; every other column is a rigid track
   const defaultGrid = buildGridTemplateColumns({});
-  assert.ok(defaultGrid.includes('minmax(140px, 1.6fr)'));
-  assert.ok(defaultGrid.includes('minmax(130px, 1.3fr)'));
+  assert.ok(defaultGrid.includes('minmax(140px, 1fr)'));
+  assert.ok(defaultGrid.includes('minmax(130px, 1fr)'));
   assert.equal(defaultGrid.split(' ').filter((track) => track.startsWith('minmax(')).length, 2);
   assert.ok(defaultGrid.startsWith('20px ')); // selection track
   assert.ok(defaultGrid.endsWith('14px')); // chevron track
@@ -1569,6 +1572,9 @@ test('usage event view', () => {
   const sheetGrid = buildGridTemplateColumns({}, SHEET_GRID_CHROME);
   assert.equal(sheetGrid.split(' ').filter((track) => track === '20px' || track === '14px').length, 0);
   assert.ok(defaultGrid.includes(sheetGrid));
+  // At rest the selection track is shut, not removed, so opening it is one width the grid animates.
+  const restingGrid = buildGridTemplateColumns({}, { ...LIST_GRID_CHROME, isSelectionClosed: true });
+  assert.equal(restingGrid, defaultGrid.replace(/^20px /, '0px '));
 
   // Manual overrides lock specified tracks to exact px
   const manualGrid = buildGridTemplateColumns({ provider: 250, model: 200 });
@@ -1577,37 +1583,37 @@ test('usage event view', () => {
   assert.ok(manualGrid.endsWith('14px'));
 
   // computeGridMinWidth: fixed defaults + flexible mins + the two fixed tracks + 13 gaps + inline padding
-  // 96 + 88 + 140 + 130 + 84 + 76 + 78 + 132 + 64 + 64 + 124 + 76 = 1152; selection 20 + chevron 14 = 34;
-  // gaps 13*16 = 208; padding 24 = 1418
-  const baseMin = 1152 + 34;
-  assert.equal(computeGridMinWidth({}), baseMin + 208 + 24);
+  // 96 + 68 + 140 + 130 + 84 + 78 + 88 + 140 + 56 + 52 + 136 + 120 = 1188; selection 20 + chevron 14 = 34;
+  // gaps 13*16 = 208; padding 40 = 1470
+  const baseMin = 1188 + 34;
+  assert.equal(computeGridMinWidth({}), baseMin + 208 + 40);
   // A manual override replaces the flexible minimum with the requested width
-  assert.equal(computeGridMinWidth({ provider: 300 }), baseMin - 140 + 300 + 208 + 24);
+  assert.equal(computeGridMinWidth({ provider: 300 }), baseMin - 140 + 300 + 208 + 40);
   // Out-of-range overrides are clamped exactly as the template builder clamps them
-  assert.equal(computeGridMinWidth({ provider: 9999 }), baseMin - 140 + 480 + 208 + 24);
+  assert.equal(computeGridMinWidth({ provider: 9999 }), baseMin - 140 + 480 + 208 + 40);
   // The sheet drops both fixed tracks and the two gaps that separated them from the data.
-  assert.equal(computeGridMinWidth({}, 16, 12, SHEET_GRID_CHROME), 1152 + 176 + 24);
+  assert.equal(computeGridMinWidth({}, 16, 20, SHEET_GRID_CHROME), 1188 + 176 + 40);
   assert.ok(computeGridMinWidth({}, 8, 12) < computeGridMinWidth({}, 12, 12));
 
   // foldRequestColumns: a list too narrow for every column leaves the least-scanned ones out, in order.
   const foldedAt = (width: number | null, widths = {}) => [...foldRequestColumns(width, widths)];
   assert.deepEqual(foldedAt(null), [], 'nothing folds before the list is measured');
-  assert.deepEqual(foldedAt(1418), [], 'every column fits at the grid floor');
+  assert.deepEqual(foldedAt(1470), [], 'every column fits at the grid floor');
   assert.deepEqual(foldedAt(2400), []);
-  assert.deepEqual(foldedAt(1417), ['ua'], 'one pixel short folds the first column only');
-  assert.deepEqual(foldedAt(1326), ['ua']);
-  assert.deepEqual(foldedAt(1325), ['ua', 'key']);
-  assert.deepEqual(foldedAt(1140), ['ua', 'key', 'tps'], 'a 1440px window with the rail open keeps the cache rate and the mode');
-  assert.deepEqual(foldedAt(921), ['ua', 'key', 'tps', 'cache', 'mode']);
+  assert.deepEqual(foldedAt(1469), ['ua'], 'one pixel short folds the first column only');
+  assert.deepEqual(foldedAt(1334), ['ua']);
+  assert.deepEqual(foldedAt(1333), ['ua', 'key']);
+  assert.deepEqual(foldedAt(1140), ['ua', 'key', 'cache'], 'a 1440px window with the rail open keeps the speed and the mode');
+  assert.deepEqual(foldedAt(921), ['ua', 'key', 'cache', 'mode', 'tps']);
   // A stacked record labels every field, so the card width folds nothing.
   assert.deepEqual(foldedAt(REQUEST_STACK_WIDTH), []);
   assert.deepEqual(foldedAt(400), []);
   // What stays always fits above the stacked width, so the default layout never scrolls sideways.
   const allFolded = foldRequestColumns(REQUEST_STACK_WIDTH + 1);
-  assert.ok(computeGridMinWidth({}, 16, 12, undefined, allFolded) <= REQUEST_STACK_WIDTH + 1);
+  assert.ok(computeGridMinWidth({}, 16, 20, undefined, allFolded) <= REQUEST_STACK_WIDTH + 1);
   for (let width = REQUEST_STACK_WIDTH + 1; width <= 1500; width += 1) {
     assert.ok(
-      computeGridMinWidth({}, 16, 12, undefined, foldRequestColumns(width)) <= width,
+      computeGridMinWidth({}, 16, 20, undefined, foldRequestColumns(width)) <= width,
       `the default columns fit a ${width}px list without scrolling sideways`,
     );
   }
@@ -1615,8 +1621,9 @@ test('usage event view', () => {
   assert.deepEqual(foldedAt(1418, { provider: 300 }), ['ua', 'key']);
   // The folded columns have no track, and the floor shrinks by their width and gap.
   const foldedGrid = buildGridTemplateColumns({}, undefined, new Set(['ua', 'key']));
-  assert.equal(foldedGrid.split(' ').length, defaultGrid.split(' ').length - 2);
-  assert.equal(computeGridMinWidth({}, 16, 12, undefined, new Set(['ua'])), baseMin + 208 + 24 - 76 - 16);
+  const trackCount = (grid: string) => grid.match(/minmax\([^)]*\)|\S+/g)!.length;
+  assert.equal(trackCount(foldedGrid), trackCount(defaultGrid) - 2);
+  assert.equal(computeGridMinWidth({}, 16, 20, undefined, new Set(['ua'])), baseMin + 208 + 40 - 120 - 16);
 
 
 
@@ -1692,4 +1699,219 @@ test('usage event view', () => {
   assert.deepEqual(twoStopMix('a', 'b', -1), twoStopMix('a', 'b', 0), 'a position below the scale clamps to its low end');
   assert.deepEqual(twoStopMix('a', 'b', 2), twoStopMix('a', 'b', 1), 'a position above the scale clamps to its high end');
   assert.deepEqual(twoStopMix('a', 'b', Number.NaN), twoStopMix('a', 'b', 0), 'a broken reading sits at the low end');
+});
+
+test('archived providers and credentials preserve names, custom marks, portals, and key masks after deletion', async () => {
+  const archivedCredentials = [
+    {
+      auth_index: 'aaaa1111bbbb2222',
+      kind: 'oauth' as const,
+      provider_key: 'qoder',
+      oauth_provider: 'qoder-cn',
+      provider_family: 'qoder',
+      file_name: 'codex-ar•••r@example.org.json',
+      display_name: 'CN Seat',
+      masked_account: 'ar•••r@example.org',
+    },
+    {
+      auth_index: 'idx-inception-v1',
+      kind: 'apikey' as const,
+      provider_key: 'openai-compatible-inception',
+      provider_family: 'openai-compatibility',
+      provider_name: 'Inception',
+      upstream_name: 'inception',
+      base_url: 'https://api.inceptionlabs.ai/v1',
+      icon_id: 'custom:inc-mark',
+      key_mask: 'sk-incep••••••••mega',
+    },
+  ];
+  const archivedProviders = new Map([
+    [
+      'openai-compatible-inception',
+      {
+        provider_key: 'openai-compatible-inception',
+        kind: 'ai_provider' as const,
+        name: 'Inception',
+        upstream_name: 'inception',
+        family: 'openai-compatibility',
+        base_url: 'https://api.inceptionlabs.ai/v1',
+        icon_id: 'custom:inc-mark',
+      },
+    ],
+  ]);
+  const archive = {
+    archivedCredentials: new Map(archivedCredentials.map((item) => [item.auth_index, item])),
+    archivedProviders,
+    archivedProviderIcons: new Map([['openai-compatible-inception', 'custom:inc-mark']]),
+  };
+
+  // Live catalogs are empty (both the provider and OAuth credential were deleted).
+  const credentials = indexCredentialFiles([], archivedCredentials);
+  const pluginLogos = { 'qoder-cn': 'data:image/svg+xml,%3Csvg%20id%3D%22qoder-cn%22/%3E' };
+  const pluginTitles = new Map([['qoder-cn', 'Qoder CN']]);
+  const multiPortalKeys = new Set(['qoder', 'qoder-cn']);
+
+  const deletedCompatEvent = {
+    provider: 'openai-compatible-inception',
+    auth_type: 'apikey',
+    auth_index: 'idx-inception-v1',
+  } as UsageEvent;
+
+  const compatResolved = resolveProviderInfo(
+    deletedCompatEvent,
+    credentials,
+    {},
+    [],
+    pluginLogos,
+    false,
+    pluginTitles,
+    multiPortalKeys,
+    archive,
+  );
+  assert.equal(compatResolved.title, 'Inception', 'deleted OpenAI-compatible provider resolves custom name instead of openai-compatible-inception');
+  assert.equal(compatResolved.iconId, 'custom:inc-mark', 'deleted OpenAI-compatible provider retains its custom icon');
+  assert.equal(compatResolved.credential, 'sk-incep••••••••mega');
+
+  const routingTarget = targetIdentity(deletedCompatEvent, {
+    credentials,
+    providerIcons: {},
+    configuredProviders: [],
+    pluginLogos,
+    pluginTitles,
+    multiPortalKeys,
+    archive,
+  });
+  assert.equal(routingTarget.title, 'Inception');
+  assert.equal(routingTarget.credential, 'sk-incep••••••••mega');
+  assert.equal(routingTarget.iconId, 'custom:inc-mark');
+
+  const nameResolver = createProviderNameResolver([], pluginTitles, archivedProviders);
+  assert.equal(nameResolver('openai-compatible-inception'), 'Inception');
+
+  const deletedOAuthEvent = {
+    provider: 'qoder',
+    auth_type: 'oauth',
+    auth_index: 'aaaa1111bbbb2222',
+  } as UsageEvent;
+  const oauthResolved = resolveProviderInfo(
+    deletedOAuthEvent,
+    credentials,
+    {},
+    [],
+    pluginLogos,
+    false,
+    pluginTitles,
+    multiPortalKeys,
+    archive,
+  );
+  assert.equal(oauthResolved.isOAuth, true);
+  assert.equal(oauthResolved.title, 'Qoder CN', 'deleted OAuth credential retains its portal title');
+  assert.equal(oauthResolved.credential, 'CN Seat', 'deleted OAuth credential retains operator display name instead of hex auth_index');
+  assert.equal(oauthResolved.logo, 'data:image/svg+xml,%3Csvg%20id%3D%22qoder-cn%22/%3E');
+
+  // Historical event.resource_name carrying an unmasked account or project ID must still be masked
+  // through the archived entry (including when provider mismatches drop attribution).
+  const unnamedArchived = indexCredentialFiles([], [
+    {
+      auth_index: 'aaaa1111bbbb2222',
+      kind: 'oauth',
+      provider_key: 'codex',
+      provider_family: 'codex',
+      file_name: 'codex-ar•••r@example.org.json',
+      masked_account: 'ar•••r@example.org',
+    },
+    {
+      auth_index: 'auth-vertex-del',
+      kind: 'oauth',
+      provider_key: 'vertex',
+      provider_family: 'vertex',
+      file_name: 'vertex-acm•••od.json',
+      masked_account: 'ru•••r@acme-prod.iam.gserviceaccount.com',
+    },
+  ]);
+  assert.deepEqual(
+    resolveCredential(
+      { provider: 'codex', auth_index: 'aaaa1111bbbb2222', resource_name: 'codex-architect.operator@example.org.json' } as UsageEvent,
+      unnamedArchived,
+    ),
+    {
+      name: 'codex-architect.operator@example.org.json',
+      displayName: 'ar•••r@example.org',
+      kind: 'resource',
+    },
+  );
+  assert.equal(
+    resolveCredential(
+      { provider: 'claude', auth_index: 'aaaa1111bbbb2222', resource_name: 'codex-architect.operator@example.org.json' } as UsageEvent,
+      unnamedArchived,
+    ).displayName,
+    'codex-ar•••r@example.org.json',
+    'a provider mismatch on an archived credential still masks historical resource_name',
+  );
+  assert.equal(
+    resolveCredential(
+      { provider: 'claude', auth_index: 'auth-vertex-del', resource_name: 'vertex-acme-prod.json' } as UsageEvent,
+      unnamedArchived,
+    ).displayName,
+    'vertex-acm•••od.json',
+    'archived project-ID filename template masks non-email historical resource_name',
+  );
+  assert.equal(
+    resolveCredential(
+      { provider: 'claude', auth_index: 'aaaa1111bbbb2222', resource_name: 'seat alice!@example.org' } as UsageEvent,
+      unnamedArchived,
+    ).displayName,
+    'seat al•••!@example.org',
+    'RFC 5322 punctuation in local parts is masked in fallback labels',
+  );
+
+  // Two deleted credentials sharing the same masked_account and lacking file_name keep distinct bucket identities.
+  const sameMaskArchived = indexCredentialFiles([], [
+    { auth_index: 'idx-seat-a', kind: 'oauth', provider_key: 'codex', masked_account: 'al•••e@acme.test' },
+    { auth_index: 'idx-seat-b', kind: 'oauth', provider_key: 'codex', masked_account: 'al•••e@acme.test' },
+  ]);
+  const seatA = resolveCredential({ provider: 'codex', auth_index: 'idx-seat-a' } as UsageEvent, sameMaskArchived);
+  const seatB = resolveCredential({ provider: 'codex', auth_index: 'idx-seat-b' } as UsageEvent, sameMaskArchived);
+  assert.notEqual(seatA.name, seatB.name, 'distinct deleted credentials keep distinct bucket keys');
+  assert.equal(seatA.displayName, 'al•••e@acme.test');
+  assert.equal(seatB.displayName, 'al•••e@acme.test');
+
+  // Ambiguous live configured providers must never fall back to an unambiguous archived record.
+  const conflictingLiveProviders = [
+    { id: 'openai-compat-0', name: 'Live One', auth_indexes: ['idx-inception-v1'] },
+    { id: 'openai-compat-1', name: 'Live Two', auth_indexes: ['idx-inception-v1'] },
+  ];
+  const conflictedResolved = resolveProviderInfo(
+    deletedCompatEvent,
+    credentials,
+    {},
+    conflictingLiveProviders,
+    pluginLogos,
+    false,
+    pluginTitles,
+    multiPortalKeys,
+    archive,
+  );
+  assert.equal(conflictedResolved.title, 'openai-compatible-inception');
+  assert.notEqual(conflictedResolved.iconId, 'custom:inc-mark', 'conflicting live providers must not borrow archived custom artwork');
+
+  // Merged plugin logos preserve a null prototype so keys like "constructor" remain usable.
+  const { buildMergedPluginLogos } = await import('../../src/hooks/useIdentityDirectory.ts');
+  const logosDict = buildMergedPluginLogos({
+    providers: [],
+    credentials: [],
+    plugins: [],
+    provider_icons: {},
+    archived_credentials: [],
+    archived_providers: [
+      {
+        provider_key: 'constructor',
+        kind: 'oauth_plugin',
+        logo: 'data:image/svg+xml,%3Csvg/%3E',
+      },
+    ],
+    catalog_status: { providers_known: true, credentials_known: true, plugins_known: true },
+  });
+  assert.equal(Object.getPrototypeOf(logosDict), null);
+  assert.equal(logosDict['constructor'], 'data:image/svg+xml,%3Csvg/%3E');
 });

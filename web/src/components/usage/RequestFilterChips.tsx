@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { CloseOutlined } from '../icons';
 import { useT } from '../../i18n';
 import type { EventFilterKey } from '../../types/usageEventQuery';
@@ -31,7 +31,7 @@ export interface RequestFilterChipsProps {
  * chip: "Model: 3" cannot be pruned, so the operator would have to reopen the
  * panel and hunt for which of the three they meant.
  */
-export const RequestFilterChips: React.FC<RequestFilterChipsProps> = ({
+export const RequestFilterChips: React.FC<RequestFilterChipsProps> = React.memo(({
   committed,
   describe,
   onRemove,
@@ -64,7 +64,7 @@ export const RequestFilterChips: React.FC<RequestFilterChipsProps> = ({
             );
           }),
         )}
-        <Button size="small" type="link" className="req-clear-all-chips" onClick={onClearAll}>
+        <Button size="sm" variant="link" className="req-clear-all-chips" onClick={onClearAll}>
           {t('events.clear_all')}
         </Button>
       </div>
@@ -73,4 +73,4 @@ export const RequestFilterChips: React.FC<RequestFilterChipsProps> = ({
       </span>
     </div>
   );
-};
+});

@@ -3893,7 +3893,7 @@
   },
   {
     "name": "quota_list",
-    "description": "Read subscription plan labels and tiers, normalized quota windows, scoped capacity estimates and explicitly historical previous-cycle references. Missing or stale observations are not zero quota; estimates are not balances.",
+    "description": "Read subscription plans, upstream quota percentages and reset times, recorded API-equivalent usage, and estimated full-window capacity. Missing or stale observations remain unknown.",
     "permission": "read",
     "input_schema": {
       "type": "object",
@@ -4036,12 +4036,6 @@
                         "type": "string"
                       }
                     },
-                    "has_mid_cycle_reset": {
-                      "type": "boolean"
-                    },
-                    "has_incomplete_history": {
-                      "type": "boolean"
-                    },
                     "usage": {
                       "type": [
                         "null",
@@ -4063,6 +4057,18 @@
                         "tokens": {
                           "type": "integer"
                         },
+                        "prompt_tokens": {
+                          "type": "integer"
+                        },
+                        "cached_tokens": {
+                          "type": "integer"
+                        },
+                        "cache_rate": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
                         "cost_nanos": {
                           "type": "integer"
                         }
@@ -4083,19 +4089,19 @@
                         "object"
                       ],
                       "properties": {
-                        "tokens": {
-                          "type": "integer"
-                        },
                         "basis": {
                           "type": "string"
                         },
-                        "observed_at_ms": {
+                        "sample_requests": {
                           "type": "integer"
                         },
-                        "from_ms": {
+                        "sample_priced_requests": {
                           "type": "integer"
                         },
-                        "reset_at_ms": {
+                        "requests": {
+                          "type": "integer"
+                        },
+                        "tokens": {
                           "type": "integer"
                         },
                         "cost_nanos": {
@@ -4104,29 +4110,18 @@
                             "integer"
                           ]
                         },
-                        "remaining_tokens": {
+                        "cache_rate": {
                           "type": [
                             "null",
-                            "integer"
+                            "number"
                           ]
-                        },
-                        "remaining_cost_nanos": {
-                          "type": [
-                            "null",
-                            "integer"
-                          ]
-                        },
-                        "error_percent": {
-                          "type": "number"
                         }
                       },
                       "required": [
-                        "tokens",
                         "basis",
-                        "observed_at_ms",
-                        "from_ms",
-                        "reset_at_ms",
-                        "error_percent"
+                        "sample_requests",
+                        "requests",
+                        "tokens"
                       ],
                       "additionalProperties": false
                     },
@@ -4221,7 +4216,7 @@
   },
   {
     "name": "quota_refresh",
-    "description": "Refresh one credential's quota observation, subscription tier and scoped capacity estimate, with historical basis when applicable; does not reset or spend quota credits. Meta observes quota through its key-exchange endpoint, which may mint a key; returned keys are discarded.",
+    "description": "Refresh one credential's upstream quota observation, subscription tier and estimated full-window capacity; does not reset or spend quota credits. Meta observes quota through its key-exchange endpoint, which may mint a key; returned keys are discarded.",
     "permission": "write",
     "input_schema": {
       "type": "object",
@@ -4359,12 +4354,6 @@
                   "type": "string"
                 }
               },
-              "has_mid_cycle_reset": {
-                "type": "boolean"
-              },
-              "has_incomplete_history": {
-                "type": "boolean"
-              },
               "usage": {
                 "type": [
                   "null",
@@ -4386,6 +4375,18 @@
                   "tokens": {
                     "type": "integer"
                   },
+                  "prompt_tokens": {
+                    "type": "integer"
+                  },
+                  "cached_tokens": {
+                    "type": "integer"
+                  },
+                  "cache_rate": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  },
                   "cost_nanos": {
                     "type": "integer"
                   }
@@ -4406,19 +4407,19 @@
                   "object"
                 ],
                 "properties": {
-                  "tokens": {
-                    "type": "integer"
-                  },
                   "basis": {
                     "type": "string"
                   },
-                  "observed_at_ms": {
+                  "sample_requests": {
                     "type": "integer"
                   },
-                  "from_ms": {
+                  "sample_priced_requests": {
                     "type": "integer"
                   },
-                  "reset_at_ms": {
+                  "requests": {
+                    "type": "integer"
+                  },
+                  "tokens": {
                     "type": "integer"
                   },
                   "cost_nanos": {
@@ -4427,29 +4428,18 @@
                       "integer"
                     ]
                   },
-                  "remaining_tokens": {
+                  "cache_rate": {
                     "type": [
                       "null",
-                      "integer"
+                      "number"
                     ]
-                  },
-                  "remaining_cost_nanos": {
-                    "type": [
-                      "null",
-                      "integer"
-                    ]
-                  },
-                  "error_percent": {
-                    "type": "number"
                   }
                 },
                 "required": [
-                  "tokens",
                   "basis",
-                  "observed_at_ms",
-                  "from_ms",
-                  "reset_at_ms",
-                  "error_percent"
+                  "sample_requests",
+                  "requests",
+                  "tokens"
                 ],
                 "additionalProperties": false
               },

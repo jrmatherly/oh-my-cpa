@@ -1,11 +1,13 @@
 import React from 'react';
-import { Layout, Menu, Drawer, Button, Breadcrumb } from 'antd';
+import { clsx } from 'clsx';
+import { Sheet, SheetBody, SheetContent } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  RightOutlined,
 } from '../icons';
-import type { MenuProps } from 'antd';
-import { Outlet, useLocation, useMatches, useNavigate } from 'react-router-dom';
+import { UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation, useMatches, useNavigate, useOutlet } from 'react-router-dom';
 import { HeaderNav } from './HeaderNav';
 import { NARROW_VIEWPORT_QUERY } from '../../hooks/useIsNarrowViewport';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
@@ -18,22 +20,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BrandArtwork } from './BrandArtwork';
 import { OverlayScrollArea } from './OverlayScrollArea';
-import { useT, type TFunc } from '../../i18n';
+import { useT } from '../../i18n';
 import { PricingEditorProvider } from '../pricing/PricingEditorContext';
 import { useToast } from '../feedback';
-import { preloadRoute } from '../../routePreload';
+import { consoleRouteRegistry, warmRouteIntent } from '../../routePreload';
+import {
+  HOT_ACTIVITY_ROUTES,
+  RouteActivityContext,
+  RoutePollingContext,
+  reconcileHotRouteSlots,
+  useTransitionNavigate,
+  type HotRouteSlotEntry,
+} from '../../performance/routeContract';
+import { useTimeZone } from '../../utils/TimeZoneProvider';
 import { collectPluginPages, PLUGIN_PAGE_ROUTE_PREFIX } from '../plugins/pluginPages';
 import { clearMirroredCPAMCCredential } from '../plugins/pluginHostCredential';
 import { buildNavGroups } from './navigation';
-import { navEntryLabel, type NavEntry, type NavGroup } from '../../types/sidebarNav';
+import { navEntryLabel, type NavEntry } from '../../types/sidebarNav';
 import { usePreference } from '../../hooks/usePreference';
 import { useNavLayout } from '../../hooks/useNavLayout';
 import { usePendingUpdates } from '../../hooks/useUpdateNotice';
 import { Tooltip } from './Tooltip';
-
-const { Sider, Content } = Layout;
-
-type NavItem = Required<MenuProps>['items'][number];
+import { NavSelectionHighlight } from './NavSelectionHighlight';
 
 /**
  * Routes that own their scroll columns rather than scrolling the content area.
@@ -73,32 +81,6 @@ function flagIcon(icon: React.ReactNode): React.ReactNode {
   );
 }
 
-function buildMenuItems(navGroups: readonly NavGroup[], t: TFunc, isCollapsed: boolean, pendingUpdateRoutes: ReadonlySet<string>): NavItem[] {
-  const isFlagged = (entry: NavEntry) => pendingUpdateRoutes.has(entry.key);
-  const iconFor = (entry: NavEntry) => (isFlagged(entry) ? flagIcon(entry.icon) : entry.icon);
-  if (isCollapsed) {
-    return navGroups.flatMap((group) => group.items).map((entry) => {
-      // The collapsed row's name is its `title`, so the notice is spoken from there.
-      const title = isFlagged(entry) ? `${navEntryLabel(entry, t)} · ${t('nav.update_available')}` : navEntryLabel(entry, t);
-      return { key: entry.key, icon: iconFor(entry), label: navEntryLabel(entry, t), title, 'data-route-path': entry.key };
-    });
-  }
-  return navGroups.map((group) => ({
-    key: `group:${group.key}`,
-    type: 'group' as const,
-    label: t(group.labelKey),
-    children: group.items.map((entry): NavItem => ({
-      key: entry.key,
-      icon: iconFor(entry),
-      label: isFlagged(entry)
-        ? <>{navEntryLabel(entry, t)}<span className="sr-only"> · {t('nav.update_available')}</span></>
-        : navEntryLabel(entry, t),
-      title: entry.isLiteralLabel ? entry.labelKey : undefined,
-      'data-route-path': entry.key,
-    })),
-  }));
-}
-
 /** The frame the matched route declared for its module download (`loadingAs` in `App.tsx`). */
 function RouteLoading() {
   const matches = useMatches();
@@ -118,12 +100,165 @@ function parseSidebarCollapsed(raw: unknown): boolean | undefined {
   return typeof raw === 'boolean' ? raw : undefined;
 }
 
+const SUPPORTS_CONTENT_VISIBILITY_HIDDEN =
+  typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('content-visibility', 'hidden');
+
+type RouterLocationContextValue = React.ContextType<typeof UNSAFE_LocationContext>;
+type RouterRouteContextValue = React.ContextType<typeof UNSAFE_RouteContext>;
+
+interface HotRouteContextSnapshot {
+  readonly locationContext: RouterLocationContextValue;
+  readonly routeContext: RouterRouteContextValue;
+}
+
+interface HotRouteSlotProps {
+  readonly routeKey: string;
+  readonly isActive: boolean;
+  readonly outlet: React.ReactElement;
+  readonly routerSnapshot: HotRouteContextSnapshot;
+}
+
+interface HotRoutePollingBoundaryProps {
+  readonly isActive: boolean;
+  readonly outlet: React.ReactElement;
+  readonly routerSnapshot: HotRouteContextSnapshot;
+}
+
+/**
+ * Isolates post-paint `RouteActivityContext` updates inside a dedicated boundary whose `outlet`
+ * element reference stays frozen, so React bails out of reconciling thousands of unchanged fibers
+ * inside cached observability pages while still notifying `useIsRouteActive()` subscribers.
+ *
+ * Also freezes both `UNSAFE_LocationContext` and `UNSAFE_RouteContext` for the slot so hooks inside
+ * cached pages (`useNavigate`, `useSearchParams`, `useLocation`) never re-run when another route
+ * becomes active.
+ */
+const HotRoutePollingBoundary = React.memo<HotRoutePollingBoundaryProps>(function HotRoutePollingBoundary({
+  isActive,
+  outlet,
+  routerSnapshot,
+}) {
+  const [isVisibleActive, setIsVisibleActive] = React.useState(isActive);
+  const [isPollingActive, setIsPollingActive] = React.useState(isActive);
+
+  // Actual route visibility transitions right after the paint frame with zero debounce so leaving
+  // and rapidly returning always produces a true `false -> true` edge for draft cleanup and
+  // stale-query revalidation while keeping the navigation paint frame itself free of child renders.
+  React.useEffect(() => {
+    if (isVisibleActive === isActive) return undefined;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const frameId = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(() => {
+          timerId = setTimeout(() => {
+            React.startTransition(() => setIsVisibleActive(isActive));
+          }, 0);
+        })
+      : undefined;
+    if (frameId === undefined) {
+      timerId = setTimeout(() => {
+        React.startTransition(() => setIsVisibleActive(isActive));
+      }, 0);
+    }
+    return () => {
+      if (frameId !== undefined && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(frameId);
+      }
+      if (timerId !== undefined) clearTimeout(timerId);
+    };
+  }, [isActive, isVisibleActive]);
+
+  // Polling teardown alone uses a brief settle delay so rapid back-and-forth switches skip
+  // interval/stream teardown and re-setup.
+  React.useEffect(() => {
+    if (isPollingActive === isActive) return undefined;
+    const settleDelayMs = isActive ? 0 : 180;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const frameId = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(() => {
+          timerId = setTimeout(() => {
+            React.startTransition(() => setIsPollingActive(isActive));
+          }, settleDelayMs);
+        })
+      : undefined;
+    if (frameId === undefined) {
+      timerId = setTimeout(() => {
+        React.startTransition(() => setIsPollingActive(isActive));
+      }, settleDelayMs);
+    }
+    return () => {
+      if (frameId !== undefined && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(frameId);
+      }
+      if (timerId !== undefined) clearTimeout(timerId);
+    };
+  }, [isActive, isPollingActive]);
+
+  const body = React.useMemo(
+    () => (
+      <UNSAFE_RouteContext.Provider value={routerSnapshot.routeContext}>
+        <UNSAFE_LocationContext.Provider value={routerSnapshot.locationContext}>
+          <React.Suspense fallback={<RouteLoading />}>
+            {outlet}
+          </React.Suspense>
+        </UNSAFE_LocationContext.Provider>
+      </UNSAFE_RouteContext.Provider>
+    ),
+    [outlet, routerSnapshot],
+  );
+
+  return (
+    <RouteActivityContext.Provider value={isVisibleActive}>
+      <RoutePollingContext.Provider value={isPollingActive}>
+        {body}
+      </RoutePollingContext.Provider>
+    </RouteActivityContext.Provider>
+  );
+});
+
+/**
+ * Keeps a visited hot observability route's DOM, ComputedStyle, and LayoutObject cache intact via
+ * `content-visibility: hidden` (`faster-spa-view-transitions`).
+ *
+ * Crucially:
+ * 1. Where `content-visibility: hidden` is supported, skipped subtrees are already excluded from
+ *    focus, tab order, hit-testing, and assistive trees by the browser without toggling `inert`
+ *    (which in Blink invalidates inherited `ComputedStyle` across thousands of descendants).
+ * 2. Background polling state (`RouteActivityContext`) transitions after the paint frame settles
+ *    so the navigation frame itself performs zero child component re-renders.
+ */
+const HotRouteSlot = React.memo<HotRouteSlotProps>(function HotRouteSlot({
+  routeKey,
+  isActive,
+  outlet,
+  routerSnapshot,
+}) {
+  return (
+    <div
+      data-hot-route={routeKey}
+      aria-hidden={!isActive || undefined}
+      inert={!SUPPORTS_CONTENT_VISIBILITY_HIDDEN && !isActive ? true : undefined}
+      className={clsx('route-transition', 'route-cached-view', !isActive && 'is-inactive')}
+    >
+      <HotRoutePollingBoundary
+        isActive={isActive}
+        outlet={outlet}
+        routerSnapshot={routerSnapshot}
+      />
+    </div>
+  );
+});
+
 export const AppLayout: React.FC = () => {
   const t = useT();
   const toast = useToast();
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  const { navigateTo, isPending: isNavigationPending } = useTransitionNavigate(rawNavigate, consoleRouteRegistry);
   const location = useLocation();
+  const outlet = useOutlet();
+  const locationContext = React.useContext(UNSAFE_LocationContext);
+  const routeContext = React.useContext(UNSAFE_RouteContext);
   const queryClient = useQueryClient();
+  const timeZone = useTimeZone();
   const sidebarPreference = usePreference('omc_sidebar_collapsed', false, parseSidebarCollapsed);
   const isCollapsed = sidebarPreference.value;
   const setIsCollapsed = (next: boolean) => {
@@ -198,65 +333,122 @@ export const AppLayout: React.FC = () => {
   useDocumentTitle(currentLabel);
   const { products: pendingProducts, hasPluginUpdate } = usePendingUpdates();
   const hasSystemUpdate = pendingProducts.length > 0;
-  const menuItems = React.useMemo(() => {
-    const pendingRoutes = new Set<string>();
-    if (hasSystemUpdate) pendingRoutes.add('/system');
-    if (hasPluginUpdate) pendingRoutes.add('/plugins');
-    return buildMenuItems(visibleNavGroups, t, !isMobile && isCollapsed, pendingRoutes);
-  }, [visibleNavGroups, t, isMobile, isCollapsed, hasSystemUpdate, hasPluginUpdate]);
+  const isCollapsedRail = !isMobile && isCollapsed;
+  const pendingUpdateRoutes = React.useMemo(() => {
+    const routes = new Set<string>();
+    if (hasSystemUpdate) routes.add('/system');
+    if (hasPluginUpdate) routes.add('/plugins');
+    return routes;
+  }, [hasSystemUpdate, hasPluginUpdate]);
 
-  const selectPage = ({ key }: { key: string }) => {
-    navigate(key);
+  // A page change runs as a transition, so `location` - and the selection derived from it - waits
+  // for the target page to load. The rail answers the click at once instead: it marks the entry the
+  // hand chose until the transition settles, whether it committed or was overtaken.
+  const [intendedKey, setIntendedKey] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!isNavigationPending) setIntendedKey(null);
+  }, [isNavigationPending, location.pathname, location.search]);
+  const menuSelectedKey = intendedKey ?? selectedKey;
+
+  const navigateToKey = (key: string) => {
     setIsMobileNavOpen(false);
+    const currentAddress = `${location.pathname}${location.search}`;
+    if (key !== currentAddress || intendedKey !== null) {
+      setIntendedKey(key === currentAddress ? null : key);
+      navigateTo(key);
+    }
   };
 
-  const goToDashboard = () => {
-    setIsMobileNavOpen(false);
-    navigate('/dashboard');
-  };
+  const goToDashboard = () => navigateToKey('/dashboard');
+
+  React.useEffect(() => {
+    return consoleRouteRegistry.scheduleIdlePrewarm(location.pathname);
+  }, [location.pathname]);
 
   const preloadMenuTarget = (event: React.SyntheticEvent) => {
     const target = event.target;
     const path = target instanceof Element ? target.closest('[data-route-path]')?.getAttribute('data-route-path') : null;
-    if (path) preloadRoute(path);
+    if (path) warmRouteIntent(path, { queryClient, pathname: path, timeZone });
+  };
+
+  const selectedGroupKey = visibleNavGroups.find((group) => group.items.some((entry) => entry.key === menuSelectedKey))?.key ?? null;
+  const navLayoutKey = [
+    isCollapsedRail ? 'collapsed' : 'expanded',
+    ...visibleNavGroups.map((group) => `${group.key}:${group.items.map((entry) => entry.key).join(',')}`),
+  ].join('|');
+
+  const renderNavItem = (entry: NavEntry) => {
+    const isSelected = entry.key === menuSelectedKey;
+    const isFlagged = pendingUpdateRoutes.has(entry.key);
+    const label = navEntryLabel(entry, t);
+    const accessibleLabel = isFlagged ? `${label} (${t('nav.update_available')})` : label;
+    const button = (
+      <button
+        key={entry.key}
+        type="button"
+        data-route-path={entry.key}
+        data-selected={isSelected ? '' : undefined}
+        aria-current={isSelected ? 'page' : undefined}
+        aria-label={isCollapsedRail ? accessibleLabel : undefined}
+        className={clsx('app-menu-item', isSelected && 'app-menu-item-selected')}
+        onClick={() => navigateToKey(entry.key)}
+      >
+        <span className="app-menu-item-icon" aria-hidden="true">
+          {isFlagged ? flagIcon(entry.icon) : entry.icon}
+        </span>
+        {!isCollapsedRail && (
+          <span className="app-menu-item-label" data-tip={label} data-tip-overflow="">
+            {label}
+            {isFlagged && <span className="sr-only"> ({t('nav.update_available')})</span>}
+          </span>
+        )}
+      </button>
+    );
+    if (!isCollapsedRail) return button;
+    return (
+      <Tooltip key={entry.key} placement="right" title={accessibleLabel}>
+        {button}
+      </Tooltip>
+    );
   };
 
   const menu = (
-    <Menu
-      mode="inline"
-      theme="dark"
-      items={menuItems}
-      selectedKeys={[selectedKey]}
-      onClick={selectPage}
-      onMouseOver={preloadMenuTarget}
-      onFocus={preloadMenuTarget}
-      onTouchStart={preloadMenuTarget}
-      className="app-menu"
-      inlineCollapsed={false}
-    />
+    <NavSelectionHighlight selectedKey={menuSelectedKey} groupKey={selectedGroupKey} layoutKey={navLayoutKey}>
+      <nav
+        aria-label={t('header.nav_sheet')}
+        className="app-menu"
+        onMouseOver={preloadMenuTarget}
+        onFocus={preloadMenuTarget}
+        onTouchStart={preloadMenuTarget}
+      >
+        {isCollapsedRail
+          ? visibleNavGroups.flatMap((group) => group.items).map(renderNavItem)
+          : visibleNavGroups.map((group) => (
+              <div key={group.key} className="app-menu-group" role="group" aria-labelledby={`nav-group-${group.key}`}>
+                <div id={`nav-group-${group.key}`} className="app-menu-group-title">
+                  {t(group.labelKey)}
+                </div>
+                <div className="app-menu-group-list">
+                  {group.items.map(renderNavItem)}
+                </div>
+              </div>
+            ))}
+      </nav>
+    </NavSelectionHighlight>
   );
 
-  const handleBrandKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      goToDashboard();
-    }
-  };
-
   const brand = (
-    <div
+    <button
+      type="button"
       className="app-brand"
       onClick={goToDashboard}
-      onKeyDown={handleBrandKeyDown}
-      role="button"
-      tabIndex={0}
       aria-label="Dashboard"
     >
       {/* The wordmark spells the product name, so the text that used to sit beside the
           mark is gone: it would say the same thing twice. 20px keeps its cap height in
           step with the navigation text rather than dominating it. */}
       <BrandArtwork shape="wordmark" height={20} className="app-brand-logo" />
-    </div>
+    </button>
   );
 
   React.useLayoutEffect(() => {
@@ -266,60 +458,72 @@ export const AppLayout: React.FC = () => {
 
   const isCpaUnsupported = health?.cpa_management_api === 'unsupported';
   const isCpaManagementDisabled = health?.cpa_management_api === 'disabled';
+  const isGatewayBlocked = isCpaUnsupported || isCpaManagementDisabled;
+  const activeRouteKey = routeViewKey(location.pathname);
+  const isActiveHotRoute = !isGatewayBlocked && outlet !== null && HOT_ACTIVITY_ROUTES.has(activeRouteKey);
+
+  const [hotSlots, setHotSlots] = React.useState<readonly HotRouteSlotEntry<React.ReactElement, HotRouteContextSnapshot>[]>([]);
+  const effectiveHotSlots = isGatewayBlocked
+    ? []
+    : reconcileHotRouteSlots(
+        hotSlots,
+        isActiveHotRoute
+          ? { key: activeRouteKey, outlet, locationContext: { locationContext, routeContext } }
+          : null,
+      );
+
+  React.useLayoutEffect(() => {
+    if (effectiveHotSlots !== hotSlots) {
+      if (effectiveHotSlots.length === 0 && hotSlots.length === 0) return;
+      setHotSlots(effectiveHotSlots);
+    }
+  }, [effectiveHotSlots, hotSlots]);
+
   return (
-    <Layout
+    <div
       className="app-shell"
       style={{ '--sider-width': isMobile ? '0px' : isCollapsed ? '58px' : '236px' } as React.CSSProperties}
     >
       {!isMobile && (
-        <Sider
-          width={236}
-          collapsedWidth={58}
-          collapsible
-          collapsed={isCollapsed}
-          trigger={null}
-          className="app-sider"
-          theme="dark"
-        >
+        <aside className={clsx('app-sider', isCollapsed && 'app-sider-collapsed')}>
           {isCollapsed ? (
-            <div
+            <button
+              type="button"
               className="app-brand app-brand-collapsed"
               onClick={() => setIsCollapsed(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setIsCollapsed(false);
-                }
-              }}
-              role="button"
-              tabIndex={0}
               aria-label="Expand Sider"
             >
               {/* 58px cannot hold the wordmark at a legible size, so the collapsed rail
                   shows the square mark. */}
               <BrandArtwork shape="mark" height={20} />
-            </div>
+            </button>
           ) : brand}
           <OverlayScrollArea className="app-sider-scroll" viewportClassName="app-sider-viewport">{menu}</OverlayScrollArea>
-        </Sider>
+        </aside>
       )}
-      <Layout className="app-body">
+      <div className="app-body">
         <header className="app-header">
           <div className="app-header-left">
             {isMobile ? (
-              <Button type="text" icon={<MenuUnfoldOutlined />} onClick={() => setIsMobileNavOpen(true)} aria-label={t('header.open_nav')} />
+              <Button variant="ghost" icon={<MenuUnfoldOutlined />} onClick={() => setIsMobileNavOpen(true)} aria-label={t('header.open_nav')} />
             ) : (
               <Tooltip title={isCollapsed ? t('header.expand_sidebar') : t('header.collapse_sidebar')}>
-                <Button type="text" icon={isCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setIsCollapsed(!isCollapsed)} disabled={!sidebarPreference.loaded} aria-label={t(isCollapsed ? 'header.expand_sidebar' : 'header.collapse_sidebar')} />
+                <Button variant="ghost" icon={isCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setIsCollapsed(!isCollapsed)} disabled={!sidebarPreference.loaded} aria-label={t(isCollapsed ? 'header.expand_sidebar' : 'header.collapse_sidebar')} />
               </Tooltip>
             )}
-            <Breadcrumb
-              className="app-breadcrumb"
-              items={[
-                { title: currentGroup ? t(currentGroup.labelKey) : '' },
-                { title: <span className="app-breadcrumb-current">{currentLabel}</span> },
-              ]}
-            />
+            <nav aria-label="Breadcrumb" className="app-breadcrumb">
+              <ol className="app-breadcrumb-list">
+                {currentGroup && (
+                  <>
+                    <li className="app-breadcrumb-group">{t(currentGroup.labelKey)}</li>
+                    <li className="app-breadcrumb-sep" aria-hidden="true"><RightOutlined /></li>
+                  </>
+                )}
+                <li className="app-breadcrumb-item" aria-current="page">
+                  <span className="app-breadcrumb-current" data-tip={currentLabel} data-tip-overflow="">{currentLabel}</span>
+                </li>
+              </ol>
+            </nav>
           </div>
           <HeaderNav
             isDiscovering={false}
@@ -328,7 +532,7 @@ export const AppLayout: React.FC = () => {
             isLoggingOut={logoutMutation.isPending}
           />
         </header>
-        <Content
+        <main
           className="app-content"
           ref={contentRef}
           data-scroll-root
@@ -338,47 +542,68 @@ export const AppLayout: React.FC = () => {
         >
           {/* App-wide in-flight indicator, so no page needs its own spinner swap. */}
           <DataProgress />
-          {/* Keyed by pathname so each view cross-fades in instead of hard
-              swapping, and the scroll position resets with the new page. */}
-          <div key={routeViewKey(location.pathname)} className={`route-transition${isWorkspaceRoute(location.pathname) ? ' workspace-route' : ''}`}>
-            <React.Suspense fallback={<RouteLoading />}>
-              {isCpaUnsupported ? (
+          {isCpaUnsupported ? (
+            <div key={activeRouteKey} className={`route-transition${isWorkspaceRoute(location.pathname) ? ' workspace-route' : ''}`}>
+              <React.Suspense fallback={<RouteLoading />}>
                 <CpaUpgradeRequired />
-              ) : isCpaManagementDisabled ? (
+              </React.Suspense>
+            </div>
+          ) : isCpaManagementDisabled ? (
+            <div key={activeRouteKey} className={`route-transition${isWorkspaceRoute(location.pathname) ? ' workspace-route' : ''}`}>
+              <React.Suspense fallback={<RouteLoading />}>
                 <CpaManagementDisabled />
-              ) : (
-                <PricingEditorProvider>
-                  <Outlet />
-                </PricingEditorProvider>
+              </React.Suspense>
+            </div>
+          ) : (
+            <PricingEditorProvider routeKey={activeRouteKey}>
+              {effectiveHotSlots.map((slot) => (
+                <HotRouteSlot
+                  key={slot.key}
+                  routeKey={slot.key}
+                  isActive={isActiveHotRoute && slot.key === activeRouteKey}
+                  outlet={slot.outlet}
+                  routerSnapshot={slot.locationContext}
+                />
+              ))}
+              {/* Non-cached routes keep keyed mount/unmount semantics so secret-bearing views
+                  and draft forms tear down immediately on navigation. */}
+              {!isActiveHotRoute && (
+                <div key={activeRouteKey} className={`route-transition${isWorkspaceRoute(location.pathname) ? ' workspace-route' : ''}`}>
+                  <React.Suspense fallback={<RouteLoading />}>
+                    {outlet}
+                  </React.Suspense>
+                </div>
               )}
-            </React.Suspense>
-          </div>
-        </Content>
-      </Layout>
+            </PricingEditorProvider>
+          )}
+        </main>
+      </div>
       {isMobile && (
         /* The sheet carries the same parts as the rail - brand and nav - because it is the
            rail at a phone width, not a menu of links. The width is bounded in both `px` and
            `vw`: at a 320px viewport a fixed 320px sheet leaves no page visible behind the mask,
            and the reader loses the sense that this is a layer over where they were. The
            safe-area inset keeps the rail's labels clear of a landscape notch. */
-        <Drawer
-          placement="left"
+        <Sheet
           open={isMobileNavOpen}
-          onClose={() => setIsMobileNavOpen(false)}
-          size="min(320px, 86vw)"
-          closable={false}
-          className="mobile-nav-drawer"
-          aria-label={t('header.nav_sheet')}
-          styles={{ body: { display: 'flex', flexDirection: 'column' } }}
+          onOpenChange={(next) => {
+            if (!next) setIsMobileNavOpen(false);
+          }}
         >
-          {brand}
-          <OverlayScrollArea className="app-sider-scroll" viewportClassName="app-sider-viewport">{menu}</OverlayScrollArea>
-        </Drawer>
+          <SheetContent
+            side="left"
+            surface="ground"
+            aria-label={t('header.nav_sheet')}
+            style={{ width: 'min(320px, 86vw)' }}
+            className="mobile-nav-drawer"
+          >
+            <SheetBody className="flex flex-col p-0">
+              {brand}
+              <OverlayScrollArea className="app-sider-scroll" viewportClassName="app-sider-viewport">{menu}</OverlayScrollArea>
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
       )}
-    </Layout>
+    </div>
   );
 };
-
-
-
-

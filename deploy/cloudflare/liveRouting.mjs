@@ -14,7 +14,7 @@
  * the console's `after` cursor and its rolling minute work against it exactly as they
  * work against CPA. There is no state to keep and nothing to drift.
  *
- * What it imitates is a modest deployment under light concurrency: three models, five
+ * What it imitates is a modest deployment under light concurrency: three models, four
  * credentials, a request every second or so with a few in flight at once, a rate that
  * ebbs and swells, the occasional upstream error answered on a sibling credential, and
  * now and then a credential resting after a rate limit while its sibling carries the
@@ -49,11 +49,6 @@ const CREDENTIALS = {
     auth_type: 'api_key',
     provider_key_mask: 'relay-de••••••••mary',
   },
-  'auth-ds-02': {
-    provider: 'openai-compatible-deepseek',
-    auth_type: 'api_key',
-    provider_key_mask: 'relay-de••••••••dary',
-  },
   'auth-claude-01': { provider: 'claude', auth_type: 'oauth' },
   'auth-codex-01': { provider: 'codex', auth_type: 'oauth' },
   'auth-codex-02': { provider: 'codex', auth_type: 'oauth' },
@@ -68,7 +63,7 @@ const CREDENTIALS = {
 const MODELS = [
   {
     model: 'claude-opus-5.5',
-    weight: 0.36,
+    weight: 0.34,
     pool: ['auth-claude-01'],
     latency: [1400, 5200],
     ttftShare: [0.25, 0.45],
@@ -89,13 +84,14 @@ const MODELS = [
     price: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, versionId: 28 },
   },
   {
-    model: 'deepseek-v4.1-flash',
-    weight: 0.26,
-    pool: ['auth-ds-01', 'auth-ds-02'],
+    model: 'deepseek-v4.1-flash-1017',
+    weight: 0.28,
+    pool: ['auth-ds-01'],
     latency: [450, 1900],
     ttftShare: [0.15, 0.3],
     input: [3000, 24000],
     output: [200, 1800],
+    price: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0.15, versionId: 12 },
   },
 ];
 
@@ -103,7 +99,7 @@ const MODELS = [
  * The credentials that rest after a rate limit, in turn. Each has a sibling to take its
  * traffic, so a rest shows as a lane going quiet rather than as errors.
  */
-const RESTING_IN_TURN = ['auth-codex-02', 'auth-ds-01', 'auth-codex-01', 'auth-ds-02'];
+const RESTING_IN_TURN = ['auth-codex-02', 'auth-codex-01'];
 
 /** Upstream errors an attempt can end with, other than a rate limit. */
 const TRANSIENT_STATUSES = [500, 502, 503];

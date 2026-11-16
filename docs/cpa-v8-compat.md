@@ -78,6 +78,21 @@ changed. Serialize writers, validate the change set, keep the encrypted stored f
 then perform the upstream write and read back the result. Refuse a stale revision as
 `config_conflict` and a rejected value as `config_rejected`; do not overwrite unrelated
 settings to make the operation succeed. Restore also backs up the file it replaces.
+High-frequency scalar, caller-key, provider-enablement, auth-file status and global OAuth
+rule toggles apply optimistically to `StateCoordinator` and coalesce within a 250ms
+write-behind batch under the same serialized backup-and-write gate (callers requiring
+synchronous persistence pass `X-OMC-Sync: 1`); structural saves and Agent writes flush
+pending batches first so revisions and readbacks never observe unpersisted drift.
+
+External file edits and writes through other management clients are reconciled by
+periodically checking CPA's persisted configuration and a fingerprint of its applied
+runtime configuration. A changed baseline replaces the full
+in-memory projection before connected consoles are notified; failed reads retain the
+last successful baseline and are retried. Pending batches validate their baseline
+before their first write, and a stale batch reports a conflict and reloads upstream
+state. The configuration revision identifies the persisted document, not completion
+of CPA's runtime hot reload. Applied-runtime changes are observed separately, so a
+later hot reload cannot remain hidden behind an unchanged file revision.
 
 The visual editor exposes shared Claude header settings through the
 [configuration schema](../web/src/types/configSchema.ts) and the existing change-set
@@ -86,6 +101,14 @@ its other strong request signals; an absent or empty list adds no custom entries
 CPA owns normalization (trim, lowercase, drop blanks and duplicates in order) and
 request detection; OMC accepts the gateway's saved readback without maintaining a
 client catalog or detection policy.
+
+User-keyed phrase maps (`string_map` fields such as provider `sensitive-words-replace`)
+are replaced or deleted as whole mapping values at their configuration path rather than
+placing free-form phrase keys into URL path segments; an empty replacement string stays
+explicit (`""`) so CPA deletes the phrase, while clearing all entries removes the key.
+CPA owns phrase normalization, prompt sanitization and Anthropic refusal-fallback
+injection (`upstream.claude.server-side-fallback`), reporting the serving model in
+responses and usage records when a fallback fires.
 
 A multi-path change can require several CPA calls (merge, map replacement, deletion).
 It is not an upstream atomic transaction. Pre-write backup and honest failure/readback
@@ -110,7 +133,7 @@ provider write gate, configuration revision checks and encrypted pre-write backu
 
 The trusted Plugin Host is a separate native-response boundary; its fixed origins,
 credential separation, audit and write-backup requirements are in
-[Architecture](architecture.md#trusted-plugin-pages). It is not permission to add
+[Architecture](dev/architecture.md#trusted-plugin-pages). It is not permission to add
 native responses to the ordinary facade or an arbitrary HTTP proxy.
 
 ## Credential recovery evidence
@@ -122,7 +145,9 @@ Refresh failure projection retains only allowlisted codes and an HTTP status, ne
 provider messages, OAuth codes, account profiles or native credential bodies.
 
 Selected-credential sign-in resolves the name/index pair before asking CPA to pin the
-account. Lifecycle fields are required evidence of support, and the auth-url response
+account. The sign-in provider must be the credential's own provider or the issuing
+login entry CPA reports for it (`oauth_provider`); any other provider or entry is
+refused. Lifecycle fields are required evidence of support, and the auth-url response
 must acknowledge the same target ID before OMC releases the login URL: a provider
 handler can otherwise ignore the selectors even on a gateway with lifecycle fields.
 Missing support, acknowledgement or endpoints must refuse recovery, never restart it
@@ -181,7 +206,7 @@ Installing OMC must not rewrite or upgrade an existing CPA deployment implicitly
 Keep its files, auth directory, network topology and other panels intact.
 Authentication probes must never pop the queue.
 
-[Installation](install.md#other-management-panels) covers coexistence choices.
+[Standalone](install/standalone.md#other-management-panels) covers coexistence choices.
 [SQLite operations](ops/sqlite-operations.md) covers encrypted configuration copies
-and manual recovery of legacy layouts. [Operations](operations.md) covers current
+and manual recovery of legacy layouts. [Quota and warmup](features/quota.md) covers current
 credential/quota controls and their limitations.

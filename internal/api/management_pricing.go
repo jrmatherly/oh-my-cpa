@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/operations"
@@ -210,10 +211,113 @@ func pricingPathParam(request *http.Request, name string) (string, bool) {
 	return value, value != ""
 }
 
+// PricingSyncInfoDTO summarizes the OpenRouter pricing sync status.
+type PricingSyncInfoDTO struct {
+	Known   bool              `json:"known"`
+	Running bool              `json:"running"`
+	State   pricing.SyncState `json:"state"`
+}
+
+// PricingBookResponseDTO returns the complete price book, unpriced models, channels, and sync status.
+type PricingBookResponseDTO struct {
+	Source        string                 `json:"source"`
+	Providers     []pricingProviderDTO   `json:"providers"`
+	Models        []pricingModelDTO      `json:"models"`
+	Unpriced      []pricingUnpricedDTO   `json:"unpriced"`
+	Channels      []pricingChannelDTO    `json:"channels"`
+	UpstreamCount int                    `json:"upstream_count"`
+	Sync          PricingSyncInfoDTO     `json:"sync"`
+	ChannelModels []pricingModelPriceDTO `json:"channel_models,omitempty"`
+	Partial       []string               `json:"partial,omitempty"`
+}
+
+// PricingAttentionResponseDTO lists models observed in usage that currently lack a price.
+type PricingAttentionResponseDTO struct {
+	Unpriced []string `json:"unpriced"`
+}
+
+// PricingCatalogResponseDTO wraps the stored upstream OpenRouter model catalog.
+type PricingCatalogResponseDTO struct {
+	Models []pricing.UpstreamModel `json:"models"`
+}
+
+// PricingAutomaticMatchDTO describes the upstream model selected by automatic matching.
+type PricingAutomaticMatchDTO struct {
+	Model     pricing.UpstreamModel `json:"model"`
+	MatchKind string                `json:"match_kind"`
+}
+
+// PricingModelDetailResponseDTO returns the editor view for a single model or channel override.
+type PricingModelDetailResponseDTO struct {
+	Model           string                     `json:"model"`
+	Price           *pricingModelPriceDTO      `json:"price"`
+	Suggestions     []pricing.UpstreamModel    `json:"suggestions"`
+	Automatic       *PricingAutomaticMatchDTO  `json:"automatic"`
+	ReferencePrices []pricingReferencePriceDTO `json:"reference_prices"`
+	Candidate       *pricing.Candidate         `json:"candidate"`
+	Versions        []pricingPriceVersionDTO   `json:"versions"`
+	Profile         repository.TokenProfile    `json:"profile"`
+	Channel         string                     `json:"channel,omitempty"`
+	IsInherited     *bool                      `json:"is_inherited,omitempty"`
+}
+
+// PricingModelUpdateResponseDTO wraps the saved model price row.
+type PricingModelUpdateResponseDTO struct {
+	Price pricingModelPriceDTO `json:"price"`
+}
+
+// DismissPricingCandidateRequestDTO names the upstream candidate being dismissed for a model.
+type DismissPricingCandidateRequestDTO struct {
+	UpstreamID string `json:"upstream_id"`
+}
+
+// PricingDismissedResponseDTO acknowledges candidate dismissal.
+type PricingDismissedResponseDTO struct {
+	Dismissed bool `json:"dismissed"`
+}
+
+// PricingUnpricedPricedResponseDTO reports how many recorded requests were priced.
+type PricingUnpricedPricedResponseDTO struct {
+	Priced int64 `json:"priced"`
+}
+
+// PricingDeletedResponseDTO reports whether a model price or channel multiplier was deleted.
+type PricingDeletedResponseDTO struct {
+	Deleted bool `json:"deleted"`
+}
+
+// PricingChannelUpdateResponseDTO wraps the saved channel multiplier.
+type PricingChannelUpdateResponseDTO struct {
+	Channel pricing.ChannelMultiplier `json:"channel"`
+}
+
+// PricingSyncStartResponseDTO acknowledges background OpenRouter pricing sync launch.
+type PricingSyncStartResponseDTO struct {
+	Started bool `json:"started"`
+}
+
+// PricingSyncScheduleResponseDTO returns the updated auto-sync interval and sync state.
+type PricingSyncScheduleResponseDTO struct {
+	IntervalHours int64             `json:"interval_hours"`
+	Known         bool              `json:"known"`
+	State         pricing.SyncState `json:"state"`
+}
+
 // listPricing returns the price book in one round trip: every priced model with
 // its recent traffic, the unpriced models with candidates to adopt, the channel
 // multipliers beside the channels traffic actually used, and the sync state.
 // A missing service keeps the endpoint honest with 503 instead of an empty table.
+//
+// @Summary List model price book
+// @Description Return priced models, unpriced models with suggestions, channel multipliers, providers, and OpenRouter sync state.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} PricingBookResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing [get]
 func (h *Handler) listPricing(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if !h.requirePricing(writer) {
@@ -266,10 +370,35 @@ func (h *Handler) listPricing(writer http.ResponseWriter, request *http.Request)
 		models = append(models, dto)
 	}
 	attention := make([]pricingUnpricedDTO, 0, len(unpriced))
+	var batchedSuggestions map[string][]pricing.UpstreamModel
+	useBatch := false
+	if batcher, ok := h.pricing.(interface {
+		SuggestionsBatch(context.Context, []string, int) (map[string][]pricing.UpstreamModel, error)
+	}); ok && len(unpriced) > 0 {
+		useBatch = true
+		var errBatch error
+		batchedSuggestions, errBatch = batcher.SuggestionsBatch(ctx, unpriced, pricingSuggestionLimit)
+		if errBatch != nil {
+			slog.Warn("pricing suggestions unavailable", "error", errBatch)
+			// One retry covers a transient store hiccup without re-reading the
+			// catalog once per unpriced model when the store is persistently down.
+			batchedSuggestions, _ = batcher.SuggestionsBatch(ctx, unpriced, pricingSuggestionLimit)
+		}
+	}
+	suggestFailed := false
 	for _, model := range unpriced {
-		suggestions, err := h.pricing.Suggestions(ctx, model, pricingSuggestionLimit)
-		if err != nil {
-			slog.Warn("pricing suggestions unavailable", "model", model, "error", err)
+		var suggestions []pricing.UpstreamModel
+		if useBatch {
+			if batchedSuggestions != nil {
+				suggestions = batchedSuggestions[model]
+			}
+		} else if !suggestFailed {
+			var errSuggest error
+			suggestions, errSuggest = h.pricing.Suggestions(ctx, model, pricingSuggestionLimit)
+			if errSuggest != nil {
+				slog.Warn("pricing suggestions unavailable", "model", model, "error", errSuggest)
+				suggestFailed = true
+			}
 		}
 		if suggestions == nil {
 			suggestions = []pricing.UpstreamModel{}
@@ -316,18 +445,19 @@ func (h *Handler) listPricing(writer http.ResponseWriter, request *http.Request)
 			}
 		}
 	}
-	response := map[string]any{
-		"source":         pricing.SourceOpenRouter,
-		"providers":      providers,
-		"models":         models,
-		"unpriced":       attention,
-		"channels":       mergePricingChannels(channels, channelUsage),
-		"upstream_count": upstreamCount,
-		"sync": map[string]any{
-			"known":   known,
-			"running": h.pricing.IsRunning(),
-			"state":   state,
+	response := PricingBookResponseDTO{
+		Source:        pricing.SourceOpenRouter,
+		Providers:     providers,
+		Models:        models,
+		Unpriced:      attention,
+		Channels:      mergePricingChannels(channels, channelUsage),
+		UpstreamCount: upstreamCount,
+		Sync: PricingSyncInfoDTO{
+			Known:   known,
+			Running: h.pricing.IsRunning(),
+			State:   state,
 		},
+		Partial: partial,
 	}
 	if h.repo != nil {
 		overrides, err := h.repo.ListChannelModelPrices(ctx)
@@ -340,11 +470,8 @@ func (h *Handler) listPricing(writer http.ResponseWriter, request *http.Request)
 			for index, row := range overrides {
 				prices[index] = projectPricingModel(row)
 			}
-			response["channel_models"] = prices
+			response.ChannelModels = prices
 		}
-	}
-	if len(partial) > 0 {
-		response["partial"] = partial
 	}
 	writeJSON(writer, http.StatusOK, response)
 }
@@ -376,6 +503,16 @@ func mergePricingChannels(configured []pricing.ChannelMultiplier, usage map[stri
 }
 
 // getPricingAttention lists current models without a price, without traffic or suggestions.
+//
+// @Summary List unpriced models
+// @Description Return model names observed in traffic that currently lack pricing rules.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} PricingAttentionResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/attention [get]
 func (h *Handler) getPricingAttention(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if !h.requirePricing(writer) {
@@ -386,11 +523,21 @@ func (h *Handler) getPricingAttention(writer http.ResponseWriter, request *http.
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"unpriced": unpriced})
+	writeJSON(writer, http.StatusOK, PricingAttentionResponseDTO{Unpriced: unpriced})
 }
 
 // getPricingCatalog serves the stored OpenRouter snapshot whole; the picker
 // filters it in the browser, so searching costs neither a request nor a fetch.
+//
+// @Summary Get stored OpenRouter pricing catalog
+// @Description Return the cached upstream OpenRouter model catalog for client-side price picking.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} PricingCatalogResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/catalog [get]
 func (h *Handler) getPricingCatalog(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if !h.requirePricing(writer) {
@@ -404,11 +551,24 @@ func (h *Handler) getPricingCatalog(writer http.ResponseWriter, request *http.Re
 	if models == nil {
 		models = []pricing.UpstreamModel{}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"models": models})
+	writeJSON(writer, http.StatusOK, PricingCatalogResponseDTO{Models: models})
 }
 
 // getPricingModel is the editor's read: the current row, its version history,
 // what a typical recent request looks like, and adoptable candidates.
+//
+// @Summary Get pricing details for a model
+// @Description Return current price, version history, token usage profile, automatic match, and reference prices for a model.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Param model path string true "Model ID (URL-encoded if it contains slashes)"
+// @Param channel query string false "Optional channel name for channel-specific override inspection"
+// @Success 200 {object} PricingModelDetailResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/models/{model} [get]
 func (h *Handler) getPricingModel(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if !h.requirePricing(writer) {
@@ -457,21 +617,21 @@ func (h *Handler) getPricingModel(writer http.ResponseWriter, request *http.Requ
 	// What auto mode would choose, so the editor can show it before the operator
 	// switches: a switch that would find nothing is refused, and the editor says so
 	// up front instead of after a failed save.
-	var automatic any
+	var automatic *PricingAutomaticMatchDTO
 	references := []pricingReferencePriceDTO{}
 	if match, found, err := h.pricing.AutomaticMatch(ctx, model); err != nil {
 		slog.Warn("pricing automatic match unavailable", "model", model, "error", err)
 	} else if found {
-		automatic = map[string]any{"model": match.Model, "match_kind": match.Kind}
+		automatic = &PricingAutomaticMatchDTO{Model: match.Model, MatchKind: match.Kind}
 	} else {
 		references = projectPricingReferences(operations.ReferencePrices(model))
 	}
-	var candidate any
+	var candidate *pricing.Candidate
 	if current != nil && channel == "" {
 		if found, err := h.pricing.Candidates(ctx, []pricing.ModelPrice{*current}); err != nil {
 			slog.Warn("pricing candidate unavailable", "model", model, "error", err)
 		} else if value, ok := found[model]; ok {
-			candidate = value
+			candidate = &value
 		}
 	}
 	var price *pricingModelPriceDTO
@@ -479,10 +639,14 @@ func (h *Handler) getPricingModel(writer http.ResponseWriter, request *http.Requ
 		projected := projectPricingModel(*current)
 		price = &projected
 	}
-	response := map[string]any{"model": model, "price": price, "suggestions": suggestions, "automatic": automatic, "reference_prices": references,
-		"candidate": candidate, "versions": []pricingPriceVersionDTO{}, "profile": repository.TokenProfile{}}
+	response := PricingModelDetailResponseDTO{
+		Model: model, Price: price, Suggestions: suggestions, Automatic: automatic,
+		ReferencePrices: references, Candidate: candidate,
+		Versions: []pricingPriceVersionDTO{}, Profile: repository.TokenProfile{},
+	}
 	if channel != "" {
-		response["channel"], response["is_inherited"] = channel, isInherited
+		response.Channel = channel
+		response.IsInherited = &isInherited
 	}
 	if h.repo != nil {
 		if versions, err := h.repo.ListModelPriceVersions(ctx, model, 50, channel); err == nil && versions != nil {
@@ -497,10 +661,10 @@ func (h *Handler) getPricingModel(writer http.ResponseWriter, request *http.Requ
 					},
 				}
 			}
-			response["versions"] = projected
+			response.Versions = projected
 		}
 		if profile, err := h.repo.QueryModelTokenProfile(ctx, model, h.now().Add(-pricingProfileWindow).UnixMilli()); err == nil {
-			response["profile"] = profile
+			response.Profile = profile
 		}
 	}
 	writeJSON(writer, http.StatusOK, response)
@@ -552,6 +716,21 @@ func pricingErrorResponse(writer http.ResponseWriter, err error) {
 // updatePricingModel applies one operator decision for a current CPA model:
 // custom rates, a pin to an OpenRouter model, or automatic matching. It takes
 // effect for requests stamped from now on; recorded costs never move.
+//
+// @Summary Set model pricing rule
+// @Description Apply custom rates, pin an OpenRouter upstream model, or enable automatic matching for a model (optionally scoped to a channel).
+// @Tags Pricing
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param model path string true "Model ID"
+// @Param channel query string false "Optional channel name"
+// @Param body body pricingModelRequest true "Pricing rule update"
+// @Success 200 {object} PricingModelUpdateResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/models/{model} [put]
 func (h *Handler) updatePricingModel(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -593,12 +772,26 @@ func (h *Handler) updatePricingModel(writer http.ResponseWriter, request *http.R
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"price": projectPricingModel(row)})
+	writeJSON(writer, http.StatusOK, PricingModelUpdateResponseDTO{Price: projectPricingModel(row)})
 }
 
 // dismissPricingCandidate records that the operator saw a model's candidate
 // and keeps their own price. Only a different candidate is offered later; the
 // price itself is untouched.
+//
+// @Summary Dismiss a model pricing candidate
+// @Description Dismiss an OpenRouter price suggestion for a model while preserving the current price.
+// @Tags Pricing
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param model path string true "Model ID"
+// @Param body body DismissPricingCandidateRequestDTO true "Candidate upstream model ID"
+// @Success 200 {object} PricingDismissedResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/models/{model}/dismiss-candidate [post]
 func (h *Handler) dismissPricingCandidate(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -608,9 +801,7 @@ func (h *Handler) dismissPricingCandidate(writer http.ResponseWriter, request *h
 		writeError(writer, http.StatusBadRequest, "model path parameter is required")
 		return
 	}
-	var body struct {
-		UpstreamID string `json:"upstream_id"`
-	}
+	var body DismissPricingCandidateRequestDTO
 	if err := decodeManagementJSON(writer, request, 4*1024, &body); err != nil {
 		return
 	}
@@ -624,11 +815,90 @@ func (h *Handler) dismissPricingCandidate(writer http.ResponseWriter, request *h
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"dismissed": true})
+	writeJSON(writer, http.StatusOK, PricingDismissedResponseDTO{Dismissed: true})
+}
+
+// priceUnpricedUsage prices a model's retained requests that found no price
+// when they happened, at its current price. Requests that locked a price keep it.
+//
+// @Summary Price a model's unpriced requests
+// @Description Price the retained requests of a model that had no price when they happened, using the model's current price and channel multipliers. Requests that already locked a price are unchanged.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Param model path string true "Model ID"
+// @Success 200 {object} PricingUnpricedPricedResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/models/{model}/price-unpriced [post]
+func (h *Handler) priceUnpricedUsage(writer http.ResponseWriter, request *http.Request) {
+	model, ok := pricingPathParam(request, "model")
+	if !ok {
+		writeError(writer, http.StatusBadRequest, "model path parameter is required")
+		return
+	}
+	h.priceUnpriced(writer, request, "pricing.model.price_unpriced", model)
+}
+
+// priceAllUnpricedUsage prices every model's retained requests that found no
+// price when they happened, each at its model's current price.
+//
+// @Summary Price every model's unpriced requests
+// @Description Price the retained requests of every model that had no price when they happened, using each model's current price and channel multipliers. Requests of models that still have no price stay unpriced.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} PricingUnpricedPricedResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/price-unpriced [post]
+func (h *Handler) priceAllUnpricedUsage(writer http.ResponseWriter, request *http.Request) {
+	h.priceUnpriced(writer, request, "pricing.price_unpriced_all", "")
+}
+
+// priceUnpriced changes recorded spend, so the attempt is on record before
+// anything is priced. An empty model prices every model.
+func (h *Handler) priceUnpriced(writer http.ResponseWriter, request *http.Request, action, model string) {
+	if h.repo == nil {
+		writeError(writer, http.StatusServiceUnavailable, "database is unavailable")
+		return
+	}
+	target := model
+	if target == "" {
+		target = "*"
+	}
+	if err := h.recordAudit(request, action, "pricing", target, "attempt", nil); err != nil {
+		writeAuditFailure(writer, "audit log failure; pricing aborted")
+		return
+	}
+	priced, err := h.repo.PriceUnpricedUsage(request.Context(), model, time.Now().UnixMilli())
+	if err != nil {
+		_ = h.recordAudit(request, action, "pricing", target, "failure", map[string]any{"error": err.Error(), "priced": priced})
+		writeInternalError(writer, err)
+		return
+	}
+	_ = h.recordAudit(request, action, "pricing", target, "success", map[string]any{"priced": priced})
+	writeJSON(writer, http.StatusOK, PricingUnpricedPricedResponseDTO{Priced: priced})
 }
 
 // deletePricingModel retires the current price and any pin. A later sync may
 // recreate an automatic price for future requests; recorded costs are intact.
+//
+// @Summary Delete model pricing rule
+// @Description Remove the active pricing rule or channel override for a model without altering historical usage costs.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Param model path string true "Model ID"
+// @Param channel query string false "Optional channel name"
+// @Success 200 {object} PricingDeletedResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/models/{model} [delete]
 func (h *Handler) deletePricingModel(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -656,7 +926,7 @@ func (h *Handler) deletePricingModel(writer http.ResponseWriter, request *http.R
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"deleted": deleted})
+	writeJSON(writer, http.StatusOK, PricingDeletedResponseDTO{Deleted: deleted})
 }
 
 type pricingChannelRequest struct {
@@ -666,6 +936,20 @@ type pricingChannelRequest struct {
 
 // updatePricingChannel sets one channel multiplier for requests stamped from
 // now on.
+//
+// @Summary Set channel price multiplier
+// @Description Configure a cost multiplier for a specific upstream channel.
+// @Tags Pricing
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param channel path string true "Channel name"
+// @Param body body pricingChannelRequest true "Multiplier configuration"
+// @Success 200 {object} PricingChannelUpdateResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/channels/{channel} [put]
 func (h *Handler) updatePricingChannel(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -690,10 +974,22 @@ func (h *Handler) updatePricingChannel(writer http.ResponseWriter, request *http
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"channel": saved})
+	writeJSON(writer, http.StatusOK, PricingChannelUpdateResponseDTO{Channel: saved})
 }
 
 // deletePricingChannel returns a channel to 1x for requests stamped from now on.
+//
+// @Summary Delete channel price multiplier
+// @Description Remove a custom multiplier for a channel so future requests use 1x pricing.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Param channel path string true "Channel name"
+// @Success 200 {object} PricingDeletedResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/channels/{channel} [delete]
 func (h *Handler) deletePricingChannel(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -714,11 +1010,22 @@ func (h *Handler) deletePricingChannel(writer http.ResponseWriter, request *http
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"deleted": deleted})
+	writeJSON(writer, http.StatusOK, PricingDeletedResponseDTO{Deleted: deleted})
 }
 
 // startPricingSync kicks one background OpenRouter sync. A sync already in
 // flight returns 409 so parallel UI refreshes cannot stack fetches.
+//
+// @Summary Start OpenRouter pricing sync
+// @Description Trigger an asynchronous refresh of the OpenRouter model price catalog.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 202 {object} PricingSyncStartResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 409 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/sync [post]
 func (h *Handler) startPricingSync(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -731,7 +1038,7 @@ func (h *Handler) startPricingSync(writer http.ResponseWriter, request *http.Req
 		writeInternalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusAccepted, map[string]any{"started": true})
+	writeJSON(writer, http.StatusAccepted, PricingSyncStartResponseDTO{Started: true})
 }
 
 // pricingScheduleRequest is the auto-sync interval update payload.
@@ -740,6 +1047,19 @@ type pricingScheduleRequest struct {
 }
 
 // updatePricingSyncSchedule modifies the background sync interval (0 = disabled).
+//
+// @Summary Update pricing auto-sync schedule
+// @Description Configure the automatic OpenRouter pricing refresh interval in hours (0 disables auto-sync).
+// @Tags Pricing
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body pricingScheduleRequest true "Sync interval in hours (0-168)"
+// @Success 200 {object} PricingSyncScheduleResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/sync-schedule [put]
 func (h *Handler) updatePricingSyncSchedule(writer http.ResponseWriter, request *http.Request) {
 	if !h.requirePricing(writer) {
 		return
@@ -768,9 +1088,9 @@ func (h *Handler) updatePricingSyncSchedule(writer http.ResponseWriter, request 
 		return
 	}
 	state, known, _ := h.pricing.SyncStateView(request.Context())
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"interval_hours": hours,
-		"known":          known,
-		"state":          state,
+	writeJSON(writer, http.StatusOK, PricingSyncScheduleResponseDTO{
+		IntervalHours: hours,
+		Known:         known,
+		State:         state,
 	})
 }
