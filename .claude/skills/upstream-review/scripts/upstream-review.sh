@@ -38,8 +38,9 @@
 #   x   we removed it                             skip unless we want the file back
 #   +   new upstream file                         the merge creates it
 #   bin binary file                               inspect by hand
-# Only --advance writes a file, the watermark, after a decision log under .upstream-review/reviews/
-# names the SHA.
+# Only --advance writes a tracked file, the watermark, after a decision log under
+# .upstream-review/reviews/ names the SHA. Every run sets remote.<upstream>.tagOpt
+# and .pruneTags in this clone.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -76,6 +77,11 @@ ensure_upstream() {
     echo "[upstream-review] adding remote $REMOTE -> $URL" >&2
     g remote add --no-tags -- "$REMOTE" "$URL"
   fi
+  # A plain `git fetch` of this remote copies upstream's tags into refs/tags two ways: tag
+  # auto-following, and fetch.pruneTags, which mirrors refs/tags/* and would also delete this
+  # fork's own tags. push.followTags then publishes the copies. Keep them in $TAGNS only.
+  g config "remote.$REMOTE.tagOpt" --no-tags
+  g config "remote.$REMOTE.pruneTags" false
   echo "[upstream-review] fetching $REMOTE/$BRANCH and its v* tags" >&2
   if ! g fetch -q --no-tags -- "$REMOTE" "+refs/heads/$BRANCH:$TIP" "+refs/tags/v*:$TAGNS/v*"; then
     g rev-parse -q --verify "$TIP" >/dev/null || die "fetch failed and no cached $TIP"
