@@ -35,7 +35,7 @@ of these is wrong.
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
 | 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
 | 3 | Docs, README, screenshots, public site, issue templates | Merged, pull request 6 (`9c1471eb`) |
-| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items in pull request 7; the upstream sync follows as its own pull request |
+| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items merged, pull request 7 (`46baa5c2`); the upstream sync is left, as its own pull request |
 
 ### Phase 3: docs and the public site
 
@@ -80,6 +80,13 @@ Known traps, still true:
 - Fork migration numbering. Upstream holds migrations through 066. Read
   `internal/repository/db.go` before the fork adds its first migration.
 - Fork release tag scheme. Read `scripts/release-identity.mjs` before the first fork release.
+- Whether to harden the gate. `english-strings.py` skips a text file that holds a NUL byte or is
+  UTF-16 as binary, mis-decodes a Chinese file name under a non-UTF-8 locale, and its `HAN` class
+  misses rare CJK ranges. No tracked file does any of these today. Read the script's scan loop.
+- Whether the gate should cover built output. The staged site's API reference ships Scalar's own
+  bundle, which carries its Chinese locale table; the gate reads tracked files only. Stage the site
+  (`node scripts/build-site.mjs --from-built-docs --skip-demo`) and scan
+  `tmp/site/dist/api-reference/scalar.*.js`.
 
 ## How the deviation is kept
 
