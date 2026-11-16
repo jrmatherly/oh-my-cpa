@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   screenshots:
+    # Fork: the README images are upstream's and arrive with each sync, so only upstream refreshes them.
+    if: github.repository == 'WizisCool/oh-my-cpa'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
