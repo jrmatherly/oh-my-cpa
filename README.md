@@ -22,7 +22,7 @@ Management · Routing · Observability · Agent & MCP
 <br />
 
 **[Live Demo](https://omc-demo.junze.dev)** ·
-**[Documentation](docs/README.md)** ·
+**[Documentation](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)** ·
 **[API Reference](https://omc.junze.dev/api-reference/)** ·
 [Quick Start](#quick-start) ·
 [Features](#features)
@@ -45,7 +45,7 @@ quota window warmup, and built-in Agent/MCP workflows—protected by AES-GCM enc
 audit logging, and automatic pre-write configuration backups.
 
 > [!TIP]
-> Explore the **[Live Demo](https://omc-demo.junze.dev)**, browse the **[Documentation](docs/README.md)**, or inspect the **[API Reference](https://omc.junze.dev/api-reference/)**.
+> Explore the **[Live Demo](https://omc-demo.junze.dev)**, browse the **[Documentation](https://github.com/jrmatherly/oh-my-cpa/blob/main/docs/README.md)**, or inspect the **[API Reference](https://omc.junze.dev/api-reference/)**.
 
 ## Highlights
 
