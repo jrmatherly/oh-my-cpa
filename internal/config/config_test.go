@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -352,15 +354,24 @@ func TestLoadReadsTheConsoleDefaultLanguage(t *testing.T) {
 		t.Fatalf("configured default language = %q, want en", cfg.DefaultLanguage)
 	}
 
-	// A deployment that pinned a language this fork dropped still starts, unpinned.
+	// A deployment that pinned a language this fork dropped still starts, unpinned, and its
+	// operator is told the pin no longer applies.
+	var warnings bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&warnings, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	for _, retired := range []string{"zh", "zh-Hant", "ms"} {
 		t.Setenv(DefaultLanguageEnv, retired)
+		warnings.Reset()
 		cfg, err = Load()
 		if err != nil {
 			t.Fatalf("a retired pin %q stopped start-up: %v", retired, err)
 		}
 		if cfg.DefaultLanguage != "" {
 			t.Fatalf("retired pin %q = %q, want unpinned", retired, cfg.DefaultLanguage)
+		}
+		if got := warnings.String(); !strings.Contains(got, "level=WARN") || !strings.Contains(got, "value="+retired) {
+			t.Fatalf("retired pin %q logged %q, want a warning naming it", retired, got)
 		}
 	}
 }

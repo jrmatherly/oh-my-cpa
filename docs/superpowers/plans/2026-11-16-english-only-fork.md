@@ -34,8 +34,8 @@ of these is wrong.
 | --- | --- | --- |
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
 | 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
-| 3 | Docs, README, screenshots, public site, issue templates | Pull request 6 |
-| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Not started |
+| 3 | Docs, README, screenshots, public site, issue templates | Merged, pull request 6 (`9c1471eb`) |
+| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | In progress on `feat/english-only-sweep`; the upstream sync follows as its own pull request |
 
 ### Phase 3: docs and the public site
 
@@ -65,12 +65,13 @@ Known traps, still true:
 
 ### Phase 4: final sweep
 
-- Read the "English only" section of the skill once more against the tree: every file it names exists
-  or is listed there as deleted.
+- Done: a retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) logs one warning where
+  `internal/config/config.go` loads it, and still starts unpinned.
+- Done: every path the skill's "English only" section names exists or is listed there as deleted.
 - Run one real upstream sync through `english-only.sh` then `english-strings.py`. Both have only
-  been tested against simulated merges.
-- A retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) is accepted silently. Add one warning log
-  line where `internal/config/config.go` loads it, so an operator learns the pin no longer applies.
+  been tested against simulated merges. Measured on 2026-11-16: upstream is 5 commits past the
+  watermark `ec9ba414` (122 files), and a dry-run merge conflicts only where the fork deleted a file
+  upstream changed (8 `.zh` screenshots, 6 catalog files under `zh`, `zh-Hant` and `ms`).
 - Decide whether to drop the unused `@fumadocs/language` from `deploy/site/docs/package.json`. Removing it
   re-resolved `mdast-util-from-markdown` and a `fumadocs-mdx` peer in `pnpm-lock.yaml`, so phase 3 left it.
 
