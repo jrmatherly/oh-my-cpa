@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18.3, Ant Design 6, Vitest (`components` project, jsdom), Vite entry `web/index.html`.
 
-**Status:** Completed. Task 1, the toggle label fix, is in the tree. Task 2, the language boot script, landed and was later removed when the fork became English only, which fixes the document language at `en`.
+**Status:** Completed. Task 1, the toggle label fix, is in the tree. Task 2, the language boot script, landed and was later removed when the fork became English only, which fixes the document language at `en`. The upstream pull request this plan proposes was never opened: upstream shipped the same fix itself in #555. The body below is kept as it was written.
 
 **Spec:** The Findings section below. There is no separate design document; this plan argues from the reproduction recorded there.
 
