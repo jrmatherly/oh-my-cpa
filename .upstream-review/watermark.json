@@ -5,9 +5,9 @@
   "forkPointSha": "183bf120fbc47434c2d9aec08795f891ea42095a",
   "forkPointDate": "2026-11-09",
   "forkPointTag": "v0.3.26",
-  "lastReviewedSha": "65586fba01892c45469283a6a7c84488bd78d523",
-  "lastReviewedShaShort": "65586fba",
+  "lastReviewedSha": "418e1219a9985ec0b7b5e2e9464839cd8ea408d7",
+  "lastReviewedShaShort": "418e1219",
   "lastReviewedDate": "2026-11-16",
   "note": "forkPointSha is the upstream commit (v0.3.26) this fork started tracking from; it never moves. lastReviewedSha is the last upstream commit a decision log classified; only .claude/skills/upstream-review/scripts/upstream-review.sh --advance <sha> moves it, and only forward. The review window runs from lastReviewedSha to the newest upstream v* tag past it, or to upstream/main when no tag is newer (--tip forces the tip). The merge-base is computed, not stored.",
-  "lastAdvancedAt": "2026-11-16T15:14:25Z"
+  "lastAdvancedAt": "2026-11-16T18:23:40Z"
 }
