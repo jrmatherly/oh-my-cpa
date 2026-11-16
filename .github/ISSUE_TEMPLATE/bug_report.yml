@@ -5,8 +5,6 @@ body:
   - type: markdown
     attributes:
       value: |
-        Reports in English or 中文 are both welcome.
-
         A security vulnerability must not be filed here: follow [SECURITY.md](https://github.com/WizisCool/oh-my-cpa/blob/main/SECURITY.md) and report it privately.
   - type: checkboxes
     id: preflight

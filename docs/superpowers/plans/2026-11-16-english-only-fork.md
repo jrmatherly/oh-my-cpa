@@ -33,69 +33,28 @@ of these is wrong.
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
-| 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Pull request 5 |
-| 3 | Docs, README, screenshots, public site, issue templates | Not started |
-| 4 | Final sweep: empty the gate's allow list, close the loop in the skill | Not started |
+| 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
+| 3 | Docs, README, screenshots, public site, issue templates | Pull request 6 |
+| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Not started |
 
 ### Phase 3: docs and the public site
 
-Measured on 2026-11-16 at `be1b0679`. Re-measure before starting:
-`.claude/skills/upstream-review/scripts/english-strings.py --check` lists nothing outside the allow
-list, and `rg -l '\p{Han}' --hidden -g '!.git' -g '!node_modules' -g '!private' .` lists what is left.
+Done. `docs/zh/`, `README.zh-CN.md`, the `.zh` screenshots, the two `zh` social cards,
+`scripts/compact-locales.mjs` and the docs app's `LocaleMemory` are deleted, and every file that
+named them is edited. The gate's allow list holds the script alone, and a scan for Chinese over
+tracked files lists only that script.
 
-Back up before deleting, into a new dated folder beside the existing one
-(`private/backup/2026-11-15-english-only/` already holds the catalogs, `docs/zh`, `README.zh-CN.md`,
-the `.zh` screenshots and the three i18n guides, 97 files with `FILES.txt` and `SHA256SUMS`). Files
-phase 3 deletes that are not yet backed up need copying first; files that are only edited do not,
-since git holds their history.
+The `[lang]` route segment is kept with one language, and so are the `{ en: ... }` records in the
+docs manifest and the landing copy. Page addresses stay `/docs/en/...`, and an upstream change to
+these files conflicts only on a line that carries `zh`. Flattening would have rewritten every docs
+address across the sync script, the site build, the worker and their tests for a site the fork does
+not deploy. The skill's "English only" section holds the verdict for each kind of upstream hunk.
 
-Delete:
+Backups: `private/backup/2026-11-15-english-only/` (docs, README, screenshots) and
+`private/backup/2026-11-16-english-only-docs/` (the script, the component, the two cards).
 
-- `docs/zh/` (28 files: root 9, `features` 6, `install` 7, `operate` 4, `ops` 1, `reference` 1).
-- `README.zh-CN.md`.
-- `docs/images/readme/*.zh.webp` (8 files).
+Known traps, still true:
 
-Edit to English only:
-
-- `README.md` and `docs/README.md`: each links to the Chinese README or docs (1 line of Chinese each).
-- `docs/releases/v0.4.3.md`: one release note with Chinese. Upstream's file; translate the line or
-  record it as an allowed exception, owner's call if translating changes meaning.
-- `docs/ops/cloudflare-demo.md`: 3 references to the `/zh` site.
-- `deploy/site/landing/copy.mjs` (103 lines of Chinese copy), `deploy/site/landing/render.mjs`,
-  `deploy/site/worker.mjs`, `deploy/site/worker.test.mjs`, `deploy/site/wrangler.jsonc`: drop the
-  `zh` landing page, its routes and its `hreflang` links.
-- `deploy/site/docs/` (the Fumadocs app): `src/lib/i18n.ts`, `src/lib/site.ts`,
-  `src/lib/layout.shared.tsx`, `src/app/[lang]/layout.tsx`, `src/app/[lang]/[[...slug]]/page.tsx`,
-  `src/app/(entry)/page.tsx`, `src/components/docs-home.tsx`. Decide whether the `[lang]` route
-  segment stays with one language or is flattened; flattening is a larger deviation from upstream.
-- `scripts/sync-docs-site.mjs` (77 lines of Chinese, `DOCS_LANGUAGES = ['en', 'zh']`),
-  `scripts/build-site.mjs` (`HREFLANG`), `scripts/build-site.test.mjs`,
-  `scripts/render-social-cards.mjs` (two `zh` cards), `scripts/readme-screenshots.mjs`
-  (`LANGUAGES = ['en', 'zh']`).
-- `scripts/native-release.mjs` and `scripts/native-release.test.mjs`: `ARCHIVE_FILES` names
-  `README.zh-CN.md`. The release build fails if the file is deleted and the list is not updated.
-- `scripts/ci-scope.mjs` and `scripts/ci-scope.test.mjs`: `DOCS_INPUTS` names `README.zh-CN.md`.
-- `scripts/compact-locales.mjs`: dead since phase 1 (it reads `locales/zh`); delete it, and its
-  entries in `scripts/sync-web-dist.test.mjs` and `scripts/ci-scope*.mjs`, or leave it and say why.
-- `.github/ISSUE_TEMPLATE/bug_report.yml` and `feature_request.yml`: one Chinese line each.
-- `.coderabbit.yaml`: two rules that exempt `README.zh-CN.md` and `docs/zh/**` from the
-  English-prose rule.
-- `AGENTS.md`: the `deploy/site/` line (bilingual site) and the code-style line that names the
-  Chinese docs as pending removal.
-- `.gitignore`: the `deploy/site/docs/public/zh/` entry goes once the site builds no `zh` output.
-- `.claude/rules/docs.md`: it still says only `README.zh-CN.md` is Chinese.
-- `web/vite.config.ts`: the dead `zh-Hant` and `ms` chunk rules left from phase 1.
-
-Then:
-
-- Remove the phase 3 rows from `ALLOWED` in `english-strings.py`. The gate must still exit 0.
-- Run `pnpm check-docs`, `pnpm test:self`, `pnpm verify:docs`, `pnpm build:site` and the docs-site
-  build. CI's `docs-site` job runs a Next build and `wrangler deploy --dry-run`.
-- Update the "English only" section and the release identity table in the skill.
-
-Known traps:
-
-- `scripts/native-release.mjs` lists doc files by name and the build fails on a missing one.
 - `pnpm test:self` fails three `native-release` tests on macOS (`tar --force-local` needs GNU tar;
   `command -v gtar` finds nothing). They pass in CI.
 - `pnpm verify:workflow:lint` expects `~/go/bin/actionlint`, which is absent on this Mac.
@@ -106,25 +65,20 @@ Known traps:
 
 ### Phase 4: final sweep
 
-- `english-strings.py`'s `ALLOWED` holds only the script itself.
-- `rg -l '\p{Han}'` over tracked files lists only that script and the two tests that hold escapes
-  (`web/tests/search-input.component.test.tsx`, `web/tests/logic/font-shards.test.ts` hold none as
-  literal characters; confirm).
-- Read the "English only" section of the skill once more against the tree. Every file it names exists.
+- Read the "English only" section of the skill once more against the tree: every file it names exists
+  or is listed there as deleted.
 - Run one real upstream sync through `english-only.sh` then `english-strings.py`. Both have only
   been tested against simulated merges.
 - A retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) is accepted silently. Add one warning log
   line where `internal/config/config.go` loads it, so an operator learns the pin no longer applies.
-- Narrow `ALLOWED`'s `README` rule once `README.md` holds no Chinese.
-- Remove `"Bash(pnpm lint:antd)",` from `.claude/settings.json` (Jason's edit; the agent cannot
-  write that file).
+- Decide whether to drop the unused `@fumadocs/language` from `deploy/site/docs/package.json`. Removing it
+  re-resolved `mdast-util-from-markdown` and a `fumadocs-mdx` peer in `pnpm-lock.yaml`, so phase 3 left it.
 
 ## Open questions
 
 - Fork migration numbering. Upstream holds migrations through 066. Read
   `internal/repository/db.go` before the fork adds its first migration.
 - Fork release tag scheme. Read `scripts/release-identity.mjs` before the first fork release.
-- Whether the `[lang]` route segment of the docs site is kept or flattened (phase 3, above).
 
 ## How the deviation is kept
 

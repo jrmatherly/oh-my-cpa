@@ -26,8 +26,7 @@ Management · Routing · Observability · Agent & MCP
 **[Documentation](https://omc.junze.dev/docs/)** ·
 **[API Reference](https://omc.junze.dev/api-reference/)** ·
 [Quick Start](#quick-start) ·
-[Features](#features) ·
-[简体中文](README.zh-CN.md)
+[Features](#features)
 
 <br />
 

@@ -85,7 +85,7 @@ and operator procedures.
   - Only the updater container holds the Docker socket; the console stays socket-free, read-only and unprivileged. OMC updates verify Ed25519-signed manifests and pull by digest.
   - The production SPA is embedded into the Go binary (`internal/web`). Both root (`/`) and configured `OMCPA_BASE_PATH` must work.
 - **Public site (`omc.junze.dev`)**:
-  - `deploy/site/`: Cloudflare Workers Assets configuration (`oh-my-cpa-site`) assembling `/` and `/zh/` (`landing/render.mjs`, static bilingual HTML), `/docs/` (bilingual EN/ZH Fumadocs static export synced from canonical `docs/`, with per-page Markdown and `llms.txt`), `/api-reference/` (standalone Scalar UI + `swagger.json`), `/demo/` (`stageDemo({ basePath: '/demo' })`), `/og/` social cards (`pnpm site:social-cards`), `sitemap.xml` and `robots.txt`.
+  - `deploy/site/`: Cloudflare Workers Assets configuration (`oh-my-cpa-site`) assembling `/` (`landing/render.mjs`, static HTML), `/docs/` (Fumadocs static export synced from canonical `docs/`, with per-page Markdown and `llms.txt`), `/api-reference/` (standalone Scalar UI + `swagger.json`), `/demo/` (`stageDemo({ basePath: '/demo' })`), `/og/` social cards (`pnpm site:social-cards`), `sitemap.xml` and `robots.txt`.
   - `scripts/sync-docs-site.mjs` & `scripts/build-site.mjs`: Single-source docs sync (`DOCS_SECTIONS` owns the docs navigation, simple to advanced) and static site bundler (`pnpm build:docs`, `pnpm build:api-reference`, `pnpm build:site`).
 - **OpenAPI / Swagger contract (`docs/openapi/swagger.json`)**:
   - Every `/api` route registered in `internal/api/handler.go` MUST carry `swaggo` annotations (`@Summary`, `@Description`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Security`, `@Router` relative to `@BasePath /api`) referencing explicit, safe DTO structs (never unprojected domain/repository/secret-bearing models or inline `map[string]any` payloads for documented responses).
@@ -111,7 +111,7 @@ To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testin
 ## Verification workflow
 
 - `pnpm test:fast`: Fast local verification (`pnpm type-check && pnpm test:logic && go test -short ./...`). Runs in seconds without building the binary or launching a browser.
-- `pnpm verify:docs`: Verifies repository links (`pnpm check-docs`), Fumadocs TypeScript types (`pnpm type-check:docs`), bilingual static export (`pnpm build:docs`), and docs sync/staging tests (`scripts/build-site.test.mjs`).
+- `pnpm verify:docs`: Verifies repository links (`pnpm check-docs`), Fumadocs TypeScript types (`pnpm type-check:docs`), static export (`pnpm build:docs`), and docs sync/staging tests (`scripts/build-site.test.mjs`).
 - `pnpm openapi:generate` / `pnpm check:openapi`: Regenerates `docs/openapi/swagger.json` via the pinned `swag` Go tool (`go tool swag`) or verifies it is up to date without mutating the worktree.
 - `pnpm test:frontend`: Runs all Vitest `logic` and `components` suites (`~20s`). For targeted iteration, run `pnpm exec vitest run --config web/vitest.config.ts <file>`.
 - `pnpm build && pnpm verify:browser:smoke`: Compiles the Go binary around the SPA that `pnpm build` wrote to `internal/web/dist` and runs the fast end-to-end Chromium smoke check. Without a fresh build the binary serves the placeholder page.
@@ -120,7 +120,7 @@ To keep local feedback and CI fast, follow the 3-tier testing pyramid in [Testin
 
 ## Code style & documentation hygiene
 
-- Write all technical documentation (`AGENTS.md`, `CONTEXT.md`, `CONTRIBUTING.md`, English guides under `docs/`) and code comments in English. This fork is English only: outside the allow list in `.claude/skills/upstream-review/scripts/english-strings.py` (the docs, the public site and its two build scripts, the issue templates), no tracked file holds Chinese, and `pnpm check:english` fails if any returns.
+- Write all technical documentation (`AGENTS.md`, `CONTEXT.md`, `CONTRIBUTING.md`, guides under `docs/`) and code comments in English. This fork is English only: no tracked file holds Chinese except `.claude/skills/upstream-review/scripts/english-strings.py`, which holds the phrases it rewrites, and `pnpm check:english` fails if any returns.
 - Corners use the five-step scale (`--radius-xs|sm|md|lg|xl`, `RADIUS` in TypeScript) by role, never a literal length, and nested shapes stay concentric (inner = outer − gap); see [Design](docs/dev/design.md#corners).
 - Edges are shadows, not borders: a surface takes `--shadow-edge|raised|float|overlay`, a control `--shadow-control`, a field or track `--shadow-well`, and a state recolours the ring. Ring strength is solved per palette (`EDGE_STEPS`), so never hand-tune one surface's shadow; see [Design](docs/dev/design.md#edges-and-elevation).
 - A selected thing is picked up and lit (`--shadow-selected` + `--select-surface`, `--select-transition`), never outlined; the accent ring is for keyboard focus alone. Buttons follow the variant table (primary once per view, `active` for a pressed toggle, `ghost` for row and inline actions, icon-only tools as `ToolButton`); see [Design](docs/dev/design.md#buttons).

@@ -49,39 +49,6 @@ const TEXT = {
       { icon: Github, title: 'GitHub', body: 'Source, releases and issues.', href: GITHUB_URL },
     ],
   },
-  zh: {
-    title: 'Oh My CPA 文档',
-    lead: '安装控制台、保持稳定运行并充分用好它。从最适合你的路径开始。',
-    paths: [
-      {
-        icon: Rocket,
-        title: '从零开始',
-        body: '一次运行网关、控制台与更新器。四条命令，约三分钟。',
-        href: '/zh/start/quickstart',
-        cta: '快速开始',
-      },
-      {
-        icon: Server,
-        title: '已在运行 CLIProxyAPI',
-        body: '在现有网关旁加装控制台，网关的配置、密钥与端口保持原样。',
-        href: '/zh/install',
-        cta: '选择安装方式',
-      },
-    ],
-    agent: {
-      title: '让编码 Agent 替你安装',
-      body: '把这句话粘贴给 Claude Code、Codex 或 Cursor。Agent 会先检查主机，在不可撤销的操作前征求同意，完成后告诉你控制台地址。',
-      more: 'Agent 会做什么',
-      href: '/zh/start/agent',
-    },
-    browse: '按主题浏览',
-    beyond: '文档之外',
-    elsewhere: [
-      { icon: PlayCircle, title: '在线演示', body: '在浏览器中体验使用示例数据的真实控制台。', href: '/demo/' },
-      { icon: Boxes, title: 'API 参考', body: '控制台全部接口及其请求与响应结构。', href: '/api-reference/' },
-      { icon: Github, title: 'GitHub', body: '源码、版本发布与问题反馈。', href: GITHUB_URL },
-    ],
-  },
 } as const;
 
 function TopicCard({ folder, lang }: { folder: PageTree.Folder; lang: Lang }) {

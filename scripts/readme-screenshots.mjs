@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Writes the screenshots the READMEs embed, under docs/images/readme/.
+ * Writes the screenshots the README embeds, under docs/images/readme/.
  *
  * The pictures are taken from the Go binary's demonstration mode, so they show the
  * sample dataset the public demo serves and can never contain an operator's data.
@@ -26,8 +26,8 @@ const outDir = path.join(root, 'docs', 'images', 'readme');
 const port = Number(process.env.OMCPA_README_PORT ?? 8791);
 const base = `http://127.0.0.1:${port}`;
 
-/** One set per README: the English page and the Simplified Chinese one. */
-const LANGUAGES = ['en', 'zh'];
+/** The file names keep the language suffix that README.md, the landing page and the social cards read. */
+const LANGUAGES = ['en'];
 const MODES = ['light', 'dark'];
 
 const DESKTOP = { width: 1440, height: 900, scale: 2 };

@@ -22,16 +22,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
-# Files that may hold Chinese. This table is one. The rest are the docs, both READMEs, the public
-# site and its two build scripts, and the issue templates, which the docs phase of the
-# English-only work cleans; delete their rows with it.
+# Files that may hold Chinese: this one, whose phrase table names what it rewrites.
 ALLOWED = [
     re.compile(r"^\.claude/skills/upstream-review/scripts/english-strings\.py$"),
-    re.compile(r"^docs/"),
-    re.compile(r"^deploy/site/"),
-    re.compile(r"^README(\.zh-CN)?\.md$"),
-    re.compile(r"^scripts/(sync-docs-site|render-social-cards)\.mjs$"),
-    re.compile(r"^\.github/ISSUE_TEMPLATE/"),
 ]
 # CJK ideographs with Extension A and the compatibility block, plus CJK and full-width
 # punctuation, so a half-rewritten phrase that keeps its brackets or comma still fails.

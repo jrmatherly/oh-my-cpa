@@ -5,7 +5,7 @@ import { GITHUB_URL, SITE_ORIGIN } from '../deploy/site/site-meta.mjs';
 
 const GITHUB_WEB = GITHUB_URL;
 export { SITE_ORIGIN };
-export const DOCS_LANGUAGES = ['en', 'zh'];
+export const DOCS_LANGUAGES = ['en'];
 
 function readBranch() {
   // Always link to `main` (matching GITHUB_SOURCE in deploy/site/docs/src/lib/site.ts)
@@ -21,344 +21,307 @@ export const BRAND_ASSETS = [
   ['web/public/favicon.svg', 'mark.svg'],
 ];
 
-const ZH_ENGLISH_ONLY = '本页当前以仓库英文原文发布。';
-
 /**
  * The documentation site's navigation, from simple to advanced. Each section is a sidebar
- * group; each page names its canonical repository source per language. Pages without a
- * Chinese translation reuse the English source and carry `zhNotice`.
+ * group; each page names its canonical repository source per language.
  */
 export const DOCS_SECTIONS = [
   {
     dir: 'start',
-    title: { en: 'Get started', zh: '开始使用' },
-    description: { en: 'First deployment, agent-assisted install and how the pieces fit.', zh: '首次部署、让 Agent 代装，以及各部分如何协作。' },
+    title: { en: 'Get started' },
+    description: { en: 'First deployment, agent-assisted install and how the pieces fit.' },
     icon: 'Rocket',
     pages: [
       {
         slug: 'quickstart',
-        source: { en: 'docs/quickstart.md', zh: 'docs/zh/quickstart.md' },
-        title: { en: 'Quickstart', zh: '快速开始' },
+        source: { en: 'docs/quickstart.md' },
+        title: { en: 'Quickstart' },
         description: {
           en: 'Run the gateway, Oh My CPA and the updater with Docker Compose in about three minutes.',
-          zh: '用 Docker Compose 约三分钟跑起网关、Oh My CPA 与更新器。',
         },
       },
       {
         slug: 'agent',
-        source: { en: 'docs/install-for-agents.md', zh: 'docs/zh/install-for-agents.md' },
-        title: { en: 'Install with an agent', zh: '让 Agent 安装' },
+        source: { en: 'docs/install-for-agents.md' },
+        title: { en: 'Install with an agent' },
         description: {
           en: 'Paste one prompt into Claude Code, Codex or Cursor and let it install Oh My CPA safely.',
-          zh: '把一句提示词交给 Claude Code、Codex 或 Cursor，让它安全地完成安装。',
         },
       },
       {
         slug: 'how-it-works',
-        source: { en: 'docs/how-it-works.md', zh: 'docs/zh/how-it-works.md' },
-        title: { en: 'How it works', zh: '工作原理' },
+        source: { en: 'docs/how-it-works.md' },
+        title: { en: 'How it works' },
         description: {
           en: 'How Oh My CPA sits beside CLIProxyAPI, which keys it needs and where data lives.',
-          zh: 'Oh My CPA 如何与 CLIProxyAPI 协作、需要哪些密钥、数据存在哪里。',
         },
       },
     ],
   },
   {
     dir: 'install',
-    title: { en: 'Install', zh: '安装' },
-    description: { en: 'Every install path, remote access, upgrades and troubleshooting.', zh: '全部安装方式、远程访问、升级与排障。' },
+    title: { en: 'Install' },
+    description: { en: 'Every install path, remote access, upgrades and troubleshooting.' },
     icon: 'Download',
     index: {
-      source: { en: 'docs/install.md', zh: 'docs/zh/install.md' },
-      title: { en: 'Choose an install path', zh: '选择安装方式' },
+      source: { en: 'docs/install.md' },
+      title: { en: 'Choose an install path' },
       description: {
         en: 'Pick the installation that matches where your gateway runs today.',
-        zh: '按网关当前的运行位置选择安装方式。',
       },
     },
     pages: [
       {
         slug: 'standalone',
-        source: { en: 'docs/install/standalone.md', zh: 'docs/zh/install/standalone.md' },
-        title: { en: 'Standalone', zh: '独立部署' },
+        source: { en: 'docs/install/standalone.md' },
+        title: { en: 'Standalone' },
         description: {
           en: 'Add Oh My CPA beside a running gateway and leave the gateway as it is.',
-          zh: '在已运行的网关旁加装 Oh My CPA，网关保持原样。',
         },
       },
       {
         slug: 'compose',
-        source: { en: 'docs/install/compose.md', zh: 'docs/zh/install/compose.md' },
-        title: { en: 'Existing Compose file', zh: '并入现有编排' },
+        source: { en: 'docs/install/compose.md' },
+        title: { en: 'Existing Compose file' },
         description: {
           en: 'Add Oh My CPA and its updater to the Compose file that already runs the gateway.',
-          zh: '把 Oh My CPA 与更新器加入已运行网关的 Compose 文件。',
         },
       },
       {
         slug: 'native',
-        source: { en: 'docs/install/native.md', zh: 'docs/zh/install/native.md' },
-        title: { en: 'Native executable', zh: '原生可执行文件' },
+        source: { en: 'docs/install/native.md' },
+        title: { en: 'Native executable' },
         description: {
           en: 'Run the single executable on macOS, Windows, Linux or FreeBSD without Docker.',
-          zh: '不用 Docker，在 macOS、Windows、Linux 或 FreeBSD 上运行单个可执行文件。',
         },
       },
       {
         slug: 'source',
-        source: { en: 'docs/install/source.md', zh: 'docs/zh/install/source.md' },
-        title: { en: 'Build from source', zh: '从源码构建' },
+        source: { en: 'docs/install/source.md' },
+        title: { en: 'Build from source' },
         description: {
           en: 'Build the console and server from a checkout with Go, Node.js and pnpm.',
-          zh: '用 Go、Node.js 与 pnpm 从源码构建控制台与服务端。',
         },
       },
       {
         slug: 'remote-access',
-        source: { en: 'docs/install/remote-access.md', zh: 'docs/zh/install/remote-access.md' },
-        title: { en: 'Remote access and HTTPS', zh: '远程访问与 HTTPS' },
+        source: { en: 'docs/install/remote-access.md' },
+        title: { en: 'Remote access and HTTPS' },
         description: {
           en: 'Reach the console over an SSH tunnel or a reverse proxy, and install it as an app.',
-          zh: '通过 SSH 隧道或反向代理访问控制台，并将其安装为应用。',
         },
       },
       {
         slug: 'upgrade',
-        source: { en: 'docs/install/upgrade.md', zh: 'docs/zh/install/upgrade.md' },
-        title: { en: 'Upgrading', zh: '升级' },
+        source: { en: 'docs/install/upgrade.md' },
+        title: { en: 'Upgrading' },
         description: {
           en: 'Update from the console in one click, by hand, or add the updater to an older install.',
-          zh: '在控制台一键更新、手动更新，或为旧部署加装更新器。',
         },
       },
       {
         slug: 'troubleshooting',
-        source: { en: 'docs/install/troubleshooting.md', zh: 'docs/zh/install/troubleshooting.md' },
-        title: { en: 'Troubleshooting', zh: '排障' },
+        source: { en: 'docs/install/troubleshooting.md' },
+        title: { en: 'Troubleshooting' },
         description: {
           en: 'Check health and fix port, permission, connection and sign-in problems.',
-          zh: '检查健康状态，解决端口、权限、连接与登录问题。',
         },
       },
     ],
   },
   {
     dir: 'operate',
-    title: { en: 'Operate', zh: '运维' },
-    description: { en: 'Ports, storage, updates, backups, keys and time zone.', zh: '端口、存储、更新、备份、密钥与时区。' },
+    title: { en: 'Operate' },
+    description: { en: 'Ports, storage, updates, backups, keys and time zone.' },
     icon: 'Server',
     index: {
-      source: { en: 'docs/operations.md', zh: 'docs/zh/operations.md' },
-      title: { en: 'Operations', zh: '运维概览' },
+      source: { en: 'docs/operations.md' },
+      title: { en: 'Operations' },
       description: {
         en: 'Day-to-day tasks for a running console and the rules a deployment must keep.',
-        zh: '运行中控制台的日常任务，以及部署必须遵守的约束。',
       },
     },
     pages: [
       {
         slug: 'ports-storage',
-        source: { en: 'docs/operate/ports-storage.md', zh: 'docs/zh/operate/ports-storage.md' },
-        title: { en: 'Ports and storage', zh: '端口与存储' },
+        source: { en: 'docs/operate/ports-storage.md' },
+        title: { en: 'Ports and storage' },
         description: {
           en: 'Change the listening port and keep the database in a volume or a host directory.',
-          zh: '修改监听端口，把数据库放在命名卷或宿主机目录。',
         },
       },
       {
         slug: 'updates',
-        source: { en: 'docs/operate/updates.md', zh: 'docs/zh/operate/updates.md' },
-        title: { en: 'Updates', zh: '更新' },
+        source: { en: 'docs/operate/updates.md' },
+        title: { en: 'Updates' },
         description: {
           en: 'How release checks work and how the signed, isolated updater replaces containers.',
-          zh: '版本检查如何工作，以及签名校验、隔离运行的更新器如何替换容器。',
         },
       },
       {
         slug: 'backup',
-        source: { en: 'docs/ops/sqlite-operations.md', zh: 'docs/zh/ops/sqlite-operations.md' },
-        title: { en: 'Backup and restore', zh: '备份与恢复' },
+        source: { en: 'docs/ops/sqlite-operations.md' },
+        title: { en: 'Backup and restore' },
         description: {
           en: 'Encrypted backups, cloud recovery, master key governance and database maintenance.',
-          zh: '加密备份、云端恢复、主密钥治理与数据库维护。',
         },
       },
       {
         slug: 'keys',
-        source: { en: 'docs/operate/keys.md', zh: 'docs/zh/operate/keys.md' },
-        title: { en: 'Keys', zh: '密钥' },
+        source: { en: 'docs/operate/keys.md' },
+        title: { en: 'Keys' },
         description: {
           en: 'Keep the master key safe and rotate the CPA management key.',
-          zh: '妥善保管主密钥，并轮换 CPA 管理密钥。',
         },
       },
       {
         slug: 'time-zone',
-        source: { en: 'docs/operate/time-zone.md', zh: 'docs/zh/operate/time-zone.md' },
-        title: { en: 'Time zone', zh: '时区' },
+        source: { en: 'docs/operate/time-zone.md' },
+        title: { en: 'Time zone' },
         description: {
           en: 'Choose the calendar that daily statistics and timestamps follow.',
-          zh: '选择每日统计与时间显示所用的日历。',
         },
       },
     ],
   },
   {
     dir: 'features',
-    title: { en: 'Features', zh: '功能' },
-    description: { en: 'Agent and MCP, routing, quota, pricing, playground and plugins.', zh: 'Agent 与 MCP、路由、配额、定价、试验场与插件。' },
+    title: { en: 'Features' },
+    description: { en: 'Agent and MCP, routing, quota, pricing, playground and plugins.' },
     icon: 'Sparkles',
     pages: [
       {
         slug: 'agent',
-        source: { en: 'docs/features/agent.md', zh: 'docs/zh/features/agent.md' },
-        title: { en: 'Agent and MCP', zh: 'Agent 与 MCP' },
+        source: { en: 'docs/features/agent.md' },
+        title: { en: 'Agent and MCP' },
         description: {
           en: 'Operate the console in conversation and connect external agents over MCP.',
-          zh: '以对话方式操作控制台，并通过 MCP 接入外部 Agent。',
         },
       },
       {
         slug: 'routing',
-        source: { en: 'docs/features/routing.md', zh: 'docs/zh/features/routing.md' },
-        title: { en: 'Routing and model rules', zh: '路由与模型规则' },
+        source: { en: 'docs/features/routing.md' },
+        title: { en: 'Routing and model rules' },
         description: {
           en: 'Arrange providers and OAuth credentials into priority tiers and edit model rules.',
-          zh: '把提供商与 OAuth 凭据编排为优先级，并编辑模型规则。',
         },
       },
       {
         slug: 'quota',
-        source: { en: 'docs/features/quota.md', zh: 'docs/zh/features/quota.md' },
-        title: { en: 'Quota and warmup', zh: '配额与预热' },
+        source: { en: 'docs/features/quota.md' },
+        title: { en: 'Quota and warmup' },
         description: {
           en: 'Observe quota windows and cooldowns, and start windows on a schedule.',
-          zh: '观测配额窗口与冷却，并按计划预热窗口。',
         },
       },
       {
         slug: 'pricing',
-        source: { en: 'docs/pricing.md', zh: 'docs/zh/pricing.md' },
-        title: { en: 'Pricing and cost', zh: '定价与费用' },
+        source: { en: 'docs/pricing.md' },
+        title: { en: 'Pricing and cost' },
         description: {
           en: 'How each request is priced, which rates apply and how cost evidence is kept.',
-          zh: '每个请求如何计价、适用哪些费率，以及费用证据如何保存。',
         },
       },
       {
         slug: 'playground',
-        source: { en: 'docs/features/playground.md', zh: 'docs/zh/features/playground.md' },
-        title: { en: 'Playground and models', zh: '操练场与模型' },
+        source: { en: 'docs/features/playground.md' },
+        title: { en: 'Playground and models' },
         description: {
           en: 'Try a model with a real client key and browse the live model directory.',
-          zh: '用真实客户端密钥试用模型，浏览实时模型目录。',
         },
       },
       {
         slug: 'plugins',
-        source: { en: 'docs/features/plugins.md', zh: 'docs/zh/features/plugins.md' },
-        title: { en: 'Plugins', zh: '插件' },
+        source: { en: 'docs/features/plugins.md' },
+        title: { en: 'Plugins' },
         description: {
           en: 'Install plugins from the store and open their pages inside the console.',
-          zh: '从商店安装插件，并在控制台内打开插件页面。',
         },
       },
       {
         slug: 'display',
-        source: { en: 'docs/features/display.md', zh: 'docs/zh/features/display.md' },
-        title: { en: 'Display and icons', zh: '展示与图标' },
+        source: { en: 'docs/features/display.md' },
+        title: { en: 'Display and icons' },
         description: {
           en: 'Display currency, TPS calculation and custom provider icons.',
-          zh: '展示币种、TPS 口径与自定义提供商图标。',
         },
       },
     ],
   },
   {
     dir: 'reference',
-    title: { en: 'Reference', zh: '参考' },
-    description: { en: 'Environment variables, the CPA contract, glossary and API.', zh: '环境变量、CPA 契约、术语表与 API。' },
+    title: { en: 'Reference' },
+    description: { en: 'Environment variables, the CPA contract, glossary and API.' },
     icon: 'BookMarked',
     pages: [
       {
         slug: 'environment',
-        source: { en: 'docs/reference/environment.md', zh: 'docs/zh/reference/environment.md' },
-        title: { en: 'Environment variables', zh: '环境变量' },
+        source: { en: 'docs/reference/environment.md' },
+        title: { en: 'Environment variables' },
         description: {
           en: 'Every setting Oh My CPA, its Compose files and its updater read.',
-          zh: 'Oh My CPA、Compose 模板与更新器读取的全部配置项。',
         },
       },
       {
         slug: 'cpa-contract',
-        source: { en: 'docs/cpa-v8-compat.md', zh: 'docs/zh/cpa-v8-compat.md' },
-        title: { en: 'CPA contract', zh: 'CPA 契约' },
+        source: { en: 'docs/cpa-v8-compat.md' },
+        title: { en: 'CPA contract' },
         description: {
           en: 'What Oh My CPA reads from and writes to the CLIProxyAPI v8 Management API.',
-          zh: 'Oh My CPA 对 CLIProxyAPI v8 管理 API 的读写范围。',
         },
       },
       {
         slug: 'glossary',
-        source: { en: 'CONTEXT.md', zh: 'CONTEXT.md' },
-        title: { en: 'Glossary', zh: '术语表' },
+        source: { en: 'CONTEXT.md' },
+        title: { en: 'Glossary' },
         description: {
           en: 'Canonical terms for identity, usage, billing and automation.',
-          zh: '身份、用量、计费与自动化相关的标准术语。',
         },
-        zhNotice: ZH_ENGLISH_ONLY,
       },
     ],
     links: [
-      { title: { en: 'API reference', zh: 'API 参考' }, url: '/api-reference/' },
-      { title: { en: 'Release notes', zh: '版本发布' }, url: `${GITHUB_WEB}/releases` },
+      { title: { en: 'API reference' }, url: '/api-reference/' },
+      { title: { en: 'Release notes' }, url: `${GITHUB_WEB}/releases` },
     ],
   },
   {
     dir: 'develop',
-    title: { en: 'Develop', zh: '开发' },
-    description: { en: 'Architecture, agent capabilities and contributing.', zh: '系统架构、Agent 能力与参与贡献。' },
+    title: { en: 'Develop' },
+    description: { en: 'Architecture, agent capabilities and contributing.' },
     icon: 'Code',
     pages: [
       {
         slug: 'architecture',
-        source: { en: 'docs/dev/architecture.md', zh: 'docs/dev/architecture.md' },
-        title: { en: 'Architecture', zh: '系统架构' },
+        source: { en: 'docs/dev/architecture.md' },
+        title: { en: 'Architecture' },
         description: {
           en: 'Module ownership, trust boundaries, write gates and frontend delivery.',
-          zh: '模块职责、信任边界、写入门禁与前端交付。',
         },
-        zhNotice: ZH_ENGLISH_ONLY,
       },
       {
         slug: 'capabilities',
-        source: { en: 'docs/agent-capabilities.md', zh: 'docs/zh/agent-capabilities.md' },
-        title: { en: 'Agent capabilities', zh: 'Agent 能力' },
+        source: { en: 'docs/agent-capabilities.md' },
+        title: { en: 'Agent capabilities' },
         description: {
           en: 'The shared capability registry behind the Agent and MCP, and how to add an operation.',
-          zh: 'Agent 与 MCP 共用的能力注册表，以及如何新增操作。',
         },
       },
       {
         slug: 'contributing',
-        source: { en: 'CONTRIBUTING.md', zh: 'CONTRIBUTING.md' },
-        title: { en: 'Contributing', zh: '参与贡献' },
+        source: { en: 'CONTRIBUTING.md' },
+        title: { en: 'Contributing' },
         description: {
           en: 'Local development, verification and contribution workflow.',
-          zh: '本地开发、验证与贡献流程。',
         },
-        zhNotice: ZH_ENGLISH_ONLY,
       },
     ],
   },
 ];
 
 export const DOCS_HOME = {
-  title: { en: 'Documentation', zh: '文档' },
+  title: { en: 'Documentation' },
   description: {
     en: 'Install, operate and extend Oh My CPA, the self-hosted AI gateway console.',
-    zh: '安装、运维与扩展 Oh My CPA：自托管的 AI 网关控制台。',
   },
 };
 
@@ -378,19 +341,8 @@ export function docsUrl(lang, slug = '') {
 
 export function buildSourceLinkMap() {
   const map = new Map();
-  for (const page of listDocsPages()) {
-    const en = docsUrl('en', page.slug);
-    const zh = docsUrl('zh', page.slug);
-    if (page.source.en === page.source.zh) {
-      map.set(page.source.en, { en, zh });
-    } else {
-      // A link written in either language's source to the other's file keeps that file's language.
-      map.set(page.source.en, { en, zh: en });
-      map.set(page.source.zh, { en: zh, zh });
-    }
-  }
-  for (const readme of ['README.md', 'docs/README.md']) map.set(readme, { en: '/en/', zh: '/en/' });
-  for (const readme of ['README.zh-CN.md', 'docs/zh/README.md']) map.set(readme, { en: '/zh/', zh: '/zh/' });
+  for (const page of listDocsPages()) map.set(page.source.en, { en: docsUrl('en', page.slug) });
+  for (const readme of ['README.md', 'docs/README.md']) map.set(readme, { en: '/en/' });
   return map;
 }
 
@@ -426,7 +378,6 @@ function rewriteMarkdownForMdx(markdown, {
   repoRoot,
   sourceLinkMap,
   branch,
-  zhNotice = '',
 }) {
   let text = markdown.replace(/\r\n/g, '\n');
   text = text.replace(/^#\s+[^\n]+\n+/, '');
@@ -506,9 +457,6 @@ function rewriteMarkdownForMdx(markdown, {
               if (!bang && target === 'https://omc.junze.dev/docs/') {
                 return `[${label}](/en/)`;
               }
-              if (!bang && target === 'https://omc.junze.dev/docs/zh/') {
-                return `[${label}](/zh/)`;
-              }
               return full;
             }
             const [rawPath, hash] = target.split('#');
@@ -552,11 +500,7 @@ function rewriteMarkdownForMdx(markdown, {
     })
     .join('');
 
-  const trimmed = rewritten.trim();
-  const noticeBlock = zhNotice
-    ? `<Callout type="info">\n\n${zhNotice}\n\n</Callout>\n\n`
-    : '';
-  return `${noticeBlock}${trimmed}\n`;
+  return `${rewritten.trim()}\n`;
 }
 
 function formatFrontmatter({ title, description, source }) {
@@ -571,7 +515,7 @@ function toAgentMarkdown({ title, description, body }) {
   const withoutWrappers = body
     .replace(/<Callout type="[a-z]+">\n\n([\s\S]*?)\n\n<\/Callout>/g, (_m, inner) => inner.split('\n').map((line) => `> ${line}`.trimEnd()).join('\n'))
     .replace(/<span id="[^"]+" \/>\n*/g, '')
-    .replace(/\]\(\/(en|zh)\//g, `](${SITE_ORIGIN}/docs/$1/`)
+    .replace(/\]\(\/en\//g, `](${SITE_ORIGIN}/docs/en/`)
     .replace(/\]\(\/(api-reference|demo)\//g, `](${SITE_ORIGIN}/$1/`)
     .replace(/\]\(\/docs\//g, `](${SITE_ORIGIN}/docs/`);
   // Unescape MDX-specific prose escapes outside fenced code blocks.
@@ -613,7 +557,8 @@ export async function syncDocsSite({ repoRoot }) {
 
   fs.rmSync(contentDir, { recursive: true, force: true });
   fs.mkdirSync(contentDir, { recursive: true });
-  for (const lang of DOCS_LANGUAGES) fs.rmSync(path.join(publicDir, lang), { recursive: true, force: true });
+  // `zh` is output an older checkout generated; Next would publish it from `public/` as it stands.
+  for (const lang of [...DOCS_LANGUAGES, 'zh']) fs.rmSync(path.join(publicDir, lang), { recursive: true, force: true });
 
   const write = (rel, text) => {
     const abs = path.join(contentDir, rel);
@@ -646,7 +591,6 @@ export async function syncDocsSite({ repoRoot }) {
         repoRoot,
         sourceLinkMap,
         branch,
-        zhNotice: lang === 'zh' ? page.zhNotice ?? '' : '',
       });
       const title = page.title[lang];
       const description = page.description[lang];
@@ -690,5 +634,5 @@ const selfPath = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(selfPath)) {
   const repoRoot = path.resolve(path.dirname(selfPath), '..');
   const result = await syncDocsSite({ repoRoot });
-  console.log(`synced ${result.pageCount} bilingual MDX pages to ${path.relative(repoRoot, result.contentDir)}`);
+  console.log(`synced ${result.pageCount} MDX pages to ${path.relative(repoRoot, result.contentDir)}`);
 }

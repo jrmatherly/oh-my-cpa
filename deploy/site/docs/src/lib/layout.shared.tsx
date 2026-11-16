@@ -1,4 +1,3 @@
-import { zhCN } from '@fumadocs/language/zh-cn';
 import { uiTranslations } from 'fumadocs-ui/i18n';
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { i18n } from '@/lib/i18n';
@@ -7,19 +6,14 @@ import { asLang, GITHUB_URL } from '@/lib/site';
 export const translations = i18n
   .translations()
   .extend(uiTranslations())
-  .preset('zh', zhCN())
   .add({
     en: {
       displayName: 'English',
-    },
-    zh: {
-      displayName: '简体中文',
     },
   });
 
 const NAV_TEXT = {
   en: { home: 'Home', docs: 'Docs', api: 'API', demo: 'Live demo' },
-  zh: { home: '首页', docs: '文档', api: 'API', demo: '在线演示' },
 } as const;
 
 export function BrandTitle() {

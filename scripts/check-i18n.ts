@@ -151,7 +151,6 @@ export async function checkCatalogs(): Promise<{ problems: Problem[] }> {
     for (const file of files) {
       if (!index.includes(`from './${file.replace(/\.ts$/, '')}'`)) fail('structure', `locales/${lang}/index.ts does not import ${file}`);
     }
-    // Files are kept in the source's order, so a reviewer can read two languages side by side.
     for (const file of files.filter((name) => sourceDomains.includes(name))) {
       const sourceOrder = Object.keys(await loadModule(path.join(LOCALES, SOURCE_LANG, file)));
       const order = Object.keys(await loadModule(path.join(LOCALES, lang, file)));

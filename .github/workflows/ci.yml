@@ -178,7 +178,7 @@ jobs:
           key: docs-next-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'deploy/site/docs/package.json', 'deploy/site/docs/next.config.mjs') }}
           restore-keys: |
             docs-next-${{ runner.os }}-${{ runner.arch }}-
-      - name: Type check, build, and test bilingual Fumadocs site
+      - name: Type check, build, and test Fumadocs site
         env:
           NEXT_TELEMETRY_DISABLED: '1'
         run: |
