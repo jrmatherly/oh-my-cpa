@@ -1,6 +1,6 @@
 # Native executable
 
-[GitHub Releases](https://github.com/WizisCool/oh-my-cpa/releases) publish OMC for
+[GitHub Releases](https://github.com/jrmatherly/oh-my-cpa/releases) publish OMC for
 Darwin (macOS), Windows, Linux and FreeBSD, each on **amd64** and **arm64**. `x86_64`
 is amd64; `aarch64` and Apple Silicon are arm64. Unix archives are `.tar.gz`; Windows
 archives are `.zip`. CPA must already be installed separately (v8.0.0 or later).
@@ -18,8 +18,8 @@ OS=linux
 ARCH=amd64
 ASSET="oh-my-cpa_${VERSION}_${OS}_${ARCH}.tar.gz"
 mkdir -p oh-my-cpa && cd oh-my-cpa
-curl -fLO "https://github.com/WizisCool/oh-my-cpa/releases/download/v${VERSION}/${ASSET}"
-curl -fLO "https://github.com/WizisCool/oh-my-cpa/releases/download/v${VERSION}/checksums.txt"
+curl -fLO "https://github.com/jrmatherly/oh-my-cpa/releases/download/v${VERSION}/${ASSET}"
+curl -fLO "https://github.com/jrmatherly/oh-my-cpa/releases/download/v${VERSION}/checksums.txt"
 ```
 
 Verify **only the downloaded archive's entry** (the manifest also lists the other

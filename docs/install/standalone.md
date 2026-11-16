@@ -10,7 +10,7 @@ and any other management panel are not modified or restarted.
    (
      [ ! -e oh-my-cpa/compose.yml ] && [ ! -e oh-my-cpa/.env ] &&
      mkdir -p oh-my-cpa && cd oh-my-cpa &&
-     curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.omc.yml -o compose.yml
+     curl -fsSL https://github.com/jrmatherly/oh-my-cpa/releases/latest/download/compose.omc.yml -o compose.yml
    ) && cd oh-my-cpa
    ```
 

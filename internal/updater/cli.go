@@ -25,7 +25,7 @@ Commands:
   install      add the updater to a deployment that is already running:
                  docker run --rm --pull always -u 0 \
                    -v /var/run/docker.sock:/var/run/docker.sock \
-                   wiziscool/oh-my-cpa:latest updater install
+                   ghcr.io/jrmatherly/oh-my-cpa:latest updater install
                --container <name>      the console container, when it cannot be told apart
                --cpa-container <name>  the CLIProxyAPI container, when it is not found
   healthcheck  exit 0 when a running updater answers

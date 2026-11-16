@@ -27,7 +27,7 @@ The action is not offered in three cases, and the page says which:
 
 | Case | What to do |
 | --- | --- |
-| The image is pinned to a version tag or digest, for example `OMCPA_IMAGE=wiziscool/oh-my-cpa:vX.Y.Z` | Change the pin and redeploy. The console leaves a pinned image alone, because the next `docker compose up` would put the pinned version back over a database that has already been migrated |
+| The image is pinned to a version tag or digest, for example `OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:vX.Y.Z` | Change the pin and redeploy. The console leaves a pinned image alone, because the next `docker compose up` would put the pinned version back over a database that has already been migrated |
 | CPA does not run as a container on the same Docker host | Update CPA where it runs |
 | The build carries no release signing key, as a build from source does | Update by hand, below |
 
@@ -46,7 +46,7 @@ Compose file is named `deploy/compose.full.yml` or `deploy/compose.omc.yml`, add
 `-f deploy/compose.full.yml` or `-f deploy/compose.omc.yml` to both commands.
 
 This upgrades OMC and leaves CPA as it is. To move to a specific version, set
-`OMCPA_IMAGE=wiziscool/oh-my-cpa:vX.Y.Z` in `.env` (or change the `image:` tag in a
+`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:vX.Y.Z` in `.env` (or change the `image:` tag in a
 custom Compose file). By default the database lives in the Docker volume
 `<project>_oh-my-cpa-data` (`docker volume inspect` prints its host path), or in the host
 directory configured by `OMCPA_DATA_PATH`. How releases are published is in
@@ -58,7 +58,7 @@ A deployment whose Compose file has no `oh-my-cpa-updater` service gains one wit
 single command on the Docker host. The Compose file is not edited:
 
 ```bash
-docker run --rm --pull always -u 0 -v /var/run/docker.sock:/var/run/docker.sock wiziscool/oh-my-cpa:latest updater install
+docker run --rm --pull always -u 0 -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/jrmatherly/oh-my-cpa:latest updater install
 ```
 
 The command:
@@ -73,7 +73,7 @@ The command:
   described above. A pinned console is left as it is.
 
 `--pull always` fetches the current image: the host may hold an older
-`wiziscool/oh-my-cpa:latest` that predates the updater. `-u 0` is needed because the
+`ghcr.io/jrmatherly/oh-my-cpa:latest` that predates the updater. `-u 0` is needed because the
 Docker socket belongs to root. Running the command again repairs or refreshes the
 installation. `docker rm -f oh-my-cpa-updater` removes it, and the console then shows the
 command again in place of the update action.
@@ -88,6 +88,21 @@ A Compose file that later declares the `oh-my-cpa-updater` service itself confli
 the installed container's name: remove the standalone updater container first with
 `docker rm -f oh-my-cpa-updater`.
 
+
+## Moving from the upstream image
+
+A deployment that runs `wiziscool/oh-my-cpa` is not moved to this fork from the console:
+its updater applies only releases signed by upstream, for the image repository the
+console already runs. Change the image by hand once. Set
+`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:latest` in `.env` (or change the `image:` line
+in a Compose file you maintain), then run the commands under [By hand](#by-hand). Data,
+ports and settings are kept.
+
+A deployment whose updater was added with `updater install` then runs the
+[install command](#enabling-console-updates-on-an-existing-deployment) once more, after
+the console is on the new image, to replace the updater. The installer finds the console
+by its own image repository, so it reports no console while the two differ. Naming one
+with `--container <name>` selects it, and a console on a different image is left as it is.
 
 ## Compatibility for existing deployments
 

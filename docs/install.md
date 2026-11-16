@@ -2,7 +2,7 @@
 
 Oh My CPA (OMC) runs beside [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
 (CPA) **v8.0.0 or later**. The console's sign-in password is CPA's management key. The
-image is **`wiziscool/oh-my-cpa`** on Docker Hub, for `linux/amd64` and `linux/arm64`.
+image is **`ghcr.io/jrmatherly/oh-my-cpa`** on GitHub Container Registry, for `linux/amd64` and `linux/arm64`.
 Pick the path that matches where CPA runs today:
 
 | Your situation | Guide |

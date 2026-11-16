@@ -1,7 +1,7 @@
 # Releasing Oh My CPA
 
-Official container images are published to `wiziscool/oh-my-cpa` on Docker Hub for
-amd64 and arm64. GitHub Releases carry native packages, installation assets and the
+Official container images are published to `ghcr.io/jrmatherly/oh-my-cpa` on GitHub
+Container Registry for amd64 and arm64. GitHub Releases carry native packages, installation assets and the
 signed manifest used by the updater. A Git tag alone is not a published release.
 
 ## Publication invariants
@@ -30,20 +30,23 @@ maintainer procedure and recovery requirements.
 
 ## One-time credentials
 
-Configure `DOCKERHUB_TOKEN` as an Actions secret with access to the image repository.
-Keep the repository public for unauthenticated installations. Use the job-scoped
-`GITHUB_TOKEN` for release creation; no personal token is needed. Never paste values
-into issues, logs, source or chat.
-
-```bash
-gh secret set DOCKERHUB_TOKEN --repo WizisCool/oh-my-cpa
-```
+The job-scoped `GITHUB_TOKEN` pushes the image and creates the release; no registry
+token or personal token is needed. Keep the repository and the container package
+public for unauthenticated installations: GitHub creates a package private, so set
+its visibility to public once in the package's settings. Do it during the first
+release, as soon as the `publish` job is green: the `release` job makes the version
+visible to update checks minutes later, and a pull fails until the package is
+public. Confirm with `docker logout ghcr.io` followed by a pull of the released tag.
+`latest` exists only after the `promote` job, so the default Compose image and the
+updater install command fail until then; announce a release once `promote` is green.
+The console's updater pulls without credentials and cannot update from a private
+package. Never paste secret values into issues, logs, source or chat.
 
 Generate the release signing key once on a trusted machine:
 
 ```bash
 node scripts/sign-release-manifest.mjs --generate-key release-signing-key.txt
-gh secret set RELEASE_SIGNING_KEY --repo WizisCool/oh-my-cpa < release-signing-key.txt
+gh secret set RELEASE_SIGNING_KEY --repo jrmatherly/oh-my-cpa < release-signing-key.txt
 ```
 
 This writes the private key to the named file and the public key to
@@ -129,6 +132,13 @@ fails, fix the cause; do not bypass it. If an image upload succeeded but attachm
 failed, retry the failed release job for the same verified source. The GitHub release
 stays draft and update checks ignore it until attachments finish. If only `latest`
 promotion failed, versioned pulls still work; retry promotion rather than republishing.
+Retry with "Re-run failed jobs" on the same run. A new dispatch rebuilds the image,
+which can change its digest, and then replaces the manifest on a release that may
+already be public. If signing fails, the versioned image tags are already pushed
+and no release exists. When the secret was wrong or missing, correct it and re-run
+the failed jobs: the release job signs the digest already pushed, so leave the
+package versions in place. When the committed public key was wrong, correct it in a
+new version; the unreleased version's tags are never offered as an update.
 
 Manual workflow dispatch can recover an existing tag. It resolves and verifies that
 tag's immutable source, regardless of the dispatch branch. A runner/workflow-only

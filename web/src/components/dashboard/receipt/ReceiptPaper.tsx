@@ -49,7 +49,7 @@ export interface ReceiptSheet {
 }
 
 /** Where the receipt says it was printed from, the way a till slip names its shop. */
-const REPOSITORY = 'WizisCool/Oh-My-CPA';
+const REPOSITORY = 'jrmatherly/Oh-My-CPA';
 
 /** The brand in its default colours: the light palette's ink and accent, the pair the paper is printed in. */
 const BRAND_COLORS = (() => {

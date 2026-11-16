@@ -34,7 +34,7 @@ These are read by the supplied Compose files, not by OMC itself.
 | `OMCPA_NETWORK_NAME` | `oh-my-cpa` / `oh-my-cpa-standalone` | Docker network name |
 | `OMCPA_NETWORK_EXTERNAL` | `false` | Set `true` in `compose.omc.yml` to attach OMC to an existing Docker network |
 | `CPA_CONFIG_PATH`, `CPA_AUTH_PATH`, `CPA_LOG_PATH`, `CPA_PLUGIN_PATH` | `./config.yaml`, `./auths`, `./logs`, `./plugins` | Host paths for CPA's files in `compose.full.yml` |
-| `OMCPA_IMAGE` / `CPA_IMAGE` | `wiziscool/oh-my-cpa:latest` / `eceasy/cli-proxy-api:latest` | Pin a specific release tag or digest |
+| `OMCPA_IMAGE` / `CPA_IMAGE` | `ghcr.io/jrmatherly/oh-my-cpa:latest` / `eceasy/cli-proxy-api:latest` | Pin a specific release tag or digest |
 | `DOCKER_SOCKET_PATH` | `/var/run/docker.sock` | Host Docker socket mounted into `oh-my-cpa-updater` |
 
 ## Serving
@@ -75,7 +75,7 @@ These are read by the supplied Compose files, not by OMC itself.
 | --- | --- | --- |
 | `OMCPA_UPDATE_CHECK_ENABLED` | `true` | The background release and plugin-update checks |
 | `OMCPA_UPDATE_CHECK_ON_PAGE_LOAD` | `true` | The check the System Information page makes when opened |
-| `OMCPA_OMC_REPO` / `OMCPA_CPA_REPO` | `WizisCool/oh-my-cpa` / `router-for-me/CLIProxyAPI` | `owner/name` the checks read, for a fork |
+| `OMCPA_OMC_REPO` / `OMCPA_CPA_REPO` | `jrmatherly/oh-my-cpa` / `router-for-me/CLIProxyAPI` | `owner/name` the checks read, for a fork |
 | `OMCPA_DEMO_MODE` | `false` | Serve the console from the built-in fixture; see [Demo mode](#demo-mode) |
 | `OMCPA_UPDATER_ENABLED` | `true` | `false` makes the console ignore an updater and offer no update action; see [Console updates](../operate/updates.md#console-updates) |
 | `OMCPA_UPDATER_URL` | `http://oh-my-cpa-updater:8090` | Where the console looks for the updater. The default is the service and container name every install method uses |

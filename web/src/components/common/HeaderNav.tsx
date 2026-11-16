@@ -22,7 +22,7 @@ import {
   subscribeDemoSandbox,
 } from '../../demo/sandbox';
 
-const REPOSITORY_URL = 'https://github.com/WizisCool/oh-my-cpa';
+const REPOSITORY_URL = 'https://github.com/jrmatherly/oh-my-cpa';
 /** The server reads the count at most hourly, so asking more often learns nothing. */
 const STAR_COUNT_STALE_MS = 60 * 60 * 1000;
 

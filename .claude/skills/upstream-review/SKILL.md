@@ -86,7 +86,7 @@ The last line lists fork-local files the merge touched. It should be empty excep
 
 ## Rules for this repo
 
-- **`chore(release): prepare vX` commits are ADOPT** while this fork ships no release of its own. They rewrite version tokens and add `docs/releases/vX.md`. Once the fork publishes builds (see Release identity below), each one becomes ADAPT: take the release note, keep our version line.
+- **`chore(release): prepare vX` commits are ADAPT.** The fork keeps its own version line, `v1.x` (owner's decision, 2026-11-16). Take `docs/releases/vX.md` and its entry in `docs/releases/README.md`, which are upstream's notes. Keep the fork's `version` in `package.json`, `web/package.json` and `deploy/site/docs/package.json`: the bump conflicts on those three lines and resolves to ours.
 - **An upstream file under `.claude/` is ADAPT, never taken blind.** Upstream has none today. Ours is the fork's automation; read theirs for a rule or hook worth having, port the idea, resolve keeping ours.
 - **This fork is English only** (owner's decision, 2026-11-15). No upstream change that carries Chinese, or another reading language, is adopted as written. The section "English only" below says what each kind of upstream hunk becomes; read it before classifying any commit that touches `web/src/i18n/`, `internal/quota/`, the demo recordings, a test fixture, `docs/`, `README*.md`, `deploy/site/` or the site scripts under `scripts/`.
 - **Migrations are ordered by number** (`migrations/NNN_*.sql`; the schema version is the highest number). A fork migration at upstream's next number collides on the next merge. Decide the fork's numbering scheme before adding the first one (open question below); until then the fork adds no migration.
@@ -131,18 +131,28 @@ pnpm type-check && pnpm check-i18n                          # a key upstream add
 
 ### Release identity (the fork publishes its own builds)
 
-Upstream's release pipeline names its registry owner, signing key and repository in these places. Today they are upstream's values and ADOPT; the day the fork publishes a build, each becomes a row in the deviations table and a `~` file at every merge.
+The fork publishes its own image, releases and signed manifests, decoupled from upstream (owner's decision, 2026-11-16). Upstream's pipeline names its registry owner, signing key and repository in the files below. Each now holds the fork's value and is a deviation: **take upstream's logic, keep the fork's identity, and never restore `wiziscool/oh-my-cpa`, `WizisCool/oh-my-cpa`, a Docker Hub login or upstream's public key.** An upstream hunk elsewhere in these files is ADOPT.
 
-| Area | Files |
-| --- | --- |
-| Release workflow | `.github/workflows/release.yml` (`RELEASE_IMAGE: wiziscool/oh-my-cpa`, Docker Hub username) |
-| Image references | `Dockerfile`, `deploy/compose.omc.yml`, `deploy/compose.full.yml` |
-| Updater trust | `internal/updater/release_public_key.txt` (embedded Ed25519 key), `internal/updater/reference.go`, `engine.go`, `cli.go` |
-| Release metadata | `internal/release/manifest.go`, `internal/config/config.go`, `internal/demo/release.go`, `internal/pluginregistry/registry.go` |
-| Release scripts | `scripts/release-plan.mjs`, `scripts/native-release.mjs`, `scripts/sign-release-manifest.mjs`, `scripts/tools-versions.json` |
-| Tests and contracts | `web/tests/logic/system-versions.test.ts`, `scripts/acceptance/contracts/system-updater.json`, `scripts/*.test.mjs` for the above |
-| Community surface | `.github/ISSUE_TEMPLATE/*`, `README*.md` badges and links |
-| Public site and docs | `deploy/site/wrangler.jsonc` (custom domain `omc.junze.dev`), `deploy/site/worker.mjs` (reads `WizisCool/oh-my-cpa/releases/latest`), install guides under `docs/install/` that name `wiziscool/oh-my-cpa` |
+| Identity | Fork's value | Where it lives |
+| --- | --- | --- |
+| Container image | `ghcr.io/jrmatherly/oh-my-cpa`, public | `.github/workflows/release.yml` (`RELEASE_IMAGE: ghcr.io/${{ github.repository }}`), the default and the `ghcr.io/owner/repository` rule in `scripts/release-plan.mjs` with its test, `scripts/native-release.mjs`, the `OMCPA_IMAGE` default in `deploy/compose.omc.yml` and `deploy/compose.full.yml` with `scripts/deployment.test.mjs`, the install command in `internal/updater/cli.go` and `web/src/pages/SystemPage/UpdateControls.tsx` |
+| Registry login | `ghcr.io` with `github.actor` and `GITHUB_TOKEN`; `packages: write` on the `publish` and `promote` jobs; no `DOCKERHUB_TOKEN` | `.github/workflows/release.yml`, with the concurrency group `ghcr-release` and the release note's `Image:` line |
+| Repository | `jrmatherly/oh-my-cpa` | `DefaultOMCRepository` in `internal/config/config.go` and `internal/demo/release.go`, `ProjectRepository` in `internal/release/stargazers.go`, `org.opencontainers.image.source` in `Dockerfile` (GHCR links the package to the repository through it), the repository links in `HeaderNav.tsx` and `ReceiptPaper.tsx` |
+| Signing key | the fork's Ed25519 public key; the private half is the `RELEASE_SIGNING_KEY` Actions secret | `internal/updater/release_public_key.txt`. `scripts/sign-release-manifest.mjs` refuses to sign with a key that does not match it. An upstream change to this file is SKIP: an installation of the fork trusts the fork's key alone |
+| Version line | the fork's own plain `vX.Y.Z` tags on the `v1.x` line, cut from the fork's `main`. Upstream's line is `v0.x`, so a fork tag, image tag or release note never shares a name with an upstream one | the `version` in `package.json`, `web/package.json` and `deploy/site/docs/package.json`. `STABLE_TAG` in `scripts/release-plan.mjs` and `ParseVersion` in `internal/release/version.go` refuse a suffix, so the fork does not mark its versions with one. The fork's notes are `docs/releases/v1.*.md`, listed first on the "Latest release notes" line of `docs/releases/README.md`, where an upstream entry is added after ours |
+| Docs and community | the fork's image, releases, issues and security contact | the install, upgrade and operations guides under `docs/`, `docs/dev/releasing.md`, `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/*`. The README's Docker Hub pulls badge and `SECURITY.md`'s email fallback are deleted, so an upstream edit to either resolves as deleted. The README links its documentation to `docs/README.md`, since the hosted docs site is upstream's |
+
+What stays upstream's, on purpose:
+
+- **CPA is a third party.** `eceasy/cli-proxy-api`, `router-for-me/CLIProxyAPI` and `omc-community/omc-plugins` are not the fork's identity. `LegacyOMCSourceURL` in `internal/pluginregistry/registry.go` is a value the gateway removes from old configurations and must keep upstream's address.
+- **The public site.** `deploy/site/site-meta.mjs` (`SITE_ORIGIN`, `GITHUB_REPO`), `deploy/site/worker.mjs`, both `wrangler.jsonc` files and the `omc.junze.dev` links are upstream's site. The fork has no domain and deploys none of it.
+- **Upstream's release notes.** `docs/releases/v*.md` name upstream's images and are kept as written.
+- **Test fixtures and comments.** `wiziscool/oh-my-cpa` in Go and script tests, in `scripts/acceptance/contracts/system-updater.json` and in two updater comments is an opaque sample. The tests pass with any value, so they are left as upstream wrote them to keep merges small. The one fork addition is in `TestParseReferenceAndPinning` in `internal/updater/updater_test.go`: two `ghcr.io` rows and a check that a registry host survives `CanonicalRepository`, because the signed manifest is matched to the running image through it. Keep them.
+- **The Go module path** `github.com/oh-my-cpa/oh-my-cpa`.
+
+A running installation can still be pointed elsewhere without a code change: `OMCPA_OMC_REPO` (release feed and manifest), `OMCPA_UPDATER_PUBLIC_KEY` (trust key) and `OMCPA_IMAGE` (Compose image). The updater pulls `<running repository>@<manifest digest>` with no registry credentials, which is why the package must stay public.
+
+Upstream's `v*` tags stay out of `refs/tags/` (see "The window"). The fork still carries upstream's `v0.1.0` to `v0.4.5` there from before that rule; they are upstream's commits and no fork release.
 
 The path-scoped rule `.claude/rules/release-identity.md` repeats the short version whenever one of these files is opened.
 
@@ -151,7 +161,6 @@ The path-scoped rule `.claude/rules/release-identity.md` repeats the short versi
 Each names the check that settles it.
 
 - **Fork migration numbering.** Read `internal/repository/db.go` (how `schema_migrations` orders and applies versions) and decide: a reserved high range for fork migrations, or renumbering ours on every merge. Settle before the first fork migration.
-- **Fork release tags.** `scripts/release-identity.mjs` asserts tag identity and upstream's tags are `v*`. Decide the fork's tag scheme (for example `fork-v0.3.26+1`) before the first fork release, so the two tag series never collide in `refs/tags/`.
 
 ## Deviations decided
 
@@ -168,6 +177,7 @@ A new deviation gets a row; a SKIP revert gets a row with the upstream SHA.
 | `.coderabbit.yaml` uses the deprecated `request_changes_workflow`, bare `docs/*.md` guideline paths and a dead `code_generation` block | `auto_approvals.enabled`, `applyTo` guideline entries, Biome off | landed 2026-11-09 | Upstream hunks to `path_instructions` are ADOPT; one touching `knowledge_base`, `auto_approvals` or `tools` is ADAPT and keeps ours. The guides moved to `docs/dev/` in v0.4.3, so our `applyTo` entries name `docs/dev/architecture.md` and `docs/dev/design.md`. Schema-checked with `check-jsonschema`. |
 | `.github/workflows/readme-screenshots.yml` runs its `screenshots` job on any repository | the job carries `if: github.repository == 'WizisCool/oh-my-cpa'` | landed 2026-11-15 | The workflow force-pushes a branch, opens a PR and auto-merges it daily. The README images are upstream's and arrive with each sync. Upstream hunks elsewhere in the file are ADOPT; one rewriting the job header is ADAPT and keeps the guard. |
 | four reading languages with Chinese the default and typed source; Chinese labels, phrases, aliases, examples and fixtures across web, Go, tests and scripts | English only, everywhere | landed 2026-11-15 | NEVER ADOPT the Chinese half of an upstream hunk. See "English only" above for the verdict per kind of change, the two scripts that re-apply the deviation after a merge, and the gate that fails while any Chinese remains outside its allow list. Deleted files are backed up under the gitignored `private/backup/2026-11-15-english-only/` and `private/backup/2026-11-16-english-only-docs/`. |
+| Docker Hub image `wiziscool/oh-my-cpa`, repository `WizisCool/oh-my-cpa`, upstream's Ed25519 release key, upstream's version numbers | `ghcr.io/jrmatherly/oh-my-cpa`, `jrmatherly/oh-my-cpa`, the fork's key, the fork's own `v1.x` line | landed 2026-11-16 | NEVER ADOPT upstream's registry, repository, login, key or version bump. See "Release identity" above for the value and the files of each identity, and for what stays upstream's on purpose. `chore(release)` commits are ADAPT: take the note, keep our version. |
 
 ## Decision log template
 

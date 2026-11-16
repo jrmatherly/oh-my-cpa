@@ -3,7 +3,7 @@
 Needs Go 1.26+, Node.js 22+, pnpm 11+ and a running CPA.
 
 ```bash
-git clone https://github.com/WizisCool/oh-my-cpa.git
+git clone https://github.com/jrmatherly/oh-my-cpa.git
 cd oh-my-cpa
 pnpm install --frozen-lockfile
 cp .env.example .env

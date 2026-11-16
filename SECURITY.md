@@ -17,15 +17,13 @@ Only the latest commit on the `main` branch and the most recent release tag rece
 
 If you discover a potential vulnerability in Oh My CPA, please report it through **GitHub Private Vulnerability Reporting**:
 
-1. Navigate to the [Security tab](https://github.com/WizisCool/oh-my-cpa/security) of the repository.
+1. Navigate to the [Security tab](https://github.com/jrmatherly/oh-my-cpa/security) of the repository.
 2. Click **Report a vulnerability** under "Advisories".
 3. Provide a detailed report including:
    - Type of issue (e.g., SSRF, auth bypass, secret disclosure, SQL injection).
    - Clear step-by-step instructions or proof-of-concept (PoC) to reproduce.
    - Affected components, endpoints, or versions.
    - Potential impact of exploitation.
-
-If GitHub Private Vulnerability Reporting is unavailable, you may contact the maintainers directly via email at `127123086+WizisCool@users.noreply.github.com` with `[SECURITY]` in the subject line.
 
 ## Response Process
 

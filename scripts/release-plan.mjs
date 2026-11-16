@@ -20,8 +20,8 @@ export function createReleasePlan({ tag, packageVersion, webVersion, image, rele
   if (!STABLE_TAG.test(tag ?? '')) throw new Error('Release tags must be stable vMAJOR.MINOR.PATCH versions');
   const version = tag.slice(1);
   if (version !== packageVersion || version !== webVersion) throw new Error('Tag must match both package.json versions');
-  if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(image ?? '')) {
-    throw new Error('Docker Hub image must be a lowercase namespace/repository');
+  if (!/^ghcr\.io\/[a-z0-9]+(?:[._-][a-z0-9]+)*\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(image ?? '')) {
+    throw new Error('Release image must be a lowercase ghcr.io/owner/repository');
   }
   // A backport can publish a versioned image, but cannot move either latest pointer backwards.
   const isLatest = !releases.some((release) => !release.draft && !release.prerelease
@@ -36,7 +36,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const plan = createReleasePlan({
     tag: process.env.RELEASE_TAG,
-    image: process.env.RELEASE_IMAGE ?? 'wiziscool/oh-my-cpa',
+    image: process.env.RELEASE_IMAGE ?? 'ghcr.io/jrmatherly/oh-my-cpa',
     packageVersion: JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version,
     webVersion: JSON.parse(fs.readFileSync(path.join(root, 'web/package.json'), 'utf8')).version,
     releases: process.env.RELEASE_INDEX ? JSON.parse(fs.readFileSync(process.env.RELEASE_INDEX, 'utf8')) : [],

@@ -106,7 +106,7 @@ type ReleaseConfig struct {
 // against; the console default is this project's own repository. A deployment that
 // runs a fork overrides them rather than editing code.
 const (
-	DefaultOMCRepository = "WizisCool/oh-my-cpa"
+	DefaultOMCRepository = "jrmatherly/oh-my-cpa"
 	DefaultCPARepository = "router-for-me/CLIProxyAPI"
 )
 
