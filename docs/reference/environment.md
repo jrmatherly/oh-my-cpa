@@ -44,7 +44,7 @@ These are read by the supplied Compose files, not by OMC itself.
 | `OMCPA_VERSION` | embedded stable tag; `v0.1.0-dev` for untagged source builds | Optional display/User-Agent version override; does not change the installed build |
 | `OMCPA_LISTEN_ADDR` | `:8080` | Process listen address (`deploy/native.env.example` sets `127.0.0.1:8080`; Docker bridge deployments change the host port with `OMCPA_BIND` instead, see [Changing the port](../operate/ports-storage.md#changing-the-port)) |
 | `OMCPA_BASE_PATH` | `/` | URL prefix. The default serves the console at the root; a configured sub-path is normalised without a trailing slash |
-| `OMCPA_DEFAULT_LANGUAGE` | unset | The console reads English for every visitor. `en` and `auto` are accepted and change nothing. `zh`, `zh-Hant` and `ms` are accepted from older deployments and read as unset. Any other value stops start-up |
+| `OMCPA_DEFAULT_LANGUAGE` | unset | The console reads English for every visitor. `en` and `auto` are accepted and change nothing. `zh`, `zh-Hant` and `ms` are accepted from older deployments, logged as a warning and read as unset. Any other value stops start-up |
 | `OMCPA_DATA_DIR` | `/data` (image) / `./data` (binary) | Directory holding `oh-my-cpa.db`. Local disk only |
 | `OMCPA_PUBLIC_URL` | unset | The address browsers use. An `https://` value marks the session cookie `Secure` |
 | `OMCPA_TRUSTED_PROXY_CIDRS` | unset | Comma-separated CIDRs of reverse proxies whose forwarding headers may be trusted for login throttling |

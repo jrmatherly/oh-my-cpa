@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -141,6 +142,7 @@ func loadDefaultLanguage() (string, error) {
 	}
 	for _, id := range retiredConsoleLanguages {
 		if raw == id {
+			slog.Warn("ignoring a console language this build no longer ships; the console reads English", "variable", DefaultLanguageEnv, "value", raw)
 			return "", nil
 		}
 	}
