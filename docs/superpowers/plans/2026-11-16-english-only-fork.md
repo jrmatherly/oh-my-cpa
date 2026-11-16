@@ -68,12 +68,9 @@ Known traps, still true:
 - Done: a retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) logs one warning where
   `internal/config/config.go` loads it, and still starts unpinned.
 - Done: every path the skill's "English only" section names exists or is listed there as deleted.
-- Done: the first real upstream sync, `ec9ba414..7d6e67a2` (5 commits, 122 files). All 14 conflicts were
-  modify/delete on files the fork removed (8 `.zh` screenshots, 6 catalog files) and stay deleted.
-  `english-strings.py` listed one test file, escaped by hand. The log is
-  `.upstream-review/reviews/2026-11-16-review.md`. Two paths no real merge has exercised yet:
-  `english-only.sh` taking upstream's side of a conflicted English catalog (both merged cleanly here),
-  and a `PHRASES` rewrite.
+- Done: the first real upstream sync, logged in `.upstream-review/reviews/2026-11-16-review.md`. Two
+  paths no real merge has exercised yet: `english-only.sh` taking upstream's side of a conflicted
+  English catalog, and a `PHRASES` rewrite.
 - Decide whether to drop the unused `@fumadocs/language` from `deploy/site/docs/package.json`. Removing it
   re-resolved `mdast-util-from-markdown` and a `fumadocs-mdx` peer in `pnpm-lock.yaml`, so phase 3 left it.
 
