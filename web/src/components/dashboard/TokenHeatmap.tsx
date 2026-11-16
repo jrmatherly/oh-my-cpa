@@ -33,6 +33,8 @@ import {
 import { LoadFailure } from '../feedback';
 import { formatCalendarDay } from '../../utils/dateTimeFormat';
 import { Panel } from '../common/Panel';
+import { LoadingRegion } from '../common/Placeholder';
+import { HeatmapPlaceholder } from './DashboardSkeleton';
 import './dashboard.css';
 
 const FULL_NUMBER_FORMAT = new Intl.NumberFormat('en');
@@ -581,13 +583,17 @@ export const TokenHeatmap: React.FC = React.memo(function TokenHeatmap() {
   if (isError && !data) {
     return (
       <Panel className="dashboard-tile heatmap-panel">
-        <div className="tile-label">{t('dash.heatmap.title')}</div>
-        <LoadFailure
-          className="heatmap-alert"
-          title={t('dash.heatmap.error')}
-          detail={error instanceof ApiError ? error.message : t('dash.error_desc')}
-          onRetry={() => void refetch()}
-        />
+        <div className="heatmap-inner">
+          <div className="heatmap-head">
+            <span className="tile-label">{t('dash.heatmap.title')}</span>
+          </div>
+          <LoadFailure
+            className="heatmap-alert"
+            title={t('dash.heatmap.error')}
+            detail={error instanceof ApiError ? error.message : t('dash.error_desc')}
+            onRetry={() => void refetch()}
+          />
+        </div>
       </Panel>
     );
   }
@@ -605,7 +611,9 @@ export const TokenHeatmap: React.FC = React.memo(function TokenHeatmap() {
       </div>
 
       {!data ? (
-        <div className="heatmap-skeleton" aria-hidden="true" />
+        <LoadingRegion>
+          <HeatmapPlaceholder hasHeader={false} />
+        </LoadingRegion>
       ) : (
         <>
           {/* A refresh that failed, or one still in flight over existing data, is reported

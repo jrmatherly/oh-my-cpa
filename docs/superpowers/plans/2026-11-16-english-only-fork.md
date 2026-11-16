@@ -35,7 +35,7 @@ of these is wrong.
 | 1 | The console reads English only | Merged, pull request 4 (`3af7725c`) |
 | 2 | Backend strings, tests, fixtures, comments, the repo-wide gate | Merged, pull request 5 (`4116acd3`) |
 | 3 | Docs, README, screenshots, public site, issue templates | Merged, pull request 6 (`9c1471eb`) |
-| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items merged, pull request 7 (`46baa5c2`); the upstream sync is left, as its own pull request |
+| 4 | Final sweep: close the loop in the skill, one real upstream sync, the retired-language warning | Small items merged, pull request 7 (`46baa5c2`); the upstream sync to `7d6e67a2` is pull request 8 |
 
 ### Phase 3: docs and the public site
 
@@ -68,10 +68,9 @@ Known traps, still true:
 - Done: a retired `OMCPA_DEFAULT_LANGUAGE` (`zh`, `zh-Hant`, `ms`) logs one warning where
   `internal/config/config.go` loads it, and still starts unpinned.
 - Done: every path the skill's "English only" section names exists or is listed there as deleted.
-- Run one real upstream sync through `english-only.sh` then `english-strings.py`. Both have only
-  been tested against simulated merges. Measured on 2026-11-16: upstream is 5 commits past the
-  watermark `ec9ba414` (122 files), and a dry-run merge conflicts only where the fork deleted a file
-  upstream changed (8 `.zh` screenshots, 6 catalog files under `zh`, `zh-Hant` and `ms`).
+- Done: the first real upstream sync, logged in `.upstream-review/reviews/2026-11-16-review.md`. Two
+  paths no real merge has exercised yet: `english-only.sh` taking upstream's side of a conflicted
+  English catalog, and a `PHRASES` rewrite.
 - Decide whether to drop the unused `@fumadocs/language` from `deploy/site/docs/package.json`. Removing it
   re-resolved `mdast-util-from-markdown` and a `fumadocs-mdx` peer in `pnpm-lock.yaml`, so phase 3 left it.
 

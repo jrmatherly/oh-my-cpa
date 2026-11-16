@@ -2,7 +2,13 @@ import React from 'react';
 import { Segmented } from '@/components/ui/segmented';
 import { clsx } from 'clsx';
 import { Layers } from 'lucide-react';
-import { ParagraphPlaceholder } from '../common/ContentPlaceholder';
+import { EmptyState } from '../common/EmptyState';
+import { LoadingRegion } from '../common/Placeholder';
+import {
+  ModelTrendBarsPlaceholder,
+  ModelTrendPlaceholder,
+  ModelUsagePlaceholder,
+} from './DashboardSkeleton';
 import { ApiError } from '../../api/client';
 import { LazyModelTokenTrend } from '../../charts/lazyCharts';
 import { useSwrQuery } from '../../performance/swrContract';
@@ -83,17 +89,21 @@ function useDashboardModels({ query, range, enabled }: ModelUsagePanelsProps) {
 
 // A shared loading boundary keeps the ranking readable while the chart module arrives; its
 // chart initialization then yields through the common mount queue.
-const chartFallback = <div className="model-chart-skeleton" aria-hidden="true" />;
+const chartFallback = <ModelTrendBarsPlaceholder />;
 
 /**
  * The body both cards share for the states before a ranking exists: a skeleton on the first read,
  * the failure when that read failed, and the stale warning above a ranking a later poll could not
  * refresh.
  */
-const ModelPanelBody: React.FC<{ models: ReturnType<typeof useDashboardModels>; children: React.ReactNode }> = ({ models, children }) => {
+const ModelPanelBody: React.FC<{
+  models: ReturnType<typeof useDashboardModels>;
+  fallback: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ models, fallback, children }) => {
   const t = useT();
   const { data, isError, error, refetch } = models;
-  if (!data && !isError) return <ParagraphPlaceholder rows={4} />;
+  if (!data && !isError) return <LoadingRegion>{fallback}</LoadingRegion>;
   if (isError && !data) {
     return (
       <ModelPanelsError
@@ -236,30 +246,32 @@ export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = React.memo(functi
       title={<span className="tile-label">{t('dash.models.trend_title')}</span>}
       extra={hasViewToggle ? <ModelViewToggle /> : undefined}
     >
-      <ModelPanelBody models={models}>
-        <ChartLegend
-          className="model-trend-legend"
-          label={t('dash.models.trend_title')}
-          testId="model-trend-legend"
-          items={groups.map((group, index) => {
-            const key = seriesDomainKey(group);
-            return {
-              id: key,
-              color: colors[index],
-              content: <ModelSeriesName group={group} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} />,
-              title: t(focusedKey === key ? 'dash.models.clear_series_focus' : 'dash.models.focus_series'),
-              isPressed: focusedKey === key,
-              isDimmed: focusedKey !== null && focusedKey !== key,
-              onToggle: () => toggleSeries(key),
-            };
-          })}
-        />
+      <ModelPanelBody models={models} fallback={<ModelTrendPlaceholder hasHeader={false} />}>
         {groups.length === 0 ? (
-          <p className="empty-copy model-empty">{t('dash.models.empty')}</p>
+          <EmptyState size="compact" title={t('dash.models.empty')} />
         ) : (
-          <React.Suspense fallback={chartFallback}>
-            <LazyModelTokenTrend groups={groups} focusedKey={focusedKey} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} totalLabel={t('dash.models.total')} tokenUnitLabel={t('dash.unit_tokens')} onFocusGroup={toggleSeries} onClearFocus={clearFocus} />
-          </React.Suspense>
+          <>
+            <ChartLegend
+              className="model-trend-legend"
+              label={t('dash.models.trend_title')}
+              testId="model-trend-legend"
+              items={groups.map((group, index) => {
+                const key = seriesDomainKey(group);
+                return {
+                  id: key,
+                  color: colors[index],
+                  content: <ModelSeriesName group={group} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} />,
+                  title: t(focusedKey === key ? 'dash.models.clear_series_focus' : 'dash.models.focus_series'),
+                  isPressed: focusedKey === key,
+                  isDimmed: focusedKey !== null && focusedKey !== key,
+                  onToggle: () => toggleSeries(key),
+                };
+              })}
+            />
+            <React.Suspense fallback={chartFallback}>
+              <LazyModelTokenTrend groups={groups} focusedKey={focusedKey} foldedLabel={foldedLabel} unnamedLabel={unnamedLabel} totalLabel={t('dash.models.total')} tokenUnitLabel={t('dash.unit_tokens')} onFocusGroup={toggleSeries} onClearFocus={clearFocus} />
+            </React.Suspense>
+          </>
         )}
       </ModelPanelBody>
     </Panel>
@@ -301,9 +313,9 @@ export const ModelUsagePanel: React.FC<ModelUsagePanelsProps> = React.memo(funct
       }
       extra={<ModelViewToggle />}
     >
-      <ModelPanelBody models={models}>
+      <ModelPanelBody models={models} fallback={<ModelUsagePlaceholder hasHeader={false} />}>
         {groups.length === 0 ? (
-          <p className="empty-copy model-empty">{t('dash.models.empty')}</p>
+          <EmptyState size="compact" title={t('dash.models.empty')} />
         ) : (
           <>
             {/*
