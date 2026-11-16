@@ -31,7 +31,7 @@ The default development console is `http://127.0.0.1:5173/`.
 - [Architecture](docs/dev/architecture.md): ownership and trust boundaries.
 - [Design](docs/dev/design.md): UI composition and interaction principles.
 - [Testing](docs/dev/testing.md): test ownership, local checks and CI expectations.
-- [Docs index](docs/README.md): repository documentation layout and bilingual public docs sync.
+- [Docs index](docs/README.md): repository documentation layout and public docs sync.
 
 Executable declarations own field lists, defaults and design-token values. Update the
 one guide your change makes wrong; a feature does not require a new architecture

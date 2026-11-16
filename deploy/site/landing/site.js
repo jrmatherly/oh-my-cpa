@@ -53,12 +53,6 @@
     });
   }
 
-  document.querySelectorAll('[data-set-lang]').forEach(function (link) {
-    link.addEventListener('click', function () {
-      write('omc-docs-locale', link.getAttribute('data-set-lang'));
-    });
-  });
-
   var dismissStar = document.querySelector('[data-dismiss-star]');
   if (dismissStar) {
     dismissStar.addEventListener('click', function () {

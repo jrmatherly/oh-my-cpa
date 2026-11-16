@@ -98,7 +98,7 @@ export async function buildDocs({
 
 const LANDING_RENDERER = 'render.mjs';
 const LANDING_SOURCES = new Set([LANDING_RENDERER, 'copy.mjs']);
-const HREFLANG = { en: 'en', zh: 'zh-CN' };
+const HREFLANG = { en: 'en' };
 const STABLE_VERSION_RE = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 
 function parseLatestRedirectLocation(location, repo) {

@@ -571,7 +571,6 @@ export function renderLanding(lang, { version = '' } = {}) {
   const text = COPY[lang];
   const page = LANDING_PAGES.find((entry) => entry.lang === lang);
   if (!text || !page) throw new Error(`unknown landing language ${lang}`);
-  const other = LANDING_PAGES.find((entry) => entry.lang !== lang);
   const docs = (target) => `${text.docs}${target}/`;
   const canonical = `${SITE_ORIGIN}${page.path}`;
   const ogImage = `${SITE_ORIGIN}/og/home-${lang}.png`;
@@ -602,10 +601,6 @@ export function renderLanding(lang, { version = '' } = {}) {
           document.querySelector('meta[name="color-scheme"]').content = scheme;
           document.documentElement.dataset.theme = scheme;
         }
-        if (location.pathname === '/') {
-          var lang = localStorage.getItem('omc-docs-locale');
-          if (lang === 'zh' || (!lang && /^zh\\b/i.test(navigator.language || ''))) location.replace('/zh/' + location.search + location.hash);
-        }
         if (sessionStorage.getItem('omc-site-star-dismissed') === '1') document.documentElement.classList.add('is-star-dismissed');
       } catch (error) {}
     </script>
@@ -622,8 +617,7 @@ export function renderLanding(lang, { version = '' } = {}) {
     <meta property="og:title" content="${escapeHtml(text.title)}">
     <meta property="og:description" content="${escapeHtml(text.description)}">
     <meta property="og:url" content="${canonical}">
-    <meta property="og:locale" content="${lang === 'zh' ? 'zh_CN' : 'en_US'}">
-    <meta property="og:locale:alternate" content="${lang === 'zh' ? 'en_US' : 'zh_CN'}">
+    <meta property="og:locale" content="en_US">
     <meta property="og:image" content="${ogImage}">
     <meta property="og:image:type" content="image/png">
     <meta property="og:image:width" content="1200">
@@ -660,7 +654,6 @@ export function renderLanding(lang, { version = '' } = {}) {
         </div>
         <div class="nav-tools">
           <a class="tool" href="${GITHUB_URL}" aria-label="${escapeHtml(text.nav.github)}" title="${escapeHtml(text.nav.github)}">${GITHUB_MARK}</a>
-          <a class="tool" href="${other.path}" hreflang="${other.hreflang}" lang="${other.hreflang}" data-set-lang="${other.lang}" aria-label="${escapeHtml(text.nav.language)}" title="${escapeHtml(text.nav.language)}">${icon('languages')}</a>
           <button class="tool" type="button" data-theme-toggle title="${escapeHtml(text.nav.theme)}">${icon('sun', 'icon icon-sun')}${icon('moon', 'icon icon-moon')}<span class="sr-only if-light">${escapeHtml(text.nav.toDark)}</span><span class="sr-only if-dark">${escapeHtml(text.nav.toLight)}</span></button>
           <a class="button is-small is-primary nav-start" href="${docs('/start/quickstart')}">${escapeHtml(text.nav.start)}</a>
         </div>

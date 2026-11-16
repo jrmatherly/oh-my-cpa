@@ -81,8 +81,7 @@ reviews:
           prose did not. Describe the adopted state rather than alternatives
           that were considered and rejected during the session. Do not invent
           line numbers and do not reference files that no longer exist.
-          Technical prose stays in English, except README.zh-CN.md, docs/zh/**, and
-          localized UI copy.
+          Technical prose stays in English.
   pre_merge_checks:
     # A coverage percentage is not a meaningful target for a codebase whose
     # comments are reserved for design intent.
@@ -197,8 +196,7 @@ reviews:
         prefer a symbol or file reference over an absolute line number. Flag
         broken references and duplicated catalogs that should link to their
         executable source. Put design intent in `docs/dev/design.md`. Technical
-        prose is English; `README.zh-CN.md`, `docs/zh/**`, and localized UI copy are the
-        intended exceptions.
+        prose is English.
     - path: 'migrations/**'
       instructions: >-
         Forward-only migrations, applied in filename order and one transaction

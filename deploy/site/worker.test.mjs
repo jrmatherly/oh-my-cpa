@@ -48,7 +48,7 @@ describe('public site worker (/demo subpath mount)', () => {
         fetch: (request) => {
           const path = new URL(request.url).pathname;
           fetchedPaths.push(path);
-          if (path === '/demo/' || path === '/' || path === '/api-reference/' || path === '/docs/' || path === '/docs/zh/') {
+          if (path === '/demo/' || path === '/' || path === '/api-reference/' || path === '/docs/' || path === '/docs/en/') {
             return new Response(`<html>${path}</html>`, { status: 200 });
           }
           return new Response('Not Found', { status: 404 });
@@ -77,9 +77,9 @@ describe('public site worker (/demo subpath mount)', () => {
     assert.equal(await docsRoute.text(), '<html>/docs/</html>');
 
     fetchedPaths.length = 0;
-    const zhDocsRoute = await worker.fetch(makeRequest('/docs/zh/'), env);
-    assert.equal(zhDocsRoute.status, 200);
-    assert.equal(await zhDocsRoute.text(), '<html>/docs/zh/</html>');
+    const enDocsRoute = await worker.fetch(makeRequest('/docs/en/'), env);
+    assert.equal(enDocsRoute.status, 200);
+    assert.equal(await enDocsRoute.text(), '<html>/docs/en/</html>');
   });
 });
 
@@ -107,17 +107,13 @@ describe('public site worker (live landing release injection)', () => {
     assert.equal(parseLatestReleaseLocation('https://evil.example/WizisCool/oh-my-cpa/releases/tag/v0.4.3'), null);
   });
 
-  it('rewrites rendered EN and ZH landing HTML byte-for-byte to match a freshly rendered release version', () => {
-    for (const lang of ['en', 'zh']) {
-      const stale = renderLanding(lang, { version: '0.4.2' });
-      const expected = renderLanding(lang, { version: '0.4.3' });
-      assert.equal(injectLandingVersion(stale, '0.4.3'), expected);
-    }
+  it('rewrites rendered landing HTML byte-for-byte to match a freshly rendered release version', () => {
+    assert.equal(injectLandingVersion(renderLanding('en', { version: '0.4.2' }), '0.4.3'), renderLanding('en', { version: '0.4.3' }));
     assert.equal(injectLandingVersion('<html>plain</html>', '0.4.3'), '<html>plain</html>');
     assert.equal(injectLandingVersion(renderLanding('en', { version: '0.4.2' }), '1.0.0-rc.1'), renderLanding('en', { version: '0.4.2' }));
   });
 
-  it('injects the live release version on / and /zh/, updates ETags on release change, and keeps cache/fallbacks safe', async () => {
+  it('injects the live release version on /, updates ETags on release change, and keeps cache/fallbacks safe', async () => {
     let clock = 1_000_000;
     let upstreamTag = 'v0.4.3';
     let upstreamCalls = 0;
@@ -127,7 +123,6 @@ describe('public site worker (live landing release injection)', () => {
     const ctx = { waitUntil: (promise) => waitUntilPromises.push(promise) };
 
     const enBuilt = renderLanding('en', { version: '0.4.2' });
-    const zhBuilt = renderLanding('zh', { version: '0.4.2' });
     const assetRequests = [];
 
     const env = {
@@ -149,18 +144,8 @@ describe('public site worker (live landing release injection)', () => {
               },
             });
           }
-          if (url.pathname === '/zh/') {
-            return new Response(zhBuilt, {
-              status: 200,
-              headers: {
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'public, max-age=0, must-revalidate',
-                ETag: '"built-zh"',
-              },
-            });
-          }
-          if (url.pathname === '/zh') {
-            return new Response(null, { status: 307, headers: { Location: '/zh/' } });
+          if (url.pathname === '/index.html') {
+            return new Response(null, { status: 307, headers: { Location: '/' } });
           }
           return new Response('Not Found', { status: 404 });
         },
@@ -185,17 +170,17 @@ describe('public site worker (live landing release injection)', () => {
     });
 
     // Concurrent cold requests deduplicate into one upstream release check.
-    const [enRes, zhRes] = await Promise.all([
+    const [enRes, twinRes] = await Promise.all([
       handler.fetch(makeRequest('/'), env, ctx),
-      handler.fetch(makeRequest('/zh/'), env, ctx),
+      handler.fetch(makeRequest('/'), env, ctx),
     ]);
     await Promise.all(waitUntilPromises.splice(0));
     assert.equal(upstreamCalls, 1);
     assert.equal(enRes.status, 200);
     assert.equal(await enRes.text(), renderLanding('en', { version: '0.4.3' }));
     assert.equal(enRes.headers.get('etag'), 'W/"built-en-v0.4.3"');
-    assert.equal(zhRes.status, 200);
-    assert.equal(await zhRes.text(), renderLanding('zh', { version: '0.4.3' }));
+    assert.equal(twinRes.status, 200);
+    assert.equal(await twinRes.text(), renderLanding('en', { version: '0.4.3' }));
 
     // Subsequent requests within TTL use cached version without calling GitHub; matching ETag gets 304.
     clock += 30_000;
@@ -205,15 +190,15 @@ describe('public site worker (live landing release injection)', () => {
     // Upstream ASSETS fetch never receives client If-None-Match so a release change cannot stick on a stale 304.
     assert.equal(assetRequests.every((item) => item.ifNoneMatch === null), true);
 
-    // HEAD returns empty body with the versioned headers, and /zh redirects pass through untouched.
+    // HEAD returns empty body with the versioned headers, and an asset redirect passes through untouched.
     const headRes = await handler.fetch(makeRequest('/', { method: 'HEAD' }), env, ctx);
     assert.equal(headRes.status, 200);
     assert.equal(await headRes.text(), '');
     assert.equal(headRes.headers.get('etag'), 'W/"built-en-v0.4.3"');
 
-    const redirectRes = await handler.fetch(makeRequest('/zh'), env, ctx);
+    const redirectRes = await handler.fetch(makeRequest('/index.html'), env, ctx);
     assert.equal(redirectRes.status, 307);
-    assert.equal(redirectRes.headers.get('location'), '/zh/');
+    assert.equal(redirectRes.headers.get('location'), '/');
     assert.equal(upstreamCalls, 1);
 
     // Once TTL expires and a new release is published, the next request updates immediately and invalidates the old ETag.

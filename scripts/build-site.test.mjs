@@ -9,22 +9,21 @@ import { syncDocsSite, listDocsPages, DOCS_SECTIONS } from './sync-docs-site.mjs
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('docs site manifest points every page to existing EN/ZH canonical repository files', () => {
+test('docs site manifest points every page to existing canonical repository files', () => {
   const slugs = new Set();
   for (const page of listDocsPages()) {
     assert.ok(fs.existsSync(path.join(ROOT, page.source.en)), `missing EN source: ${page.source.en}`);
-    assert.ok(fs.existsSync(path.join(ROOT, page.source.zh)), `missing ZH source: ${page.source.zh}`);
-    assert.ok(page.title.en && page.title.zh && page.description.en && page.description.zh, `untranslated page: ${page.slug}`);
+    assert.ok(page.title.en && page.description.en, `untitled page: ${page.slug}`);
     assert.equal(slugs.has(page.slug), false, `duplicate slug: ${page.slug}`);
     slugs.add(page.slug);
   }
   assert.equal(DOCS_SECTIONS[0].dir, 'start', 'the first section is the beginner path');
 });
 
-test('syncDocsSite generates EN/ZH MDX, agent Markdown and llms.txt with rewritten links', async () => {
+test('syncDocsSite generates MDX, agent Markdown and llms.txt with rewritten links', async () => {
   const result = await syncDocsSite({ repoRoot: ROOT });
-  assert.equal(result.pageCount, listDocsPages().length * 2);
-  for (const file of ['index.mdx', 'index.zh.mdx', 'start/quickstart.mdx', 'start/quickstart.zh.mdx', 'install/index.mdx', 'install/index.zh.mdx']) {
+  assert.equal(result.pageCount, listDocsPages().length);
+  for (const file of ['index.mdx', 'start/quickstart.mdx', 'install/index.mdx']) {
     assert.ok(fs.existsSync(path.join(result.contentDir, file)), `missing ${file}`);
   }
 
@@ -32,14 +31,8 @@ test('syncDocsSite generates EN/ZH MDX, agent Markdown and llms.txt with rewritt
   assert.ok(enQuickstart.includes('source: "docs/quickstart.md"'));
   assert.ok(enQuickstart.includes('](/en/install/standalone/)'));
 
-  const zhQuickstart = fs.readFileSync(path.join(result.contentDir, 'start', 'quickstart.zh.mdx'), 'utf8');
-  assert.ok(zhQuickstart.includes('](/zh/install/standalone/)'), 'same-language links inside ZH docs must stay in ZH locale');
-
-  const zhQuota = fs.readFileSync(path.join(result.contentDir, 'features', 'quota.zh.mdx'), 'utf8');
-  assert.ok(zhQuota.includes('](/en/features/quota/)'), 'explicit English-original links inside ZH docs must resolve to the EN page');
-
-  const zhRemote = fs.readFileSync(path.join(result.contentDir, 'install', 'remote-access.zh.mdx'), 'utf8');
-  assert.ok(!zhRemote.includes('```caddyfile'), 'unsupported caddyfile language must be normalized for Shiki');
+  const remote = fs.readFileSync(path.join(result.contentDir, 'install', 'remote-access.mdx'), 'utf8');
+  assert.ok(!remote.includes('```caddyfile'), 'unsupported caddyfile language must be normalized for Shiki');
 
   const publicDir = path.join(ROOT, 'deploy', 'site', 'docs', 'public');
   const agentMarkdown = fs.readFileSync(path.join(publicDir, 'en', 'start', 'quickstart.md'), 'utf8');
@@ -47,7 +40,6 @@ test('syncDocsSite generates EN/ZH MDX, agent Markdown and llms.txt with rewritt
   assert.ok(agentMarkdown.includes('](https://omc.junze.dev/docs/en/install/standalone/)'), 'agent Markdown links are absolute');
   const llms = fs.readFileSync(path.join(publicDir, 'llms.txt'), 'utf8');
   assert.ok(llms.includes('https://omc.junze.dev/docs/en/start/quickstart.md'));
-  assert.ok(fs.existsSync(path.join(publicDir, 'zh', 'llms.txt')));
 });
 
 test('stageApiReference emits self-contained assets and hashed Scalar bundle', async () => {
@@ -97,10 +89,8 @@ test('stageSite composes replaceable landing root, /docs, /api-reference, and /d
     fs.writeFileSync(path.join(customLanding, 'copy.mjs'), 'export const x = 1;\n');
 
     fs.mkdirSync(path.join(fakeDocsDist, 'en'), { recursive: true });
-    fs.mkdirSync(path.join(fakeDocsDist, 'zh'), { recursive: true });
     fs.writeFileSync(path.join(fakeDocsDist, 'index.html'), '<html>docs entry</html>');
     fs.writeFileSync(path.join(fakeDocsDist, 'en', 'index.html'), '<html>en docs</html>');
-    fs.writeFileSync(path.join(fakeDocsDist, 'zh', 'index.html'), '<html>zh docs</html>');
     fs.writeFileSync(path.join(fakeDocsDist, 'search-index.json'), '{"type":"advanced"}');
 
     fs.mkdirSync(path.join(fakeConsoleDist, 'assets'), { recursive: true });
@@ -128,7 +118,6 @@ test('stageSite composes replaceable landing root, /docs, /api-reference, and /d
     assert.ok(fs.existsSync(path.join(outDir, 'api-reference', 'swagger.json')));
     assert.ok(fs.existsSync(path.join(outDir, 'docs', 'index.html')));
     assert.ok(fs.existsSync(path.join(outDir, 'docs', 'en', 'index.html')));
-    assert.ok(fs.existsSync(path.join(outDir, 'docs', 'zh', 'index.html')));
     assert.ok(fs.existsSync(path.join(outDir, 'docs', 'search-index.json')));
 
     const demoHtml = fs.readFileSync(path.join(outDir, 'demo', 'index.html'), 'utf8');
@@ -140,8 +129,8 @@ test('stageSite composes replaceable landing root, /docs, /api-reference, and /d
     assert.equal(fs.existsSync(path.join(outDir, 'demo', '_headers')), false);
 
     const sitemap = fs.readFileSync(path.join(outDir, 'sitemap.xml'), 'utf8');
-    assert.ok(sitemap.includes('<loc>https://omc.junze.dev/docs/zh/install/standalone/</loc>'));
-    assert.ok(sitemap.includes('hreflang="zh-CN" href="https://omc.junze.dev/docs/zh/start/quickstart/"'));
+    assert.ok(sitemap.includes('<loc>https://omc.junze.dev/docs/en/install/standalone/</loc>'));
+    assert.ok(sitemap.includes('hreflang="en" href="https://omc.junze.dev/docs/en/start/quickstart/"'));
     assert.equal(sitemap.includes('<loc>https://omc.junze.dev/</loc>'), false, 'a copied landing has no known pages');
     assert.ok(fs.readFileSync(path.join(outDir, 'robots.txt'), 'utf8').includes('Sitemap: https://omc.junze.dev/sitemap.xml'));
 
@@ -150,17 +139,15 @@ test('stageSite composes replaceable landing root, /docs, /api-reference, and /d
     assert.equal(fs.existsSync(path.join(renderedOut, 'render.mjs')), false, 'the renderer is build input, not a published file');
     assert.equal(fs.existsSync(path.join(renderedOut, 'copy.mjs')), false, 'landing copy module is build input, not a published file');
     const enLanding = fs.readFileSync(path.join(renderedOut, 'index.html'), 'utf8');
-    const zhLanding = fs.readFileSync(path.join(renderedOut, 'zh', 'index.html'), 'utf8');
     assert.ok(enLanding.includes('<link rel="canonical" href="https://omc.junze.dev/">'));
-    assert.ok(enLanding.includes('hreflang="zh-CN" href="https://omc.junze.dev/zh/"'));
+    assert.ok(enLanding.includes('hreflang="en" href="https://omc.junze.dev/"'));
     assert.ok(enLanding.includes('content="https://omc.junze.dev/og/home-en.png"'));
     assert.ok(enLanding.includes('"@type":"SoftwareApplication"'));
-    assert.ok(zhLanding.includes('<html lang="zh-CN"'));
-    assert.ok(zhLanding.includes('<link rel="canonical" href="https://omc.junze.dev/zh/">'));
-    for (const asset of ['site.css', 'site.js', 'images/hero-split.en.webp', 'og/home-en.png', 'og/docs-zh.png']) {
+    assert.equal(fs.existsSync(path.join(renderedOut, 'zh')), false, 'the fork publishes one language');
+    for (const asset of ['site.css', 'site.js', 'images/hero-split.en.webp', 'og/home-en.png', 'og/docs-en.png']) {
       assert.ok(fs.existsSync(path.join(renderedOut, asset)), `missing ${asset}`);
     }
-    assert.ok(fs.readFileSync(path.join(renderedOut, 'sitemap.xml'), 'utf8').includes('<loc>https://omc.junze.dev/zh/</loc>'));
+    assert.ok(fs.readFileSync(path.join(renderedOut, 'sitemap.xml'), 'utf8').includes('<loc>https://omc.junze.dev/</loc>'));
 
     const apiOnlyOut = path.join(sandbox, 'dist-api-only');
     const apiOnlyResult = await stageSite({

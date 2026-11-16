@@ -15,12 +15,10 @@ test('docs-only and review config changes skip heavy Go, frontend, browser, dock
 test('public docs, landing page, and Fumadocs app changes trigger docs-site only without Go, SPA tests, or browser acceptance', () => {
   for (const file of [
     'README.md',
-    'README.zh-CN.md',
     'docs/quickstart.md',
     'docs/how-it-works.md',
     'docs/install/compose.md',
     'docs/features/agent.md',
-    'docs/zh/operations.md',
     'deploy/site/landing/render.mjs',
     'deploy/site/api-reference/index.html',
     'deploy/site/og/home-en.png',
@@ -101,7 +99,6 @@ test('frontend-only changes skip Go unit tests while keeping browser and fronten
   });
   // Vite build plugins and demo/site-worker scripts run frontend + browser checks.
   for (const script of [
-    'scripts/compact-locales.mjs',
     'scripts/sync-lobe-icons.mjs',
     'scripts/api-target.mjs',
     'scripts/dev-base-redirect.mjs',

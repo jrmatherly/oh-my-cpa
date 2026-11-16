@@ -26,8 +26,8 @@ const outDir = path.join(root, 'docs', 'images', 'readme');
 const port = Number(process.env.OMCPA_README_PORT ?? 8791);
 const base = `http://127.0.0.1:${port}`;
 
-/** One set per README: the English page and the Simplified Chinese one. */
-const LANGUAGES = ['en', 'zh'];
+/** The file names keep the language suffix the README, the docs and the public site link to. */
+const LANGUAGES = ['en'];
 const MODES = ['light', 'dark'];
 
 const DESKTOP = { width: 1440, height: 900, scale: 2 };

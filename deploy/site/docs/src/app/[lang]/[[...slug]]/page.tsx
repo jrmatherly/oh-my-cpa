@@ -11,7 +11,6 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { DocsHome } from '@/components/docs-home';
 import { DocsAnchor, getMDXComponents } from '@/components/mdx';
-import { i18n } from '@/lib/i18n';
 import { asLang, docsPath, GITHUB_SOURCE, markdownPath, SITE_ORIGIN } from '@/lib/site';
 import { source } from '@/lib/source';
 
@@ -72,10 +71,7 @@ export async function generateMetadata(props: {
   const page = source.getPage(params.slug, params.lang);
   if (!page) notFound();
 
-  const title = slugs.length === 0 ? { absolute: lang === 'zh' ? 'Oh My CPA 文档' : 'Oh My CPA Docs' } : page.data.title;
-  const languages = Object.fromEntries(
-    i18n.languages.map((code) => [code === 'zh' ? 'zh-CN' : code, docsPath(asLang(code), slugs)]),
-  );
+  const title = slugs.length === 0 ? { absolute: 'Oh My CPA Docs' } : page.data.title;
   const image = `/og/docs-${lang}.png`;
 
   return {
@@ -83,13 +79,13 @@ export async function generateMetadata(props: {
     description: page.data.description,
     alternates: {
       canonical: docsPath(lang, slugs),
-      languages: { ...languages, 'x-default': docsPath('en', slugs) },
+      languages: { en: docsPath('en', slugs), 'x-default': docsPath('en', slugs) },
       types: slugs.length ? { 'text/markdown': markdownPath(lang, slugs) } : undefined,
     },
     openGraph: {
       type: 'article',
       siteName: 'Oh My CPA',
-      locale: lang === 'zh' ? 'zh_CN' : 'en_US',
+      locale: 'en_US',
       url: docsPath(lang, slugs),
       title: typeof title === 'string' ? title : title.absolute,
       description: page.data.description,

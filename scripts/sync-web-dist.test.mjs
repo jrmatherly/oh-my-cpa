@@ -160,7 +160,7 @@ for (const base of ['/', '/omc/']) {
       write('web/index.html', '<!doctype html><title>Asset fixture</title>');
       write('web/src/generated/lobeIconCatalog.json', '[{"id":"Codex","hasColor":true}]');
       fs.copyFileSync(path.join(root, 'web/vite.config.ts'), path.join(sandbox, 'web/vite.config.ts'));
-      for (const file of ['api-target.mjs', 'sync-lobe-icons.mjs', 'bundle-graph.mjs', 'dev-base-redirect.mjs', 'compact-locales.mjs']) {
+      for (const file of ['api-target.mjs', 'sync-lobe-icons.mjs', 'bundle-graph.mjs', 'dev-base-redirect.mjs']) {
         fs.copyFileSync(path.join(root, 'scripts', file), path.join(sandbox, 'scripts', file));
       }
       fs.symlinkSync(path.join(root, 'web/node_modules'), path.join(sandbox, 'web/node_modules'), process.platform === 'win32' ? 'junction' : 'dir');

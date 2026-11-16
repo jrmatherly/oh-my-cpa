@@ -6,7 +6,7 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { buildNativeRelease, buildNativeTarget, buildNativeWeb, createNativePlan, finalizeNativeRelease, packageNativeArchive, parseNativeArgs, runRequiredTool, validateEmbeddedConsole, writeReleaseChecksums, verifyReleaseAssets } from './native-release.mjs';
 
-const ARCHIVE_DOCUMENTS = ['LICENSE', 'README.md', 'README.zh-CN.md', 'docs/install.md',
+const ARCHIVE_DOCUMENTS = ['LICENSE', 'README.md', 'docs/install.md',
   'docs/install-for-agents.md', 'docs/install/native.md', 'docs/install/standalone.md',
   'docs/install/upgrade.md', 'docs/install/troubleshooting.md', 'docs/operations.md',
   'docs/operate/keys.md', 'docs/operate/ports-storage.md', 'docs/operate/time-zone.md', 'docs/operate/updates.md',

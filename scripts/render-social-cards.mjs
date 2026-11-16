@@ -23,13 +23,6 @@ const CARDS = [
     visual: 'hero',
   },
   {
-    file: 'home-zh.png',
-    lang: 'zh',
-    title: '自托管的 AI 网关控制台',
-    lead: '集中管理 API、OAuth 与路由，可视化观测请求、配额与成本。',
-    visual: 'hero',
-  },
-  {
     file: 'docs-en.png',
     lang: 'en',
     title: 'Oh My CPA documentation',
@@ -39,18 +32,6 @@ const CARDS = [
       ['Quickstart', 'Four commands, about three minutes'],
       ['Install with an agent', 'One prompt for your coding agent'],
       ['Reference', 'Every environment variable'],
-    ],
-  },
-  {
-    file: 'docs-zh.png',
-    lang: 'zh',
-    title: 'Oh My CPA 文档',
-    lead: '几分钟完成安装，稳定运维，查到每一项设置。',
-    visual: 'paths',
-    paths: [
-      ['快速开始', '四条命令，约三分钟'],
-      ['让 Agent 安装', '一句提示词交给编码 Agent'],
-      ['参考', '全部环境变量'],
     ],
   },
 ];
@@ -72,18 +53,18 @@ function cardDocument(card) {
       : `<div class="paths">${card.paths
           .map(([title, body]) => `<div class="tile"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span></div>`)
           .join('')}</div>`;
-  return `<!doctype html><html lang="${card.lang === 'zh' ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><style>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
     * { box-sizing: border-box; margin: 0; }
     html, body { width: ${WIDTH}px; height: ${HEIGHT}px; overflow: hidden; }
     body {
       position: relative;
       background: #131314;
       color: #e3e3e4;
-      font-family: Inter, 'Segoe UI', 'Helvetica Neue', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-family: Inter, 'Segoe UI', 'Helvetica Neue', sans-serif;
     }
     .copy { position: absolute; left: 72px; top: 72px; bottom: 64px; width: ${card.visual === 'hero' ? 520 : 560}px; display: flex; flex-direction: column; }
     .wordmark { height: 30px; width: auto; align-self: flex-start; }
-    h1 { margin-top: auto; font-size: 54px; line-height: 1.12; font-weight: 700; letter-spacing: ${card.lang === 'zh' ? '0' : '-0.025em'}; }
+    h1 { margin-top: auto; font-size: 54px; line-height: 1.12; font-weight: 700; letter-spacing: -0.025em; }
     p { margin-top: 22px; font-size: 24px; line-height: 1.5; color: #a7a7ab; }
     .site { margin-top: 36px; font-size: 20px; color: #00a2fb; font-weight: 600; }
     .hero { position: absolute; left: 640px; top: 96px; width: 920px; height: auto; }

@@ -2,7 +2,7 @@
  * Entry Worker for the public site (`omc.junze.dev`).
  *
  * - `/demo` and `/demo/*` run the shared Cloudflare demo handler (`deploy/cloudflare/worker.mjs`).
- * - Landing HTML routes (`/`, `/zh/`) inject the latest published stable GitHub release version
+ * - The landing HTML route (`/`) injects the latest published stable GitHub release version
  *   at the edge (cached briefly with stale fallback), so new releases appear without rebuilding
  *   static assets.
  * - `/docs/*`, `/api-reference/*`, and static assets bypass the Worker via `run_worker_first`
@@ -12,7 +12,7 @@ import { createDemoHandler } from '../cloudflare/worker.mjs';
 import { GITHUB_REPO } from './site-meta.mjs';
 
 const STABLE_VERSION_RE = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
-const LANDING_PATHS = new Set(['/', '/index.html', '/zh', '/zh/', '/zh/index.html']);
+const LANDING_PATHS = new Set(['/', '/index.html']);
 const CACHE_KEY_PATH = '/__worker-cache/latest-release/v1';
 const FRESH_TTL_MS = 60_000;
 const RETRY_TTL_MS = 15_000;
