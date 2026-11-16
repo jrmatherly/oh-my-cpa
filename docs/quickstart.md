@@ -16,8 +16,8 @@ Docker Compose. It takes about three minutes and four commands. Already running 
 ```bash
 test ! -e oh-my-cpa/compose.yml && test ! -e oh-my-cpa/config.yaml || { echo "Existing deployment found in oh-my-cpa/; aborting to avoid overwriting config.yaml" >&2; exit 1; }
 mkdir -p oh-my-cpa && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.full.yml -o compose.yml
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+curl -fsSL https://github.com/jrmatherly/oh-my-cpa/releases/latest/download/compose.full.yml -o compose.yml
+curl -fsSL https://github.com/jrmatherly/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
 ```
 
 `config.yaml` is CPA's starter configuration. It must exist before the first start:

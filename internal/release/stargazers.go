@@ -19,7 +19,7 @@ import (
 // It is a constant rather than the configured OMC release source: an operator may point
 // the update check at a fork, but the header link names this project, and a count read
 // from a different repository than the link opens would be a number about something else.
-const ProjectRepository = "WizisCool/oh-my-cpa"
+const ProjectRepository = "jrmatherly/oh-my-cpa"
 
 // StargazerFloor is the shortest interval between two reads of the star count.
 //

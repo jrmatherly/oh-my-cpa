@@ -128,7 +128,7 @@ const demoFeedValidator = `W/"omc-demo-release-feed"`
 // the links on the page go somewhere meaningful, while the content comes from the
 // fixture.
 const (
-	DefaultOMCRepository = "WizisCool/oh-my-cpa"
+	DefaultOMCRepository = "jrmatherly/oh-my-cpa"
 	DefaultCPARepository = "router-for-me/CLIProxyAPI"
 )
 

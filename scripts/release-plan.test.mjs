@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReleasePlan, compareReleaseTags } from './release-plan.mjs';
 
-const INPUT = {tag: 'v0.1.0', packageVersion: '0.1.0', webVersion: '0.1.0', image: 'wiziscool/oh-my-cpa'};
+const INPUT = {tag: 'v0.1.0', packageVersion: '0.1.0', webVersion: '0.1.0', image: 'ghcr.io/jrmatherly/oh-my-cpa'};
 
 test('first stable release names the image and both version aliases, then latest', () => {
   assert.deepEqual(createReleasePlan(INPUT).tags,
-    ['wiziscool/oh-my-cpa:v0.1.0', 'wiziscool/oh-my-cpa:0.1.0', 'wiziscool/oh-my-cpa:latest']);
+    ['ghcr.io/jrmatherly/oh-my-cpa:v0.1.0', 'ghcr.io/jrmatherly/oh-my-cpa:0.1.0', 'ghcr.io/jrmatherly/oh-my-cpa:latest']);
 });
 test('backports cannot move latest backwards, regardless of publication order', () => {
   const plan = createReleasePlan({...INPUT, releases: [
@@ -23,7 +23,7 @@ test('malformed or mismatched release identities never reach Docker or GitHub', 
   }
   assert.throws(() => createReleasePlan({...INPUT, packageVersion: '0.2.0'}));
   assert.throws(() => createReleasePlan({...INPUT, webVersion: '0.2.0'}));
-  for (const image of ['WizisCool/omc', 'docker.io/wiziscool/omc', 'wiziscool/omc:latest', 'wiziscool/omc\nkey=bad']) {
+  for (const image of ['ghcr.io/JRMatherly/omc', 'docker.io/wiziscool/omc', 'wiziscool/omc', 'ghcr.io/jrmatherly/omc:latest', 'ghcr.io/jrmatherly/omc\nkey=bad']) {
     assert.throws(() => createReleasePlan({...INPUT, image}));
   }
 });

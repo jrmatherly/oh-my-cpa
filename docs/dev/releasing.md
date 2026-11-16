@@ -1,7 +1,7 @@
 # Releasing Oh My CPA
 
-Official container images are published to `wiziscool/oh-my-cpa` on Docker Hub for
-amd64 and arm64. GitHub Releases carry native packages, installation assets and the
+Official container images are published to `ghcr.io/jrmatherly/oh-my-cpa` on GitHub
+Container Registry for amd64 and arm64. GitHub Releases carry native packages, installation assets and the
 signed manifest used by the updater. A Git tag alone is not a published release.
 
 ## Publication invariants
@@ -30,20 +30,20 @@ maintainer procedure and recovery requirements.
 
 ## One-time credentials
 
-Configure `DOCKERHUB_TOKEN` as an Actions secret with access to the image repository.
-Keep the repository public for unauthenticated installations. Use the job-scoped
-`GITHUB_TOKEN` for release creation; no personal token is needed. Never paste values
-into issues, logs, source or chat.
-
-```bash
-gh secret set DOCKERHUB_TOKEN --repo WizisCool/oh-my-cpa
-```
+The job-scoped `GITHUB_TOKEN` pushes the image and creates the release; no registry
+token or personal token is needed. Keep the repository and the container package
+public for unauthenticated installations: GitHub creates a package private, so set
+its visibility to public once in the package's settings, after the first release
+pushes it, and confirm with `docker logout ghcr.io` followed by a pull of the
+released tag. The console's updater pulls without credentials and cannot update
+from a private package. Never
+paste secret values into issues, logs, source or chat.
 
 Generate the release signing key once on a trusted machine:
 
 ```bash
 node scripts/sign-release-manifest.mjs --generate-key release-signing-key.txt
-gh secret set RELEASE_SIGNING_KEY --repo WizisCool/oh-my-cpa < release-signing-key.txt
+gh secret set RELEASE_SIGNING_KEY --repo jrmatherly/oh-my-cpa < release-signing-key.txt
 ```
 
 This writes the private key to the named file and the public key to

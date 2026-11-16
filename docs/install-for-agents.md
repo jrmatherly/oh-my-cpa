@@ -5,7 +5,7 @@ this prompt into it:
 
 ```text
 Install Oh My CPA for me by following
-https://raw.githubusercontent.com/WizisCool/oh-my-cpa/main/docs/install-for-agents.md
+https://raw.githubusercontent.com/jrmatherly/oh-my-cpa/main/docs/install-for-agents.md
 ```
 
 The agent inspects the host, asks before anything it cannot undo, and reports the console

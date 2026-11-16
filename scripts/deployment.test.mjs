@@ -14,7 +14,7 @@ function validateTopology(document, isFullStack) {
   assert.deepEqual(Object.keys(document.services).sort(), isFullStack ? ['cpa', 'oh-my-cpa', 'oh-my-cpa-updater'] : ['oh-my-cpa', 'oh-my-cpa-updater']);
   const console = document.services['oh-my-cpa'];
   assert.equal(console.build, undefined);
-  assert.equal(console.image, '${OMCPA_IMAGE:-wiziscool/oh-my-cpa:latest}');
+  assert.equal(console.image, '${OMCPA_IMAGE:-ghcr.io/jrmatherly/oh-my-cpa:latest}');
   assert.deepEqual(console.ports, ['${OMCPA_BIND:-127.0.0.1:8080}:8080']);
   assert.equal(console.read_only, true);
   assert.equal(console.user, '${OMCPA_USER:-10001:10001}');

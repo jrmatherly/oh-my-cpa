@@ -9,7 +9,7 @@ under the top-level `volumes:` key:
 
 ```yaml
   oh-my-cpa:
-    image: ${OMCPA_IMAGE:-wiziscool/oh-my-cpa:latest}
+    image: ${OMCPA_IMAGE:-ghcr.io/jrmatherly/oh-my-cpa:latest}
     restart: unless-stopped
     user: ${OMCPA_USER:-10001:10001}
     read_only: true
@@ -34,7 +34,7 @@ under the top-level `volumes:` key:
       - ${OMCPA_DATA_PATH:-oh-my-cpa-data}:/data
 
   oh-my-cpa-updater:
-    image: ${OMCPA_IMAGE:-wiziscool/oh-my-cpa:latest}
+    image: ${OMCPA_IMAGE:-ghcr.io/jrmatherly/oh-my-cpa:latest}
     container_name: ${OMCPA_UPDATER_CONTAINER_NAME:-oh-my-cpa-updater}
     restart: unless-stopped
     command: ["updater", "serve"]

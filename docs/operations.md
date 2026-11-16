@@ -50,7 +50,7 @@ must keep. Every setting is listed in [Environment variables](reference/environm
   `robots.txt` only at the origin root; OMC answers it there and under a configured base
   path, so a proxy that forwards only the prefix and wants the advisory file too must
   also route `/robots.txt` to OMC.
-- **Container image**: Compose pulls `wiziscool/oh-my-cpa:latest` from Docker Hub by
+- **Container image**: Compose pulls `ghcr.io/jrmatherly/oh-my-cpa:latest` from GitHub Container Registry by
   default; the full-stack CPA image also defaults to `:latest`. Pin `OMCPA_IMAGE` to the desired version or digest; updates recreate only
   OMC with its existing data and master key. The image runs as non-root uid/gid `10001:10001`
   by default (overridable via `OMCPA_USER` in the supplied Compose files when matching a

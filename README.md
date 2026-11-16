@@ -13,17 +13,16 @@ Management · Routing · Observability · Agent & MCP
 
 <br />
 
-[![Release](https://img.shields.io/github/v/release/WizisCool/oh-my-cpa?label=release)](https://github.com/WizisCool/oh-my-cpa/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/WizisCool/oh-my-cpa/ci.yml?branch=main&label=CI)](https://github.com/WizisCool/oh-my-cpa/actions/workflows/ci.yml)
-[![Stars](https://img.shields.io/github/stars/WizisCool/oh-my-cpa?style=flat&label=stars)](https://github.com/WizisCool/oh-my-cpa/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/wiziscool/oh-my-cpa?style=flat&logo=docker&logoColor=white)](https://hub.docker.com/r/wiziscool/oh-my-cpa)
+[![Release](https://img.shields.io/github/v/release/jrmatherly/oh-my-cpa?label=release)](https://github.com/jrmatherly/oh-my-cpa/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/jrmatherly/oh-my-cpa/ci.yml?branch=main&label=CI)](https://github.com/jrmatherly/oh-my-cpa/actions/workflows/ci.yml)
+[![Stars](https://img.shields.io/github/stars/jrmatherly/oh-my-cpa?style=flat&label=stars)](https://github.com/jrmatherly/oh-my-cpa/stargazers)
 [![CLIProxyAPI](https://img.shields.io/badge/CLIProxyAPI-v8+-4f46e5?style=flat)](https://github.com/router-for-me/CLIProxyAPI)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
 <br />
 
 **[Live Demo](https://omc-demo.junze.dev)** ·
-**[Documentation](https://omc.junze.dev/docs/)** ·
+**[Documentation](docs/README.md)** ·
 **[API Reference](https://omc.junze.dev/api-reference/)** ·
 [Quick Start](#quick-start) ·
 [Features](#features)
@@ -36,6 +35,8 @@ Management · Routing · Observability · Agent & MCP
 
 </div>
 
+This repository is a fork of [WizisCool/oh-my-cpa](https://github.com/WizisCool/oh-my-cpa) and publishes its own releases and container image.
+
 **Oh My CPA** (OMC) is a self-hosted web console and observability layer for
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) **v8+**, built on `shadcn/ui`
 with desktop and mobile layouts. OMC centralizes providers, OAuth accounts, visual
@@ -44,7 +45,7 @@ quota window warmup, and built-in Agent/MCP workflows—protected by AES-GCM enc
 audit logging, and automatic pre-write configuration backups.
 
 > [!TIP]
-> Explore the **[Live Demo](https://omc-demo.junze.dev)**, browse the **[Documentation Site](https://omc.junze.dev/docs/)**, or inspect the **[API Reference](https://omc.junze.dev/api-reference/)**.
+> Explore the **[Live Demo](https://omc-demo.junze.dev)**, browse the **[Documentation](docs/README.md)**, or inspect the **[API Reference](https://omc.junze.dev/api-reference/)**.
 
 ## Highlights
 
@@ -94,7 +95,7 @@ Paste this prompt into Claude Code, Codex, Cursor, or another agent:
 
 ```text
 Install Oh My CPA for me by following
-https://raw.githubusercontent.com/WizisCool/oh-my-cpa/main/docs/install-for-agents.md
+https://raw.githubusercontent.com/jrmatherly/oh-my-cpa/main/docs/install-for-agents.md
 ```
 
 ### New stack with Docker Compose
@@ -104,8 +105,8 @@ container updater:
 
 ```bash
 mkdir -p oh-my-cpa && cd oh-my-cpa
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/compose.full.yml -o compose.yml
-curl -fsSL https://github.com/WizisCool/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
+curl -fsSL https://github.com/jrmatherly/oh-my-cpa/releases/latest/download/compose.full.yml -o compose.yml
+curl -fsSL https://github.com/jrmatherly/oh-my-cpa/releases/latest/download/cpa.config.example.yaml -o config.yaml
 printf 'CPA_MANAGEMENT_KEY=%s\nOMCPA_MASTER_KEY=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > .env
 chmod 600 .env
 docker compose up -d
@@ -143,7 +144,7 @@ Browser ──▶ Direct listener / HTTPS ingress ──▶ Oh My CPA (:8080)
 
 ## Documentation
 
-Read online at **[omc.junze.dev/docs](https://omc.junze.dev/docs/)** or directly in the repository ([`docs/README.md`](docs/README.md)):
+Read in the repository ([`docs/README.md`](docs/README.md)):
 
 | Guide | Topics |
 | --- | --- |

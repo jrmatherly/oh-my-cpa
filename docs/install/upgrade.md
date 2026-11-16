@@ -27,7 +27,7 @@ The action is not offered in three cases, and the page says which:
 
 | Case | What to do |
 | --- | --- |
-| The image is pinned to a version tag or digest, for example `OMCPA_IMAGE=wiziscool/oh-my-cpa:vX.Y.Z` | Change the pin and redeploy. The console leaves a pinned image alone, because the next `docker compose up` would put the pinned version back over a database that has already been migrated |
+| The image is pinned to a version tag or digest, for example `OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:vX.Y.Z` | Change the pin and redeploy. The console leaves a pinned image alone, because the next `docker compose up` would put the pinned version back over a database that has already been migrated |
 | CPA does not run as a container on the same Docker host | Update CPA where it runs |
 | The build carries no release signing key, as a build from source does | Update by hand, below |
 
@@ -46,7 +46,7 @@ Compose file is named `deploy/compose.full.yml` or `deploy/compose.omc.yml`, add
 `-f deploy/compose.full.yml` or `-f deploy/compose.omc.yml` to both commands.
 
 This upgrades OMC and leaves CPA as it is. To move to a specific version, set
-`OMCPA_IMAGE=wiziscool/oh-my-cpa:vX.Y.Z` in `.env` (or change the `image:` tag in a
+`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:vX.Y.Z` in `.env` (or change the `image:` tag in a
 custom Compose file). By default the database lives in the Docker volume
 `<project>_oh-my-cpa-data` (`docker volume inspect` prints its host path), or in the host
 directory configured by `OMCPA_DATA_PATH`. How releases are published is in
@@ -58,7 +58,7 @@ A deployment whose Compose file has no `oh-my-cpa-updater` service gains one wit
 single command on the Docker host. The Compose file is not edited:
 
 ```bash
-docker run --rm --pull always -u 0 -v /var/run/docker.sock:/var/run/docker.sock wiziscool/oh-my-cpa:latest updater install
+docker run --rm --pull always -u 0 -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/jrmatherly/oh-my-cpa:latest updater install
 ```
 
 The command:
@@ -73,7 +73,7 @@ The command:
   described above. A pinned console is left as it is.
 
 `--pull always` fetches the current image: the host may hold an older
-`wiziscool/oh-my-cpa:latest` that predates the updater. `-u 0` is needed because the
+`ghcr.io/jrmatherly/oh-my-cpa:latest` that predates the updater. `-u 0` is needed because the
 Docker socket belongs to root. Running the command again repairs or refreshes the
 installation. `docker rm -f oh-my-cpa-updater` removes it, and the console then shows the
 command again in place of the update action.
