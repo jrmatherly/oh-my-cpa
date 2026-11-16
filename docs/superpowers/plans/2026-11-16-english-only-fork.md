@@ -77,14 +77,13 @@ Known traps, still true:
 
 - Fork migration numbering. Upstream holds migrations through 066. Read
   `internal/repository/db.go` before the fork adds its first migration.
-- Fork release tag scheme. Read `scripts/release-identity.mjs` before the first fork release.
 
 ## Decided
 
 - The container package needed no visibility change: the first release created it public.
 - The gate reads UTF-16 files that start with a byte order mark, decodes file names as UTF-8 under any locale, and its `HAN` class
   covers the ideograph extensions, radicals, bopomofo and strokes.
-- The gate does not cover built output. Scalar's standalone bundle holds 9,404 characters the gate
+- The gate does not cover built output. Scalar's standalone bundle holds thousands of characters the gate
   matches: its own Chinese locale table, and an HTML entity table packed into CJK code points that
   is not text. No scan of that file can pass without rewriting a third party's minified bundle, the
   fork deploys no site, and the console does not serve the bundle.

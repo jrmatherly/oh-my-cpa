@@ -28,7 +28,7 @@ ALLOWED = [
     re.compile(r"^\.claude/skills/upstream-review/scripts/english-strings\.py$"),
 ]
 # Chinese ideographs with every extension and the compatibility blocks, radicals, bopomofo and
-# strokes, plus CJK and full-width punctuation (kana and Hangul are not Chinese and pass), so a half-rewritten phrase that keeps its
+# strokes, plus CJK and full-width punctuation, so a half-rewritten phrase that keeps its
 # brackets or comma still fails.
 HAN = re.compile(
     r"[\u2e80-\u2fdf\u3000-\u303f\u3100-\u312f\u31a0-\u31ef\u3400-\u4dbf\u4e00-\u9fff"
@@ -166,7 +166,7 @@ def main() -> int:
             unknown.append((0, name + "  (the file name)"))
         raw = path.read_bytes()
         if raw.startswith(UTF16_BOMS):
-            # UTF-16 text is full of NUL bytes, so it would pass below as binary.
+            # UTF-16 text with any ASCII in it holds NUL bytes, so it would pass below as binary.
             if HAN.search(raw.decode("utf-16", errors="replace")):
                 unknown.append((0, name + "  (UTF-16, rewrite it by hand as UTF-8)"))
             continue
