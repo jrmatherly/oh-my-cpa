@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button } from 'antd';
+import { MetaLine } from '../common/MetaLine';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { DownloadOutlined } from '../icons';
 import dayjs from '../../utils/time';
@@ -96,16 +97,16 @@ export const LogFileViewer: React.FC<LogFileViewerProps> = ({ target, onClose })
       destroyOnHidden
       title={<span className={styles['viewer-title']}>{fileName}</span>}
       footerStart={shown?.kind === 'file' ? (
-        <span className={styles['viewer-meta']}>
+        <MetaLine className={styles['viewer-meta']}>
           {formatBytes(shown.file.size)}
-          {shown.file.modified ? ` · ${dayjs.unix(shown.file.modified).format('MM-DD HH:mm:ss')}` : ''}
-        </span>
+          {shown.file.modified ? dayjs.unix(shown.file.modified).format('MM-DD HH:mm:ss') : ''}
+        </MetaLine>
       ) : loaded ? <span className={styles['viewer-meta']}>{formatBytes(loaded.blob.size)}</span> : undefined}
       footer={(
         <>
           <CopyButton showLabel size="middle" text={loaded?.text ?? ''} disabled={!loaded?.text} />
           <Button
-            type="primary"
+            variant="primary"
             icon={<DownloadOutlined />}
             disabled={!loaded}
             onClick={() => loaded && saveBlob(loaded.blob, fileName)}

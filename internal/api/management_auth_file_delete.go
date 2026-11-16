@@ -8,21 +8,52 @@ import (
 	"strings"
 )
 
+// AuthFileDeleteRequestDTO names one or more credential auth files to delete.
+type AuthFileDeleteRequestDTO struct {
+	Name  string   `json:"name,omitempty"`
+	Names []string `json:"names,omitempty"`
+}
+
+// AuthFileDeleteResponseDTO summarizes deleted auth files and any per-file failures.
+type AuthFileDeleteResponseDTO struct {
+	Status  string                      `json:"status"`
+	Deleted int                         `json:"deleted"`
+	Files   []string                    `json:"files"`
+	Failed  []authFileDeleteFailureItem `json:"failed,omitempty"`
+}
+
+// @Summary Delete credential auth file(s)
+// @Description Archive identity metadata and delete one or more auth files from CPA via query param or JSON body.
+// @Tags AuthFiles
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param name query []string false "Auth file name(s) to delete" collectionFormat(multi)
+// @Param body body AuthFileDeleteRequestDTO false "Batch delete payload"
+// @Success 200 {object} AuthFileDeleteResponseDTO
+// @Success 207 {object} AuthFileDeleteResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files [delete]
 func (h *Handler) deleteManagementAuthFiles(writer http.ResponseWriter, request *http.Request) {
 	if err := h.providerWrites.acquire(request.Context()); err != nil {
 		writeError(writer, http.StatusServiceUnavailable, "management write busy")
 		return
 	}
 	defer h.providerWrites.release()
+	if err := h.flushCoordinatorUnderProviderGate(request.Context()); err != nil {
+		writeCPAFacadeError(writer, err)
+		return
+	}
 	request.Body = http.MaxBytesReader(writer, request.Body, managementAuthFileRequestLimit)
 	names := make([]string, 0)
 	if queryNames := request.URL.Query()["name"]; len(queryNames) > 0 {
 		names = append(names, queryNames...)
 	} else {
-		var payload struct {
-			Name  string   `json:"name"`
-			Names []string `json:"names"`
-		}
+		var payload AuthFileDeleteRequestDTO
 		decoder := json.NewDecoder(request.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
@@ -60,6 +91,16 @@ func (h *Handler) deleteManagementAuthFiles(writer http.ResponseWriter, request 
 	if !ok {
 		return
 	}
+	if snapErr := h.snapshotAuthFilesBeforeDelete(request.Context(), client); snapErr != nil {
+		_ = h.recordAudit(request, "auth_file.delete", "auth_file", strings.Join(unique, ","), "failure", map[string]any{"error": snapErr.Error()})
+		var persistErr *archivePersistError
+		if errors.As(snapErr, &persistErr) {
+			writeInternalError(writer, persistErr)
+			return
+		}
+		writeCPAFacadeError(writer, snapErr)
+		return
+	}
 	cpaResp, err := client.DeleteAuthFiles(request.Context(), unique)
 	if err != nil {
 		_ = h.recordAudit(request, "auth_file.delete", "auth_file", strings.Join(unique, ","), "failure", map[string]any{"error": err.Error()})
@@ -68,6 +109,13 @@ func (h *Handler) deleteManagementAuthFiles(writer http.ResponseWriter, request 
 	}
 
 	confirmedDeleted, normalizedFailures, outcomeStatus := normalizeDeleteResponse(unique, cpaResp)
+
+	if len(confirmedDeleted) > 0 {
+		if h.pricing != nil {
+			h.pricing.NotifyModelsChanged()
+		}
+		h.invalidateCoordinator("management-auth-files", "management-routing", "management-quota", stateScopeIdentityDirectory)
+	}
 
 	auditOutcome := "success"
 	if outcomeStatus == "partial" {
@@ -81,20 +129,16 @@ func (h *Handler) deleteManagementAuthFiles(writer http.ResponseWriter, request 
 		return
 	}
 
-	if len(confirmedDeleted) > 0 && h.pricing != nil {
-		h.pricing.NotifyModelsChanged()
-	}
-
 	if outcomeStatus != "ok" {
-		writeJSON(writer, http.StatusMultiStatus, map[string]any{
-			"status":  outcomeStatus,
-			"deleted": len(confirmedDeleted),
-			"files":   confirmedDeleted,
-			"failed":  normalizedFailures,
+		writeJSON(writer, http.StatusMultiStatus, AuthFileDeleteResponseDTO{
+			Status:  outcomeStatus,
+			Deleted: len(confirmedDeleted),
+			Files:   confirmedDeleted,
+			Failed:  normalizedFailures,
 		})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "deleted": len(confirmedDeleted), "files": confirmedDeleted})
+	writeJSON(writer, http.StatusOK, AuthFileDeleteResponseDTO{Status: "ok", Deleted: len(confirmedDeleted), Files: confirmedDeleted})
 }
 
 type authFileDeleteFailureItem struct {

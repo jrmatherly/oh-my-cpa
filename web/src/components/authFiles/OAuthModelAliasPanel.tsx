@@ -1,5 +1,8 @@
 import React, { useMemo, useRef } from 'react';
-import { AutoComplete, Button, Input, Table } from 'antd';
+import { AutoComplete } from '@/components/ui/autocomplete';
+import { Table } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { VertexModelOpenAPI } from './VertexModelOpenAPI';
 import { Switch } from '../common/Switch';
 import { DeleteOutlined, PlusOutlined } from '../icons';
@@ -13,6 +16,26 @@ import { matchesExcludedModelRule } from './oauthExcludedModelLogic';
 import type { OAuthModelCatalogState } from './OAuthExcludedModelsPanel';
 import styles from './OAuthModelRulesDrawer.module.css';
 import { EmptyState } from '../common/EmptyState';
+import { RowContextHandle, RowHandleContext, RowReorder, useReorderRow } from '../common/RowReorder';
+import { applyKeyOrder, moveKey, type DropSide } from '../../types/displayOrder';
+
+type AliasBodyRowProps = React.HTMLAttributes<HTMLTableRowElement> & { 'data-row-key'?: React.Key };
+
+function AliasBodyRow(props: AliasBodyRowProps) {
+  const key = props['data-row-key'];
+  return key === undefined ? <tr {...props} /> : <ReorderableAliasRow {...props} rowKey={String(key)} />;
+}
+
+function ReorderableAliasRow({ rowKey, style, ...props }: AliasBodyRowProps & { rowKey: string }) {
+  const { row, handle } = useReorderRow(rowKey);
+  return (
+    <RowHandleContext.Provider value={handle}>
+      <tr {...props} {...row} style={style ? { ...style, ...row.style } : row.style} />
+    </RowHandleContext.Provider>
+  );
+}
+
+const REORDERABLE_ALIAS_BODY = { body: { row: AliasBodyRow } };
 
 interface OAuthModelAliasPanelProps {
  isVertex?: boolean;
@@ -40,7 +63,7 @@ export const OAuthModelAliasPanel: React.FC<OAuthModelAliasPanelProps> = ({
   const modelOptions = useMemo(() => catalog.map((model) => ({
     value: model.id,
     label: model.display_name && model.display_name !== model.id
-      ? `${model.id} · ${model.display_name}`
+      ? `${model.id} (${model.display_name})`
       : model.id,
   })), [catalog]);
 
@@ -59,9 +82,36 @@ export const OAuthModelAliasPanel: React.FC<OAuthModelAliasPanelProps> = ({
     return name ? excludedRules.find((rule) => matchesExcludedModelRule(rule, name)) : undefined;
   };
 
+  const draftKeys = useMemo(() => drafts.map((draft) => draft.rowKey), [drafts]);
+  const canReorder = !isDisabled && drafts.length > 1;
+
+  const moveDraft = (key: string, target: string, side: DropSide) => {
+    onChange((current) => {
+      const keys = current.map((draft) => draft.rowKey);
+      const nextKeys = moveKey(keys, key, target, side);
+      return nextKeys === keys ? current : applyKeyOrder(current, (draft) => draft.rowKey, nextKeys);
+    });
+  };
+
+  const stepDraft = (key: string, direction: -1 | 1) => {
+    const index = draftKeys.indexOf(key);
+    const neighbour = draftKeys[index + direction];
+    if (index >= 0 && neighbour !== undefined) {
+      moveDraft(key, neighbour, direction < 0 ? 'before' : 'after');
+    }
+  };
+
   // The fixed widths leave the upstream model the remainder, so the whole row
   // fits the drawer's content width without scrolling sideways.
   const columns = [
+    ...(canReorder ? [{
+      title: '',
+      key: 'reorder',
+      width: 32,
+      render: (_value: unknown, row: ManagementOAuthModelAliasDraft) => (
+        <RowContextHandle name={row.alias || row.name || row.rowKey} variant="inline" />
+      ),
+    }] : []),
     ...(isVertex ? [{
       title: t('vertex.openapi_model'), key: 'openapi', width: 160,
       render: (_value: unknown, row: ManagementOAuthModelAliasDraft) => <VertexModelOpenAPI value={row.openapi}
@@ -81,11 +131,11 @@ export const OAuthModelAliasPanel: React.FC<OAuthModelAliasPanelProps> = ({
               value={value}
               options={modelOptions}
               disabled={isDisabled}
-              showSearch={{ filterOption: (input, option) => String(option?.label ?? '').toLowerCase().includes(input.trim().toLowerCase()) }}
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.trim().toLowerCase())}
               onChange={(next) => updateDraft(row.rowKey, 'name', next)}
-            >
-              <Input data-alias-field="name" aria-label={t('af.alias_col_name')} />
-            </AutoComplete>
+              data-alias-field="name"
+              aria-label={t('af.alias_col_name')}
+            />
             {excludingRule && (
               <span className={styles['field-warning']} data-testid="oauth-model-alias-excluded-source">
                 {t('af.alias_source_excluded', { rule: excludingRule })}
@@ -162,7 +212,7 @@ export const OAuthModelAliasPanel: React.FC<OAuthModelAliasPanelProps> = ({
       fixed: 'end' as const,
       render: (_: unknown, row: ManagementOAuthModelAliasDraft) => (
         <Button
-          type="text"
+          variant="ghost"
           danger
           disabled={isDisabled}
           aria-label={`${t('af.alias_remove')} ${row.alias || row.name}`}
@@ -189,15 +239,18 @@ export const OAuthModelAliasPanel: React.FC<OAuthModelAliasPanelProps> = ({
         </EmptyState>
       ) : (
         <>
-          <Table<ManagementOAuthModelAliasDraft>
-            className={styles['alias-table']}
-            rowKey="rowKey"
-            size="small"
-            pagination={false}
-            dataSource={drafts}
-            columns={columns}
-            scroll={{ x: 680 }}
-          />
+          <RowReorder items={draftKeys} isEnabled={canReorder} onMove={moveDraft} onStep={stepDraft}>
+            <Table<ManagementOAuthModelAliasDraft>
+              className={styles['alias-table']}
+              rowKey="rowKey"
+              size="small"
+              pagination={false}
+              dataSource={drafts}
+              columns={columns}
+              components={REORDERABLE_ALIAS_BODY}
+              scroll={{ x: 680 }}
+            />
+          </RowReorder>
           <div>
             <Button icon={<PlusOutlined />} disabled={isDisabled || drafts.length >= OAUTH_MODEL_ALIAS_ENTRY_LIMIT} onClick={addDraft}>
               {t('af.alias_add_mapping')}

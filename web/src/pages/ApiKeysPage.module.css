@@ -1,4 +1,4 @@
-/* ApiKeysPage.module.css — the key list's overview: use tiles, then the toolbar.
+/* ApiKeysPage.module.css — the key list's overview (use tiles, then the toolbar) and the key editor.
    The tiles and the toolbar are the provider list's own (StatTiles, `.logs-toolbar`), so the
    Gateway pages that summarise their rows before listing them read as one console. */
 
@@ -21,8 +21,10 @@
   margin-bottom: 0;
 }
 
+/* Grows into the slack and gives it back when "Clear filters" arrives, so the row never wraps. */
 .search {
-  width: 260px;
+  flex: 1 1 160px;
+  max-width: 320px;
 }
 
 .window-summary {
@@ -46,7 +48,21 @@
     width: 100%;
   }
 
+  /* The summary line is a link's height, so "Clear filters" can join it without growing it. */
   .window-summary {
+    min-height: 28px;
     margin-left: 0;
   }
+}
+
+/* The key editor: the provider editor's vertical form, the secret's two actions beside its field. */
+.secret-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secret-field > :first-child {
+  flex: 1;
+  min-width: 0;
 }

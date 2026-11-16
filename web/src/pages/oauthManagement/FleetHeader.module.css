@@ -1,0 +1,218 @@
+/* Search, verdicts, tools: three areas on one grid. The grid follows the width the workspace has. */
+.frame {
+  container: fleet-toolbar / inline-size;
+  min-width: 0;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(200px, 320px) minmax(0, 1fr) auto auto;
+  grid-template-areas: 'search health query view';
+  align-items: center;
+  gap: 10px 12px;
+  min-width: 0;
+}
+
+.search {
+  grid-area: search;
+  min-width: 0;
+}
+
+.health {
+  grid-area: health;
+}
+
+.query-tools { grid-area: query; }
+.view-tools { grid-area: view; }
+
+.tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Icon-only items: square, with no gap reserved for the visually hidden label, so each glyph sits
+   centred in its thumb and the group matches the 32px tool buttons beside it. */
+.layout :global([data-slot='segmented-item']) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  padding-inline: 0;
+  gap: 0;
+}
+
+.caret {
+  width: 26px !important;
+  min-width: 26px;
+}
+
+.tool-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-count {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Health verdicts as quiet chips: a pip, the verdict and its count. */
+.health {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  /* Four translated verdicts can outgrow their track at any width; they scroll rather than run under
+     the tools beside them. */
+  overflow-x: auto;
+}
+
+.lens {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.lens:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg);
+}
+
+.lens:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.lens-active,
+.lens-active:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  color: var(--fg);
+}
+
+.lens-label {
+  white-space: nowrap;
+}
+
+.lens-count {
+  color: var(--fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.pip-attention { background: var(--warn); }
+.pip-healthy { background: var(--success); }
+.pip-stale { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.pip-disabled { background: color-mix(in srgb, var(--fg) 25%, transparent); }
+
+.sort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 160px;
+}
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 240px;
+  padding: 4px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-field :global([data-slot='combobox-trigger']),
+.filter-field :global([data-slot='select-trigger']) {
+  width: 100%;
+}
+
+.filter-label {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.filter-reset {
+  align-self: flex-start;
+  margin-left: -7px;
+}
+
+/* Narrow: the search shares its line with what narrows and orders the list; the verdicts share
+   theirs with how the list is drawn and refreshed. Two lines, neither wrapping into a ragged third. */
+@container fleet-toolbar (max-width: 900px) {
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'search query'
+      'health view';
+  }
+
+  .health {
+    margin-inline-start: -7px;
+  }
+
+  .lens {
+    padding: 0 8px 0 7px;
+  }
+}
+
+/* A phone keeps the narrow page's two lines at a phone's rhythm: the search with what narrows and
+   orders the list, then the verdicts - scrolling if they outgrow their room - with the view and the
+   refresh glyph. Every line is full, so no control stands alone in empty width. */
+@container fleet-toolbar (max-width: 560px) {
+  /* Lines of their own rather than grid tracks: a shared column would size both lines' tools to the
+     wider set, leaving a gap beside the search. The break is a full-width item ordered between. */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 8px;
+  }
+
+  .toolbar::after {
+    content: '';
+    flex: 0 0 100%;
+    order: 1;
+  }
+
+  .search,
+  .health {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* The break is a line of its own, so the second line takes its spacing as a margin, not a gap. */
+  .health,
+  .view-tools {
+    order: 2;
+    margin-top: 8px;
+  }
+}

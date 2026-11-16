@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button } from 'antd';
+import { MetaLine } from '../components/common/MetaLine';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -16,6 +17,7 @@ import styles from '../components/plugins/PluginPageHost.module.css';
 import shellURL from '../components/plugins/pluginFrameShell.html?url&no-inline';
 import { EmptyState } from '../components/common/EmptyState';
 import { Tooltip } from '../components/common/Tooltip';
+import { preloadRegisteredRoute, useTransitionNavigate } from '../performance/routeContract';
 
 /**
  * One page a plugin registered, shown inside the console.
@@ -29,7 +31,8 @@ import { Tooltip } from '../components/common/Tooltip';
  */
 export const PluginPageHost: React.FC = () => {
   const { t, lang } = useI18n();
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  const { navigateTo } = useTransitionNavigate(rawNavigate);
   const { pluginId, pageIndex } = useParams();
   const { themeMode } = useTheme();
   const frameTheme: 'dark' | 'light' = themeMode === 'dark' ? 'dark' : 'light';
@@ -103,7 +106,13 @@ export const PluginPageHost: React.FC = () => {
     return (
       <div className={styles.unavailable} data-plugin-page-unavailable>
         <EmptyState title={t('plugin.page_unavailable')}>
-          <Button type="primary" onClick={() => navigate('/plugins')}>{t('plugin.page_open_management')}</Button>
+          <Button
+            variant="primary"
+            onMouseEnter={() => preloadRegisteredRoute('/plugins')}
+            onClick={() => navigateTo('/plugins')}
+          >
+            {t('plugin.page_open_management')}
+          </Button>
         </EmptyState>
       </div>
     );
@@ -119,15 +128,15 @@ export const PluginPageHost: React.FC = () => {
         <span className={styles.mark}><PluginLogo logo={entry.logo} /></span>
         <div className={styles.identity}>
           <span className={styles.title}>{entry.label}</span>
-          <span className={styles.subtitle}>
-            {entry.label !== entry.pluginName ? `${entry.pluginName} · ` : ''}
+          <MetaLine className={styles.subtitle}>
+            {entry.label !== entry.pluginName ? <b>{entry.pluginName}</b> : null}
             {entry.description || t('plugin.page_provided_by_plugin')}
-          </span>
+          </MetaLine>
         </div>
         <span className={styles.actions}>
           <Tooltip title={t('plugin.page_reload')}>
             <Button
-              size="small"
+              size="sm"
               icon={<ReloadOutlined />}
               // A page whose credential could not be read recovers through the control the
               // operator already has: read it again, then load the plugin's document afresh.
@@ -139,13 +148,14 @@ export const PluginPageHost: React.FC = () => {
             />
           </Tooltip>
           <Tooltip title={t('plugin.page_open_new_tab')}>
-            <Button size="small" icon={<ExternalLinkOutlined />} href={frameURL} target="_blank" rel="noreferrer" aria-label={t('plugin.page_open_new_tab')} />
+            <Button size="sm" icon={<ExternalLinkOutlined />} href={frameURL} target="_blank" rel="noreferrer" aria-label={t('plugin.page_open_new_tab')} />
           </Tooltip>
           <Tooltip title={t('plugin.page_configure')}>
             <Button
-              size="small"
+              size="sm"
               icon={<SettingOutlined />}
-              onClick={() => navigate(`/plugins?plugin=${encodeURIComponent(entry.pluginId)}`)}
+              onMouseEnter={() => preloadRegisteredRoute('/plugins')}
+              onClick={() => navigateTo(`/plugins?plugin=${encodeURIComponent(entry.pluginId)}`)}
               aria-label={t('plugin.page_configure')}
             />
           </Tooltip>

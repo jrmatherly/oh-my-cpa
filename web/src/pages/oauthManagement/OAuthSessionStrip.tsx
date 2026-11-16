@@ -1,4 +1,4 @@
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { useT } from '../../i18n';
 import type { OAuthRecoveryTarget } from '../../types/oauth';
 import type { OAuthProviderChoice } from '../oauthProviderLogic';
@@ -47,22 +47,21 @@ export function OAuthSessionStrip({ sessions, choices, onOpen }: OAuthSessionStr
       {entries.map(({ providerId, state, title }) => (
         <span className={styles.pill} data-testid="oauth-session-pill" key={providerId}>
           <span className={styles['pill-text']}>
-            <span>{title}</span>
-            <span aria-hidden="true">·</span>
-            <span>{statusText(state)}</span>
+            <span className={styles['pill-title']}>{title}</span>
+            <span className={styles['pill-status']}>{statusText(state)}</span>
           </span>
           <span className={styles['pill-actions']}>
             <Button
-              type="link"
-              size="small"
+              variant="link"
+              size="sm"
               onClick={() => onOpen(providerId, state.recoveryTarget)}
             >
               {state.status === 'error' ? t('common.retry') : t('common.details')}
             </Button>
             {state.status === 'waiting' && (
               <Button
-                type="link"
-                size="small"
+                variant="link"
+                size="sm"
                 danger
                 loading={state.cancelling}
                 data-oauth-cancel={providerId}

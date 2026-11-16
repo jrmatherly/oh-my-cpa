@@ -33,7 +33,7 @@ MCP adapters ──────┘      validate / authorize / prepare / approve
 4. Return bounded, secret-free data with display labels alongside identifiers. Put
    reusable structured rows in results rather than packing measurements into prose.
 5. Add the capability title and description to the four locale catalogs. Test the
-   new risk or behavior in its owning layer, following [Testing](testing.md).
+   new risk or behavior in its owning layer, following [Testing](dev/testing.md).
 
 A prepared operation binds canonical arguments, principal, adapter, version and the
 revision used for its preview. Approval must not become permission to execute arbitrary
@@ -61,6 +61,22 @@ not the Agent contract. Browser run/session DTOs omit private model history and 
 query results, even though the chosen model can receive approved business data and
 quote it in an answer. The product discloses that data transfer; rendering it is not
 proof that the data stayed local.
+
+## Quota evidence
+
+Quota windows retain upstream percentages, native amounts and reset times. Recorded
+`usage.cost_nanos` is API-equivalent consumption; compare `usage.priced_requests`
+with `usage.requests` to identify a partial cost total. Optional `capacity` estimates the
+100% full-window cost, requests and tokens by scaling recorded window consumption by the
+upstream used percentage (`basis: "current_window"`), or carries forward the last
+completed same-plan cycle's estimate (`basis: "previous_window"`) while a fresh window has
+no usage yet. When `sample_priced_requests` is below `sample_requests`, `cost_nanos`
+extrapolates the priced subset. `capacity_unavailable` names missing boundary, reading or
+traffic evidence.
+
+The console, Agent and MCP share these projections. The
+`GET /api/v1/management/quota/{authIndex}/capacity?window=` details route returns
+recorded current/previous-cycle consumption and the same full-window capacity estimate.
 
 ## Read-only SQL
 
@@ -110,4 +126,4 @@ For stdio clients, run `oh-my-cpa mcp` with `OMCPA_SERVER_URL` and
 `OMCPA_CPA_MANAGEMENT_KEY` in its private environment. This bridge opens no OMC database.
 Non-loopback targets require HTTPS; redirects are refused. Both transports expose the
 same authorized registry and human-approval behavior. Operator configuration and
-recovery are in [Operations](operations.md#agent-and-mcp).
+recovery are in [Agent and MCP](features/agent.md).

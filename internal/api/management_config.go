@@ -10,6 +10,7 @@ import (
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/configyaml"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/management"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/operations"
+	"github.com/oh-my-cpa/oh-my-cpa/internal/statecoord"
 )
 
 type configPutScalarRequest struct {
@@ -21,12 +22,88 @@ type configSourcePutRequest struct {
 	Revision string `json:"revision,omitempty"`
 }
 
+// ManagementConfigResponseDTO represents the redacted CPA v8 configuration editor view.
+type ManagementConfigResponseDTO struct {
+	Version       uint64                      `json:"version,omitempty"`
+	Scalars       management.ConfigScalarsDTO `json:"scalars"`
+	SupportedKeys []string                    `json:"supported_keys"`
+	Revision      string                      `json:"revision"`
+	SafeYAML      string                      `json:"safe_yaml"`
+	StoredLayout  string                      `json:"stored_layout"`
+}
+
+// ManagementConfigPatchResponseDTO reports a saved config patch and the refreshed safe YAML baseline.
+type ManagementConfigPatchResponseDTO struct {
+	Status   string `json:"status"`
+	Revision string `json:"revision,omitempty"`
+	SafeYAML string `json:"safe_yaml,omitempty"`
+}
+
+// ManagementConfigScalarResponseDTO reports the saved scalar config key, value, and optional state version.
+type ManagementConfigScalarResponseDTO struct {
+	Status  string `json:"status"`
+	Key     string `json:"key"`
+	Value   any    `json:"value"`
+	Version uint64 `json:"version,omitempty"`
+}
+
+// ManagementConfigSourceResponseDTO returns the raw CPA v8 YAML configuration source.
+type ManagementConfigSourceResponseDTO struct {
+	YAML      string `json:"yaml"`
+	SizeBytes int    `json:"size_bytes"`
+	Revision  string `json:"revision"`
+}
+
+// ManagementConfigSourcePutResponseDTO confirms a whole-document YAML save and returns the stored rendering.
+type ManagementConfigSourcePutResponseDTO struct {
+	Status    string `json:"status"`
+	Revision  string `json:"revision,omitempty"`
+	YAML      string `json:"yaml,omitempty"`
+	SizeBytes int    `json:"size_bytes,omitempty"`
+}
+
 // managementConfigGet serves the configuration editor: CPA's v8 view of the
 // stored file with secrets masked, the revision every save is checked against,
 // and whether the stored file is still in the pre-v8 layout (its first save
 // converts it, after a backup).
+//
+// @Summary Get sanitized CPA configuration
+// @Description Return redacted CPA v8 configuration scalars, supported keys, safe YAML, revision, and stored layout.
+// @Tags Config
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} ManagementConfigResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/config [get]
 func (h *Handler) managementConfigGet(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
+	if h.stateCoord != nil {
+		if _, ok := h.managementClientOrError(writer, request); !ok {
+			return
+		}
+		envelope, err := statecoord.ProjectTyped(request.Context(), h.stateCoord, func(state projectedConfigState, version uint64) (ManagementConfigResponseDTO, error) {
+			return ManagementConfigResponseDTO{
+				Version:       version,
+				Scalars:       state.Scalars,
+				SupportedKeys: management.KnownScalarKeys(),
+				Revision:      state.Revision,
+				SafeYAML:      state.SafeYAML,
+				StoredLayout:  state.StoredLayout,
+			}, nil
+		})
+		if err != nil {
+			writeCPAFacadeError(writer, err)
+			return
+		}
+		if envelope.Data.Revision != "" {
+			writer.Header().Set("ETag", fmt.Sprintf("%q", envelope.Data.Revision))
+		}
+		setStateVersionHeader(writer, envelope.Version)
+		writeJSON(writer, http.StatusOK, envelope.Data)
+		return
+	}
+
 	client, ok := h.managementClientOrError(writer, request)
 	if !ok {
 		return
@@ -57,12 +134,12 @@ func (h *Handler) managementConfigGet(writer http.ResponseWriter, request *http.
 	}
 
 	writer.Header().Set("ETag", fmt.Sprintf("%q", rev))
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"scalars":        scalars,
-		"supported_keys": management.KnownScalarKeys(),
-		"revision":       rev,
-		"safe_yaml":      safeYAML,
-		"stored_layout":  storedLayout,
+	writeJSON(writer, http.StatusOK, ManagementConfigResponseDTO{
+		Scalars:       scalars,
+		SupportedKeys: management.KnownScalarKeys(),
+		Revision:      rev,
+		SafeYAML:      safeYAML,
+		StoredLayout:  storedLayout,
 	})
 }
 
@@ -85,11 +162,22 @@ const MAX_CONFIG_CHANGES = 256
 
 // managementConfigPatch saves only the settings the operator changed.
 //
-// The revision check and the write happen under the provider write gate, for
-// the same reason as a whole-document save: a check alone cannot see a write
-// landing between it and the request to CPA. Masked secrets inside a submitted
-// value are put back from the stored document, the same way a whole-document
-// save restores them.
+// @Summary Patch CPA configuration fields
+// @Description Apply selective CPA v8 config path updates under If-Match/revision check with sentinel restoration and pre-write backup.
+// @Tags Config
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param If-Match header string false "Expected configuration revision"
+// @Param body body configPatchRequest true "Config patch payload"
+// @Success 200 {object} ManagementConfigPatchResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 409 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/config [patch]
 func (h *Handler) managementConfigPatch(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 
@@ -170,13 +258,13 @@ func (h *Handler) managementConfigPatch(writer http.ResponseWriter, request *htt
 	// The write landed. CPA renders what it stored in its own layout, so the
 	// editor's next baseline is read back rather than assumed; when that read
 	// fails the answer carries no baseline and the editor reloads instead.
-	response := map[string]any{"status": "ok"}
+	response := ManagementConfigPatchResponseDTO{Status: "ok"}
 	auditDetail := map[string]any{"paths": paths}
 	if savedYAML, err := client.ConfigYAML(request.Context()); err == nil {
 		newRev := configyaml.ComputeRevision(savedYAML)
 		safeYAML, _ := configyaml.SanitizeSafeYAML(savedYAML)
-		response["revision"] = newRev
-		response["safe_yaml"] = safeYAML
+		response.Revision = newRev
+		response.SafeYAML = safeYAML
 		auditDetail["revision"] = newRev
 		writer.Header().Set("ETag", fmt.Sprintf("%q", newRev))
 	}
@@ -205,6 +293,10 @@ func writeMissingRevision(writer http.ResponseWriter) {
 // currentConfigAtRevision reads the v8 view a save is based on and refuses the
 // save when it is no longer the revision the operator edited.
 func (h *Handler) currentConfigAtRevision(writer http.ResponseWriter, request *http.Request, client *management.Client, expectedRev string) (string, bool) {
+	if err := h.flushCoordinatorWithinGate(request.Context()); err != nil {
+		writeCPAFacadeError(writer, err)
+		return "", false
+	}
 	currentYAML, err := client.ConfigYAML(request.Context())
 	if err != nil {
 		writeCPAFacadeError(writer, err)
@@ -212,6 +304,7 @@ func (h *Handler) currentConfigAtRevision(writer http.ResponseWriter, request *h
 	}
 	currentRev := configyaml.ComputeRevision(currentYAML)
 	if !strings.EqualFold(expectedRev, currentRev) {
+		h.invalidateCoordinator("management-config")
 		writeJSON(writer, http.StatusConflict, map[string]any{
 			"error":            "configuration has been modified by another session",
 			"code":             "config_conflict",
@@ -222,8 +315,7 @@ func (h *Handler) currentConfigAtRevision(writer http.ResponseWriter, request *h
 	return currentYAML, true
 }
 
-// afterConfigWrite drops what a configuration write may have made stale.
-func (h *Handler) afterConfigWrite() {
+func (h *Handler) afterConfigWriteSideEffects() {
 	h.releaseToken.invalidate()
 	if h.pricing != nil {
 		h.pricing.NotifyModelsChanged()
@@ -231,8 +323,30 @@ func (h *Handler) afterConfigWrite() {
 	// The saved document may have re-keyed a provider, so the masks resolved from
 	// the credential lists it contains are no longer known to be current.
 	h.providerKeyMasks.invalidate()
+	h.invalidateClientKeyCatalog()
 }
 
+// afterConfigWrite drops what a configuration write may have made stale.
+func (h *Handler) afterConfigWrite() {
+	h.afterConfigWriteSideEffects()
+	h.invalidateCoordinator(stateConfigScopes...)
+}
+
+// @Summary Set a scalar CPA configuration setting
+// @Description Validate and update a single scalar CPA configuration key.
+// @Tags Config
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param key path string true "Scalar configuration key"
+// @Param body body configPutScalarRequest true "New scalar value"
+// @Success 200 {object} ManagementConfigScalarResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/config/{key} [put]
 func (h *Handler) managementConfigPutScalar(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	key := chi.URLParam(request, "key")
@@ -262,6 +376,35 @@ func (h *Handler) managementConfigPutScalar(writer http.ResponseWriter, request 
 		writeError(writer, http.StatusInternalServerError, "audit log failure; config save aborted")
 		return
 	}
+
+	if h.stateCoord != nil {
+		version, mutErr := h.mutateCoordinatorWithAudit(request, stateDomainScalars, "config.save_scalar", "config", key, map[string]any{"key": key}, func(state *projectedConfigState) error {
+			if _, changeErr := management.ScalarConfigChange(key, validatedVal); changeErr != nil {
+				return changeErr
+			}
+			management.ApplyScalarToDTO(&state.Scalars, key, validatedVal)
+			if state.PendingScalars == nil {
+				state.PendingScalars = make(map[string]pendingScalarEntry)
+			}
+			state.ScalarSeq++
+			state.PendingScalars[key] = pendingScalarEntry{Value: validatedVal, Seq: state.ScalarSeq}
+			return nil
+		})
+		if mutErr != nil {
+			_ = h.recordAudit(request, "config.save_scalar", "config", key, "failure", map[string]any{"error": mutErr.Error()})
+			writeProviderWriteError(writer, mutErr)
+			return
+		}
+		setStateVersionHeader(writer, version)
+		writeJSON(writer, http.StatusOK, ManagementConfigScalarResponseDTO{
+			Status:  "ok",
+			Key:     key,
+			Value:   validatedVal,
+			Version: version,
+		})
+		return
+	}
+
 	if err := h.operationsService().SetScalar(request.Context(), key, validatedVal, ""); err != nil {
 		_ = h.recordAudit(request, "config.save_scalar", "config", key, "failure", map[string]any{"error": err.Error()})
 		if err.Error() == "write_busy" {
@@ -279,10 +422,10 @@ func (h *Handler) managementConfigPutScalar(writer http.ResponseWriter, request 
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"status": "ok",
-		"key":    key,
-		"value":  validatedVal,
+	writeJSON(writer, http.StatusOK, ManagementConfigScalarResponseDTO{
+		Status: "ok",
+		Key:    key,
+		Value:  validatedVal,
 	})
 }
 
@@ -293,26 +436,28 @@ func validateScalarValue(key string, value any) (any, error) {
 // managementConfigSourceGet returns CPA's v8 view of config.yaml, secrets
 // included.
 //
-// There is no step-up authentication here, and that is deliberate. This used to
-// require a short-lived grant obtained by re-entering the CPA management key,
-// which meant an operator who had already authenticated to reach this console had
-// to prove the same secret again to read the file they had just been editing
-// through the visual editor. The management key is the console's only credential,
-// so the session that satisfies this handler already carries exactly the authority
-// the grant was re-checking; the second prompt added a step without adding a
-// boundary, and the PUT below it never required a grant at all.
-//
-// Reading the raw source is still the most sensitive configuration action, so what
-// remains is the part that carries real weight: the route sits behind the same
-// authenticated session as every other /management call, the response is marked
-// no-store, and the reveal is audited fail-closed - if the audit record cannot be
-// written the read is refused rather than served unaudited.
+// @Summary Reveal raw CPA config.yaml source
+// @Description Return the unredacted CPA v8 config.yaml source after recording a fail-closed audit event.
+// @Tags Config
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} ManagementConfigSourceResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/config/source [get]
 func (h *Handler) managementConfigSourceGet(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 
 	client, ok := h.managementClientOrError(writer, request)
 	if !ok {
 		return
+	}
+	if h.stateCoord != nil && h.stateCoord.IsDirty() {
+		if flushErr := h.stateCoord.FlushNow(request.Context()); flushErr != nil {
+			writeCPAFacadeError(writer, flushErr)
+			return
+		}
 	}
 
 	yamlStr, err := client.ConfigYAML(request.Context())
@@ -328,10 +473,10 @@ func (h *Handler) managementConfigSourceGet(writer http.ResponseWriter, request 
 	}
 
 	writer.Header().Set("ETag", fmt.Sprintf("%q", rev))
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"yaml":       yamlStr,
-		"size_bytes": len(yamlStr),
-		"revision":   rev,
+	writeJSON(writer, http.StatusOK, ManagementConfigSourceResponseDTO{
+		YAML:      yamlStr,
+		SizeBytes: len(yamlStr),
+		Revision:  rev,
 	})
 }
 
@@ -339,6 +484,23 @@ func (h *Handler) managementConfigSourceGet(writer http.ResponseWriter, request 
 // validates it as a v8 document and refuses legacy field names itself, so a
 // document it accepts is fully effective. The answer carries CPA's rendering of
 // what it stored, which is the text the next save is compared against.
+//
+// @Summary Replace raw CPA config.yaml source
+// @Description Replace the entire CPA v8 configuration YAML under revision guard and return the stored YAML and new revision.
+// @Tags Config
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param If-Match header string false "Expected configuration revision"
+// @Param body body configSourcePutRequest true "Full YAML configuration payload"
+// @Success 200 {object} ManagementConfigSourcePutResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 409 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/config/source [put]
 func (h *Handler) managementConfigSourcePut(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 
@@ -419,13 +581,13 @@ func (h *Handler) managementConfigSourcePut(writer http.ResponseWriter, request 
 		writePluginSourceError(writer, reconcileErr, true)
 		return
 	}
-	response := map[string]any{"status": "ok"}
+	response := ManagementConfigSourcePutResponseDTO{Status: "ok"}
 	auditDetail := map[string]any{"size_bytes": len(finalYAML)}
 	if savedYAML, err := client.ConfigYAML(request.Context()); err == nil {
 		newRev := configyaml.ComputeRevision(savedYAML)
-		response["revision"] = newRev
-		response["yaml"] = savedYAML
-		response["size_bytes"] = len(savedYAML)
+		response.Revision = newRev
+		response.YAML = savedYAML
+		response.SizeBytes = len(savedYAML)
 		auditDetail["revision"] = newRev
 		writer.Header().Set("ETag", fmt.Sprintf("%q", newRev))
 	}

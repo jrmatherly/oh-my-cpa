@@ -1,8 +1,9 @@
 /* Request explorer: quiet chrome, one scrollable stream, detail on demand. */
 .request-events-page {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  row-gap: 16px;
   height: calc(100dvh - var(--app-header-height));
   min-height: 640px;
   max-width: 1680px;
@@ -25,59 +26,68 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-/* The toggle is a labelled control rather than a bare switch: "Auto Refresh" on
-   its own does not say what interval it will poll at, and the cadence is the
-   only number that makes the setting decidable. */
-.req-auto-refresh-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  cursor: pointer;
-  user-select: none;
-}
-.req-auto-refresh-label {
-  font-size: var(--text-sm);
-  color: var(--fg-2);
-}
-.req-live-pulse-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--success);
-  display: inline-block;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 30%, transparent);
-}
-
-/* Records are polled rather than pushed: the list still moves, on the fallback cadence. */
-.req-live-pulse-dot.is-polling {
-  background: var(--muted);
-  box-shadow: none;
+.request-stream-slot {
+  flex: 1;
+  min-height: 310px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 2;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  /* overflow: clip clips the translated stream without creating a programmatic scroll
+     container, so keyboard focus inside the list can never scroll the slot itself. */
+  overflow: clip;
 }
 .request-stream {
+  border: 0;
   container-type: inline-size;
   container-name: reqstream;
   --req-grid-columns: 20px 96px 88px minmax(140px, 1.6fr) minmax(130px, 1.3fr) 84px 76px 78px 132px 64px 64px 124px 76px 14px;
   --req-grid-gap: 16px;
-  --req-pad-inline: 12px;
+  --req-pad-inline: 20px;
   --req-min-width: 1418px;
   flex: 1;
   min-height: 310px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  background: var(--bg);
+  border-radius: var(--radius-xl);
   position: relative;
 }
+/* The slot clips the stream it slides, and would clip an edge drawn outside it with it. So this
+   enclosure draws its ring inside: the top and sides on an overlay over the stream, the bottom and
+   its corners on the pagination, which stays at the slot's visible bottom while the stream slides.
+   The overlay reaches a pixel past the stream so its own bottom never doubles the pagination's. */
+.request-stream::after,
+.request-pagination::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--edge-ring);
+}
+.request-stream::after {
+  inset: 0 0 -1px;
+  z-index: 4;
+  border-radius: inherit;
+}
+.request-pagination::after {
+  inset: auto 0 0;
+  height: var(--radius-xl);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  clip-path: inset(1px 0 0);
+}
 .request-pagination {
+  position: relative;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
   padding: 12px 18px;
+  background: var(--bg);
   border-top: 1px solid var(--border);
   font-size: var(--text-xs);
   color: var(--muted);
@@ -89,6 +99,8 @@
 }
 .request-list-host {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 240px;
   min-width: var(--req-min-width, 1418px);
   overflow: hidden;
@@ -100,18 +112,6 @@
 .request-loading,
 .request-empty-error {
   padding: 24px;
-}
-.request-list .ant-listy-item {
-  transition: none;
-  padding: 0;
-  border: 0;
-  /* Kill antd Listy's built-in item hover background too: rows recycle under
-     the cursor while scrolling and a hover fill on every recycled row reads
-     as flicker. The row keeps cursor:pointer; keyboard focus keeps its ring. */
-  background: transparent;
-}
-.request-list .ant-listy-item:hover {
-  background: transparent;
 }
 .request-table-scroll-area {
   flex: 1;
@@ -142,9 +142,32 @@
 .request-stream[data-folded-columns~='mode'] :is(.req-th-mode, .req-col-mode) {
   display: none;
 }
-.request-selection-bar {
-  padding-inline: var(--req-pad-inline);
-  flex-shrink: 0;
+/* Two seams open with a space of their own, inside the column's track. The caller key starts where
+   the right-aligned cache rate ends, and a short alias there reads as part of the figure. The
+   model follows the provider, and two names one gap apart run together. Only the row of columns
+   has these seams. */
+@container reqstream (min-width: 921px) {
+  .req-col-model,
+  .req-th-model,
+  .req-col-key,
+  .req-th-key {
+    padding-inline-start: 16px;
+  }
+}
+/* The selection docks over the list's foot, so the rows never move when the first one is ticked;
+   while it stands the list scrolls far enough for its last row to clear it. */
+.request-selection-dock {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  translate: -50% 0;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+.request-stream.is-selecting .request-list {
+  padding-bottom: 72px;
 }
 /* The row layout is chosen by the *list's* width, not by the device's.
 
@@ -171,7 +194,6 @@
   font-size: var(--text-sm);
   padding: 10px 18px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
 }
 .request-group-title strong {
   overflow: hidden;
@@ -183,7 +205,7 @@
   color: var(--muted);
   font-size: var(--text-xs);
 }
-.request-list .ant-listy-group-header {
+.request-list .request-group-header {
   background-image: none;
   padding: 0;
 }
@@ -209,7 +231,7 @@
 @media (max-width: 640px) {
   .request-events-page {
     padding: 8px 12px 0;
-    gap: 8px;
+    row-gap: 8px;
     min-height: 0;
   }
   .request-events-page .request-collapsible-header > .request-header-content {
@@ -222,9 +244,8 @@
   .request-events-page .request-window {
     display: none;
   }
-  .req-auto-refresh-control {
-    flex: none;
-    white-space: nowrap;
+  .request-events-page .terminal-page-heading {
+    position: absolute;
   }
   .request-events-page .terminal-page-head > .request-actions {
     flex: 1;
@@ -233,29 +254,35 @@
     gap: 4px;
   }
   /* The ingest verdict is the one flexible item: it gives way first, and the tools keep the edge. */
-  .request-events-page .terminal-page-head > .request-actions > .ant-btn:has(.ant-badge) {
+  .request-events-page .terminal-page-head > .request-actions > [data-slot="button"]:has([data-slot="status-dot"]) {
     flex: 0 1 auto;
     min-width: 0;
     margin-inline-end: auto;
     padding-inline: 6px;
     overflow: hidden;
   }
-  .request-events-page .terminal-page-head .ant-badge {
+  .request-events-page .terminal-page-head [data-slot="status-dot"] {
     display: flex;
     align-items: center;
     min-width: 0;
   }
-  .request-events-page .terminal-page-head .ant-badge-status-text {
+  .request-events-page .terminal-page-head [data-slot="status-dot"] > span:last-child {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .request-stream {
+  .request-stream-slot {
     margin-inline: -12px;
-    border-inline: 0;
-    border-bottom: 0;
     border-radius: 0;
     min-height: 0;
+  }
+  .request-stream {
+    border-radius: 0;
+    min-height: 0;
+  }
+  .request-stream::after,
+  .request-pagination::after {
+    content: none;
   }
   .request-pagination {
     padding: 6px 12px max(6px, env(safe-area-inset-bottom));
@@ -274,28 +301,42 @@
   .request-group-title {
     padding: 6px 12px;
   }
+  .request-selection-dock .selection-bar,
+  .request-selection-dock .selection-bar-start {
+    flex-wrap: nowrap;
+  }
+  .request-selection-dock .selection-bar {
+    gap: 8px;
+    padding: 6px;
+    padding-inline-start: 14px;
+  }
+  .request-selection-dock .selection-bar-start {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+  }
+  .request-selection-dock .selection-bar-count {
+    flex-shrink: 0;
+  }
+  .request-selection-dock .selection-bar-start [data-slot="button"][data-variant="link"] {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .request-selection-dock .selection-bar-actions {
+    flex: none;
+    gap: 4px;
+  }
 }
 /* ── touch: one scroller, nothing to bounce ─────────────────────────────────
    On a phone, or wherever a finger is the main pointer, the page is exactly the content area
    and the list is its only scroller. */
 @media (max-width: 640px), (pointer: coarse) {
   .request-events-page,
+  .request-stream-slot,
   .request-stream,
   .request-table-scroll-area,
   .request-list-host {
     min-height: 0;
   }
-}
-/* Where a finger can scroll, the browser scrolls the list itself. A drag that reaches
-   either end stays with the list: handed on, it used to scroll the page around the list and bounce
-   it, or reload it when pulled down at the top. The list keeps the platform's own end bounce, which
-   is part of a native scroller's feel; `contain` rather than `none` is what leaves it that. Rows away from the view keep their place in the scroll
-   height without being laid out or painted, which is what lets a page of 500 records scroll as an
-   ordinary element; `auto` keeps a row's measured height once it has been drawn. */
-.request-list.is-native-scroll {
-  overscroll-behavior: contain;
-}
-.request-list.is-native-scroll .ant-listy-item {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 96px;
 }

@@ -404,12 +404,31 @@ func (s *Service) localCatalog(ctx context.Context) (Catalog, bool) {
 }
 
 // StoredCatalog is the snapshot the console's model picker reads: never the
-// network, so the picker works offline and costs OpenRouter nothing.
+// network, so the picker works offline and costs OpenRouter nothing. It reuses
+// the in-memory snapshot while fresh so repeated price-book reads do not reload
+// and re-decode the stored JSON rows on every request.
 func (s *Service) StoredCatalog(ctx context.Context) ([]UpstreamModel, error) {
 	if s == nil || s.store == nil {
 		return nil, errors.New("pricing service is not initialized")
 	}
-	return s.store.ListUpstreamCatalog(ctx)
+	s.catalogMu.Lock()
+	if s.cachedCatalog != nil && s.clock().Sub(s.cachedAt) < catalogCacheTTL {
+		models := s.cachedCatalog.Models
+		s.catalogMu.Unlock()
+		return models, nil
+	}
+	s.catalogMu.Unlock()
+	stored, err := s.store.ListUpstreamCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(stored) > 0 {
+		catalog := NewCatalog(stored, s.clock())
+		s.catalogMu.Lock()
+		s.cachedCatalog, s.cachedAt = &catalog, s.clock()
+		s.catalogMu.Unlock()
+	}
+	return stored, nil
 }
 
 // SyncOnce refreshes prices explicitly. All sync paths serialize here.
@@ -632,37 +651,82 @@ func (s *Service) AutomaticMatch(ctx context.Context, model string) (Match, bool
 	return match, found, nil
 }
 
+// MatchMetadata resolves OpenRouter specification metadata for each requested
+// identity from the local OpenRouter cache (memory or SQLite), never making an
+// outbound HTTP request. Before the first OpenRouter sync completes, it returns
+// an empty map so callers degrade cleanly.
+func (s *Service) MatchMetadata(ctx context.Context, identities []string) map[string]UpstreamModel {
+	result := make(map[string]UpstreamModel)
+	if s == nil || s.store == nil || len(identities) == 0 {
+		return result
+	}
+	catalog, ok := s.localCatalog(ctx)
+	if !ok {
+		return result
+	}
+	for _, raw := range identities {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := result[raw]; exists {
+			continue
+		}
+		if matched, found := catalog.MatchMetadata(trimmed); found {
+			result[raw] = matched
+		}
+	}
+	return result
+}
+
 // Suggestions offers the OpenRouter models a CPA model most resembles, from the
 // stored snapshot only. A model that matches automatically needs no suggestion,
 // so its first entry is the automatic match.
 func (s *Service) Suggestions(ctx context.Context, model string, limit int) ([]UpstreamModel, error) {
+	byModel, err := s.SuggestionsBatch(ctx, []string{model}, limit)
+	if err != nil {
+		return nil, err
+	}
+	return byModel[model], nil
+}
+
+// SuggestionsBatch resolves suggestions for a slice of CPA models in a single
+// catalog/target read instead of reading pricing_model_catalog once per model.
+func (s *Service) SuggestionsBatch(ctx context.Context, names []string, limit int) (map[string][]UpstreamModel, error) {
 	if s == nil || s.store == nil {
 		return nil, errors.New("pricing service is not initialized")
+	}
+	result := make(map[string][]UpstreamModel, len(names))
+	if len(names) == 0 {
+		return result, nil
 	}
 	models, err := s.store.ListPricingModels(ctx)
 	if err != nil {
 		return nil, err
 	}
-	target := models[model]
-	if target == "" {
-		target = model
-	}
 	catalog, ok := s.localCatalog(ctx)
 	if !ok {
-		return nil, nil
+		return result, nil
 	}
-	var result []UpstreamModel
-	if match, ok := catalog.MatchModel(target); ok {
-		result = append(result, match.Model)
-	}
-	for _, candidate := range catalog.Suggest(target, limit+1) {
-		if len(result) >= limit {
-			break
+	for _, model := range names {
+		target := models[model]
+		if target == "" {
+			target = model
 		}
-		if len(result) > 0 && result[0].ID == candidate.ID {
-			continue
+		var suggestions []UpstreamModel
+		if match, matched := catalog.MatchModel(target); matched {
+			suggestions = append(suggestions, match.Model)
 		}
-		result = append(result, candidate)
+		for _, candidate := range catalog.Suggest(target, limit+1) {
+			if len(suggestions) >= limit {
+				break
+			}
+			if len(suggestions) > 0 && suggestions[0].ID == candidate.ID {
+				continue
+			}
+			suggestions = append(suggestions, candidate)
+		}
+		result[model] = suggestions
 	}
 	return result, nil
 }

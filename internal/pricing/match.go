@@ -157,11 +157,18 @@ type indexedEntry struct {
 	kind  string
 }
 
+type suggestEntry struct {
+	model   UpstreamModel
+	slugKey string
+	tokens  map[string]struct{}
+}
+
 type catalogIndex struct {
 	byID       map[string]UpstreamModel
 	exact      map[string][]indexedEntry
 	normalized map[string][]indexedEntry
 	dated      map[string][]indexedEntry
+	suggest    []suggestEntry
 }
 
 // NewCatalog indexes a snapshot once; lookups are then map reads.
@@ -171,6 +178,7 @@ func NewCatalog(models []UpstreamModel, fetchedAt time.Time) Catalog {
 		exact:      make(map[string][]indexedEntry, len(models)*2),
 		normalized: make(map[string][]indexedEntry, len(models)*2),
 		dated:      make(map[string][]indexedEntry, len(models)),
+		suggest:    make([]suggestEntry, 0, len(models)),
 	}
 	add := func(target map[string][]indexedEntry, key string, entry indexedEntry) {
 		if key == "" {
@@ -186,6 +194,12 @@ func NewCatalog(models []UpstreamModel, fetchedAt time.Time) Catalog {
 	for _, model := range models {
 		index.byID[strings.ToLower(model.ID)] = model
 		slug := upstreamSlug(model.ID)
+		slugNorm := NormalizeModelKey(slug)
+		index.suggest = append(index.suggest, suggestEntry{
+			model:   model,
+			slugKey: slugNorm,
+			tokens:  modelTokens(slug),
+		})
 		canonical := upstreamSlug(model.CanonicalSlug)
 		exactKind, canonicalKind, normalizedKind, datedKind := MatchExact, MatchCanonical, MatchNormalized, MatchDateStripped
 		if model.IsAlias() {
@@ -197,7 +211,7 @@ func NewCatalog(models []UpstreamModel, fetchedAt time.Time) Catalog {
 			add(index.normalized, NormalizeModelKey(canonical), indexedEntry{model, normalizedKind})
 			add(index.dated, NormalizeModelKey(stripDateSuffix(canonical)), indexedEntry{model, datedKind})
 		}
-		add(index.normalized, NormalizeModelKey(slug), indexedEntry{model, normalizedKind})
+		add(index.normalized, slugNorm, indexedEntry{model, normalizedKind})
 		add(index.dated, NormalizeModelKey(stripDateSuffix(slug)), indexedEntry{model, datedKind})
 	}
 	return Catalog{FetchedAt: fetchedAt, Models: models, index: index}
@@ -289,6 +303,112 @@ func demoteToDated(kind string) string {
 	return MatchDateStripped
 }
 
+// metadataVariantSuffixes are request-level reasoning/variant decorations a gateway
+// appends to a base model name. MatchMetadata strips at most one trailing suffix for
+// read-only specification lookup; automatic billing (MatchModel) never strips these.
+var metadataVariantSuffixes = []string{"-thinking", "-minimal", "-low", "-medium", "-high", "-xhigh"}
+
+// MatchMetadata resolves OpenRouter specification metadata for a CPA model identity.
+//
+// Unlike MatchModel (strict billing), MatchMetadata expands the identity only in forms
+// that name the same underlying model: exact form -> strip one reasoning suffix ->
+// strip a router `:tag` (plus one reasoning suffix on the untagged form) -> strip leading
+// route namespaces segment-by-segment. Every candidate still requires an exact, canonical,
+// normalized, or date-stripped MatchModel hit; fuzzy version guessing is never performed.
+func (c Catalog) MatchMetadata(identity string) (UpstreamModel, bool) {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return UpstreamModel{}, false
+	}
+	forms := metadataCandidateForms(identity)
+	// First resolve exact IDs and non-colon-prefixed forms in candidate order so an
+	// original canonical/normalized match beats a stripped base, and bare router-tagged
+	// identities (gpt-5:online) match their untagged base instead of treating the tag
+	// as a model slug via StripProviderPrefix.
+	for _, form := range forms {
+		if matched, ok := c.lookupWithPrefixes(form); ok {
+			return matched, true
+		}
+		if !strings.Contains(form, ":") {
+			if match, ok := c.MatchModel(form); ok {
+				return match.Model, true
+			}
+		}
+	}
+	// Fall back to CPA provider:model prefixes (openai:gpt-5, relay:gpt-5:online),
+	// preferring single-colon untagged forms first and never passing `author/model:tag`
+	// router tags to MatchModel.
+	for _, wantSingleColon := range []bool{true, false} {
+		for _, form := range forms {
+			slash, colon := strings.LastIndex(form, "/"), strings.LastIndex(form, ":")
+			if colon < 0 || (slash >= 0 && colon > slash) {
+				continue
+			}
+			if wantSingleColon != (strings.Count(form, ":") == 1) {
+				continue
+			}
+			if match, ok := c.MatchModel(form); ok {
+				return match.Model, true
+			}
+		}
+	}
+	return UpstreamModel{}, false
+}
+
+func (c Catalog) lookupWithPrefixes(form string) (UpstreamModel, bool) {
+	if matched, ok := c.Lookup(form); ok {
+		return matched, true
+	}
+	for rest := form; ; {
+		slash := strings.Index(rest, "/")
+		if slash < 0 || slash == len(rest)-1 {
+			break
+		}
+		rest = rest[slash+1:]
+		if matched, ok := c.Lookup(rest); ok {
+			return matched, true
+		}
+	}
+	return UpstreamModel{}, false
+}
+
+func metadataCandidateForms(identity string) []string {
+	forms := make([]string, 0, 4)
+	seen := make(map[string]struct{}, 4)
+	add := func(value string) {
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		forms = append(forms, value)
+	}
+	add(identity)
+	add(stripOneMetadataReasoningSuffix(identity))
+	if slash, colon := strings.LastIndex(identity, "/"), strings.LastIndex(identity, ":"); colon > slash+1 && colon < len(identity)-1 {
+		untagged := identity[:colon]
+		add(untagged)
+		add(stripOneMetadataReasoningSuffix(untagged))
+	}
+	return forms
+}
+
+func stripOneMetadataReasoningSuffix(value string) string {
+	lower := strings.ToLower(value)
+	for _, suffix := range metadataVariantSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			base := value[:len(value)-len(suffix)]
+			if base != "" && !strings.HasSuffix(base, "/") && !strings.HasSuffix(base, ":") {
+				return base
+			}
+			return value
+		}
+	}
+	return value
+}
+
 // Suggest ranks upstream models that resemble a model MatchModel could not
 // resolve, such as a reasoning-effort decoration ("gpt-5.4-mini-high"). The
 // console offers them for one-click adoption; they are never applied on their
@@ -318,23 +438,25 @@ func (c Catalog) Suggest(model string, limit int) []UpstreamModel {
 		official bool
 	}
 	wanted := modelTokens(StripProviderPrefix(model))
+	index := c.ensureIndex()
 	var ranked []scored
-	for _, candidate := range c.Models {
-		slugKey := NormalizeModelKey(upstreamSlug(candidate.ID))
-		prefix := commonPrefix(key, slugKey)
-		if candidate.ID != preferredID && (prefix < 4 || prefix*2 < len(slugKey)) {
+	for _, entry := range index.suggest {
+		candidate := entry.model
+		prefix := commonPrefix(key, entry.slugKey)
+		if candidate.ID != preferredID && (prefix < 4 || prefix*2 < len(entry.slugKey)) {
 			continue
 		}
 		official := false
 		for _, author := range officials {
 			if author == candidate.Author {
 				official = true
+				break
 			}
 		}
 		if len(officials) > 0 && !official {
 			continue
 		}
-		ranked = append(ranked, scored{candidate, prefix, tokenOverlap(wanted, modelTokens(upstreamSlug(candidate.ID))), official})
+		ranked = append(ranked, scored{candidate, prefix, tokenOverlap(wanted, entry.tokens), official})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
 		left, right := ranked[i], ranked[j]

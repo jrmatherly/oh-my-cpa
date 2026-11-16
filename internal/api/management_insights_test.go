@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
@@ -40,27 +42,27 @@ func TestInsightsWindowsFollowTheDeploymentCalendar(t *testing.T) {
 		compareTo      int64
 		expectedBucket insightsBucket
 	}{
-		{"today grows and compares against the same hours of yesterday", "today", wednesday, shanghai,
+		{"today grows and compares against full yesterday", "today", wednesday, shanghai,
 			local(shanghai, 2026, 10, 21, 0, 0), wednesday.UnixMilli(), true,
-			local(shanghai, 2026, 10, 20, 0, 0), local(shanghai, 2026, 10, 20, 14, 30), insightsBucketHour},
+			local(shanghai, 2026, 10, 20, 0, 0), local(shanghai, 2026, 10, 21, 0, 0) - 1, insightsBucketHour},
 		{"yesterday is closed", "yesterday", wednesday, shanghai,
 			local(shanghai, 2026, 10, 20, 0, 0), local(shanghai, 2026, 10, 21, 0, 0) - 1, false,
 			local(shanghai, 2026, 10, 19, 0, 0), local(shanghai, 2026, 10, 20, 0, 0) - 1, insightsBucketHour},
-		{"this week starts on Monday", "this_week", wednesday, shanghai,
+		{"this week starts on Monday and compares against full last week", "this_week", wednesday, shanghai,
 			local(shanghai, 2026, 10, 19, 0, 0), wednesday.UnixMilli(), true,
-			local(shanghai, 2026, 10, 12, 0, 0), local(shanghai, 2026, 10, 14, 14, 30), insightsBucketDay},
+			local(shanghai, 2026, 10, 12, 0, 0), local(shanghai, 2026, 10, 19, 0, 0) - 1, insightsBucketDay},
 		{"last week", "last_week", wednesday, shanghai,
 			local(shanghai, 2026, 10, 12, 0, 0), local(shanghai, 2026, 10, 19, 0, 0) - 1, false,
 			local(shanghai, 2026, 10, 5, 0, 0), local(shanghai, 2026, 10, 12, 0, 0) - 1, insightsBucketDay},
-		{"this month", "this_month", wednesday, shanghai,
+		{"this month compares against full last month", "this_month", wednesday, shanghai,
 			local(shanghai, 2026, 10, 1, 0, 0), wednesday.UnixMilli(), true,
-			local(shanghai, 2026, 9, 1, 0, 0), local(shanghai, 2026, 9, 21, 14, 30), insightsBucketDay},
+			local(shanghai, 2026, 9, 1, 0, 0), local(shanghai, 2026, 10, 1, 0, 0) - 1, insightsBucketDay},
 		{"last month", "last_month", wednesday, shanghai,
 			local(shanghai, 2026, 9, 1, 0, 0), local(shanghai, 2026, 10, 1, 0, 0) - 1, false,
 			local(shanghai, 2026, 8, 1, 0, 0), local(shanghai, 2026, 9, 1, 0, 0) - 1, insightsBucketDay},
-		{"the 31st compares against the end of a shorter month", "this_month", time.Date(2026, 3, 31, 9, 0, 0, 0, shanghai), shanghai,
+		{"the 31st compares against full February", "this_month", time.Date(2026, 3, 31, 9, 0, 0, 0, shanghai), shanghai,
 			local(shanghai, 2026, 3, 1, 0, 0), local(shanghai, 2026, 3, 31, 9, 0), true,
-			local(shanghai, 2026, 2, 1, 0, 0), local(shanghai, 2026, 2, 28, 9, 0), insightsBucketDay},
+			local(shanghai, 2026, 2, 1, 0, 0), local(shanghai, 2026, 3, 1, 0, 0) - 1, insightsBucketDay},
 		{"the day clocks fall back is 25 hours", "yesterday", time.Date(2026, 11, 2, 9, 0, 0, 0, newYork), newYork,
 			local(newYork, 2026, 11, 1, 0, 0), local(newYork, 2026, 11, 2, 0, 0) - 1, false,
 			local(newYork, 2026, 10, 31, 0, 0), local(newYork, 2026, 11, 1, 0, 0) - 1, insightsBucketHour},
@@ -200,8 +202,10 @@ func TestInsightsCubeCarriesEveryDimensionWithoutKeys(t *testing.T) {
 	if requests != 3 || tokensByHour[9] != 160 || tokensByHour[12] != 40 {
 		t.Fatalf("rows %v hold %d requests by hour %v", body.Rows, requests, tokensByHour)
 	}
-	// Yesterday up to 14:30, not the evening record after it.
-	if len(body.PreviousRows) != 1 || body.PreviousRows[0][column["total_tokens"]-1] != 500 {
+	// Full yesterday across hourly buckets: 09:00 (500 tokens) and 20:00 (900 tokens).
+	if len(body.PreviousRows) != 2 ||
+		body.PreviousRows[0][column["bucket"]] != 9 || body.PreviousRows[0][column["total_tokens"]] != 500 ||
+		body.PreviousRows[1][column["bucket"]] != 20 || body.PreviousRows[1][column["total_tokens"]] != 900 {
 		t.Fatalf("previous rows %v", body.PreviousRows)
 	}
 
@@ -232,5 +236,173 @@ func TestInsightsCubeCarriesEveryDimensionWithoutKeys(t *testing.T) {
 	response, _ = getJSON(t, client, baseURL+"/omc/api/v1/management/insights/cube?preset=30d&bucket=hour")
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("hourly buckets over 30 days answered %d", response.StatusCode)
+	}
+
+	// Changing the display bucket (day vs week) must not alter PreviousRows, so the
+	// robust comparison baseline stays invariant to chart granularity.
+	// 7d window at 2026-10-21 14:30 covers Oct 14 14:30–Oct 21 14:30; its comparison
+	// period is Oct 07 14:30–Oct 14 14:30.
+	seedEvents(t, repo, now, []repository.UsageDecoded{
+		{Event: event("cmp-day-1", "sk-alpha-secret-0001", "fast", "gpt-5", time.Date(2026, 10, 9, 10, 0, 0, 0, shanghai), 700)},
+		{Event: event("cmp-day-2", "sk-alpha-secret-0001", "fast", "gpt-5", time.Date(2026, 10, 12, 10, 0, 0, 0, shanghai), 800)},
+	})
+	var dayCube, weekCube insightsCubeResponse
+	dayRes, dayPayload := getJSON(t, client, baseURL+"/omc/api/v1/management/insights/cube?preset=7d&bucket=day")
+	if dayRes.StatusCode != http.StatusOK {
+		t.Fatalf("day cube status %d: %s", dayRes.StatusCode, dayPayload)
+	}
+	weekRes, weekPayload := getJSON(t, client, baseURL+"/omc/api/v1/management/insights/cube?preset=7d&bucket=week")
+	if weekRes.StatusCode != http.StatusOK {
+		t.Fatalf("week cube status %d: %s", weekRes.StatusCode, weekPayload)
+	}
+	if err := json.Unmarshal(dayPayload, &dayCube); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(weekPayload, &weekCube); err != nil {
+		t.Fatal(err)
+	}
+	var prevTokenSum int64
+	for _, r := range dayCube.PreviousRows {
+		prevTokenSum += r[column["total_tokens"]]
+	}
+	if len(dayCube.PreviousRows) != 2 || prevTokenSum != 1500 {
+		t.Fatalf("expected 2 non-empty comparison day buckets totalling 1500 tokens, got %v", dayCube.PreviousRows)
+	}
+	if !reflect.DeepEqual(dayCube.PreviousRows, weekCube.PreviousRows) || !reflect.DeepEqual(dayCube.Compare, weekCube.Compare) {
+		t.Fatalf("comparison rows changed across display buckets: day=%v week=%v", dayCube.PreviousRows, weekCube.PreviousRows)
+	}
+}
+
+func TestInsightsCubeFoldsDailyFactsIntoCalendarMonths(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 21, 14, 30, 0, 0, shanghai)
+	client, baseURL, repo := startDashboardTestServer(t, nil, func(handler *Handler) {
+		handler.nowFn = func() time.Time { return now }
+	})
+	repo.Timezone().Apply(shanghai)
+
+	mkEvent := func(id string, at time.Time, tokens int64) repository.UsageDecoded {
+		ev := eventFor(id, at, usage.TokenStats{InputTokens: tokens / 2, OutputTokens: tokens / 2, TotalTokens: tokens}, false)
+		ev.APIGroupKey, ev.Model, ev.APIKeyMask = "sk-alpha-secret-0001", "gpt-5", security.MaskSecret("sk-alpha-secret-0001")
+		return repository.UsageDecoded{Event: ev}
+	}
+	seedEvents(t, repo, now, []repository.UsageDecoded{
+		mkEvent("aug-1", time.Date(2026, 8, 5, 10, 0, 0, 0, shanghai), 100),
+		mkEvent("sep-1", time.Date(2026, 9, 3, 11, 0, 0, 0, shanghai), 200),
+		mkEvent("sep-2", time.Date(2026, 9, 28, 16, 0, 0, 0, shanghai), 300),
+		mkEvent("oct-1", time.Date(2026, 10, 2, 9, 0, 0, 0, shanghai), 400),
+		mkEvent("oct-2", time.Date(2026, 10, 12, 18, 0, 0, 0, shanghai), 500),
+		mkEvent("oct-3", time.Date(2026, 10, 21, 8, 0, 0, 0, shanghai), 600),
+	})
+	if _, err := repo.AggregateUsageFacts(context.Background(), 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.EnsureLocalUsageFacts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	fromMS := time.Date(2026, 8, 1, 0, 0, 0, 0, shanghai).UnixMilli()
+	toMS := now.UnixMilli()
+	urlStr := baseURL + "/omc/api/v1/management/insights/cube?bucket=month&from=" +
+		jsonNumber(fromMS) + "&to=" + jsonNumber(toMS)
+	response, payload := getJSON(t, client, urlStr)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", response.StatusCode, payload)
+	}
+	var body insightsCubeResponse
+	if err := json.Unmarshal(payload, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Window.Bucket != insightsBucketMonth || len(body.BucketStarts) != 3 {
+		t.Fatalf("window=%+v bucket_starts=%v", body.Window, body.BucketStarts)
+	}
+	col := map[string]int{}
+	for idx, name := range body.Columns {
+		col[name] = idx
+	}
+	requestsByBucket := make([]int64, len(body.BucketStarts))
+	for _, row := range body.Rows {
+		requestsByBucket[row[col["bucket"]]] += row[col["requests"]]
+	}
+	want := []int64{1, 2, 3}
+	if !reflect.DeepEqual(requestsByBucket, want) {
+		t.Fatalf("requests per month bucket = %v, want %v", requestsByBucket, want)
+	}
+}
+
+func jsonNumber(v int64) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func BenchmarkInsightsCubeHandler(b *testing.B) {
+	ctx := context.Background()
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		b.Fatal(err)
+	}
+	db, err := repository.Open(ctx, dashboardMemoryDSN("insights_bench"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = db.Close() })
+	repo := repository.New(db)
+	repo.Timezone().Apply(shanghai)
+	if _, err := db.SQL.Exec(`INSERT INTO cpa_instances
+		(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default','Default','http://localhost','localhost',x'00',x'00','ok',0,0)`); err != nil {
+		b.Fatal(err)
+	}
+	const days = 90
+	const combinations = 40
+	fromMS := int64(1700006400000)
+	dayMS := int64(24 * 60 * 60 * 1000)
+	for _, grain := range []struct {
+		table    string
+		bucketMS int64
+	}{{"usage_facts_15m", repository.QuarterHourBucketMS}, {"usage_facts_daily", dayMS}} {
+		if _, err := db.SQL.Exec(`
+			WITH RECURSIVE buckets(start_ms) AS (
+				SELECT ?1 UNION ALL SELECT start_ms + ?2 FROM buckets WHERE start_ms + ?2 < ?1 + ?3
+			), combos(n) AS (
+				SELECT 0 UNION ALL SELECT n + 1 FROM combos WHERE n + 1 < ?4
+			)
+			INSERT INTO `+grain.table+` (instance_id, bucket_start_ms, api_group_key, model, model_alias, auth_index,
+				provider, auth_type, requests, input_tokens, output_tokens, total_tokens, cost_nanos, priced_requests, costed_requests)
+			SELECT 'default', start_ms, 'hmac:key-' || (n % 20), 'model-' || (n % 8), 'alias-' || (n % 5),
+				'auth-' || (n % 10), 'provider-' || (n % 3), 'apikey', 3, 300, 200, 500, 1000, 3, 3
+			FROM buckets, combos`,
+			fromMS, grain.bucketMS, int64(days)*dayMS, combinations); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if _, err := db.SQL.Exec(`
+		WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n < 20000)
+		INSERT INTO usage_events (instance_id, event_key, api_group_key, api_group_label, api_key_mask, model, provider, timestamp_ms, created_at_ms)
+		SELECT 'default', 'ev-'||n, 'hmac:key-'||(n%20), 'api_key', 'sk-••••'||printf('%04d', n%20),
+			'model-'||(n%8), 'provider-'||(n%3), ?1 + n * 1000, ?1
+		FROM seq`, fromMS); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		UPDATE usage_aggregation_checkpoints SET last_usage_event_id = 20000 WHERE name = ?`, repository.CheckpointFacts); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := repo.EnsureLocalUsageFacts(ctx); err != nil {
+		b.Fatal(err)
+	}
+	now := time.UnixMilli(fromMS + int64(days)*dayMS - 1).In(shanghai)
+	handler := &Handler{repo: repo, nowFn: func() time.Time { return now }}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/management/insights/cube?preset=90d", nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		handler.insightsCube(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
 	}
 }

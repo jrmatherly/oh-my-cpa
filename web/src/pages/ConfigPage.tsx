@@ -1,11 +1,8 @@
 import React from 'react';
+import { MetaLine } from '../components/common/MetaLine';
 import { useNavigate } from 'react-router-dom';
-import {
-  Button,
-  Segmented,
-  Space,
-  Typography,
-} from 'antd';
+import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { ParagraphPlaceholder } from '../components/common/ContentPlaceholder';
 import { SuspenseFallback } from '../components/common/PageLoading';
 import {
@@ -17,10 +14,8 @@ import {
   ReloadOutlined,
   SaveOutlined,
   SearchOutlined,
-  UndoOutlined,
 } from '../components/icons';
 import { useT } from '../i18n';
-import { isDemoMode } from '../types/demoMode';
 import { useTheme } from '../theme/ThemeContext';
 import { ConfigDirtyBar } from '../components/config/ConfigDirtyBar';
 import { useConfigDraft } from '../components/config/useConfigDraft';
@@ -58,14 +53,9 @@ import { ToolButton } from '../components/common/ToolButton';
 import '../components/config/config.css';
 import { AppModal } from '../components/common/AppModal';
 
-const { Text } = Typography;
 
 export const ConfigPage: React.FC = () => {
   const t = useT();
-  // The demonstration refuses the gateway configuration write, because it writes to
-  // CPA's own file. The editor stays usable so the page can be read and explored; only
-  // the save is withheld.
-  const isDemo = isDemoMode();
   const toast = useToast();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -102,6 +92,9 @@ export const ConfigPage: React.FC = () => {
     showErrorFeedback,
     handleDiscardChanges,
     payloadIssues,
+    stringMapIssues,
+    patternRulesIssues,
+    firstFieldErrorMessage,
     hasYamlErrors,
     hasConfigErrors,
     saveConfig,
@@ -116,14 +109,47 @@ export const ConfigPage: React.FC = () => {
     const availableHeight = visibleViewport.height - Math.max(0, source.getBoundingClientRect().top - visibleViewport.top) - dirtyHeight - 24;
     source.style.setProperty('--source-available-height', `${Math.max(240, availableHeight)}px`);
   }, [isPhone, isSourceFocused, visibleViewport]);
-  React.useLayoutEffect(() => {
+  const measureToolbarAndSource = React.useCallback(() => {
+    const page = configRef.current;
+    const toolbar = page?.querySelector('.config-toolbar');
+    if (page && toolbar && !isPhone) {
+      page.style.setProperty('--config-toolbar-height', `${Math.round(toolbar.getBoundingClientRect().height)}px`);
+    }
     measureSourceHeight();
+  }, [isPhone, measureSourceHeight]);
+
+  React.useLayoutEffect(() => {
+    measureToolbarAndSource();
     const toolbar = configRef.current?.querySelector('.config-toolbar');
-    if (!toolbar || !isPhone || viewMode !== 'source') return;
-    const observer = new ResizeObserver(measureSourceHeight);
+    if (!toolbar) return;
+    const observer = new ResizeObserver(measureToolbarAndSource);
     observer.observe(toolbar);
     return () => observer.disconnect();
-  }, [measureSourceHeight, viewMode, isPhone]);
+  }, [measureToolbarAndSource, viewMode, isPhone]);
+
+  const scrollConfigToTop = React.useCallback(() => {
+    const scroller = configRef.current?.closest('.app-content');
+    if (scroller && scroller.scrollTop > 0) {
+      scroller.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, []);
+
+  const wasSearchEmpty = React.useRef(true);
+  React.useEffect(() => {
+    const isEmpty = searchQuery.trim() === '';
+    if (wasSearchEmpty.current !== isEmpty) {
+      wasSearchEmpty.current = isEmpty;
+      scrollConfigToTop();
+    }
+  }, [searchQuery, scrollConfigToTop]);
+
+  const prevViewMode = React.useRef(viewMode);
+  React.useEffect(() => {
+    if (prevViewMode.current !== viewMode) {
+      prevViewMode.current = viewMode;
+      scrollConfigToTop();
+    }
+  }, [viewMode, scrollConfigToTop]);
 
   const updateDirtyHeight = React.useCallback((height: number) => {
     configRef.current?.style.setProperty('--config-dirty-height', `${height}px`);
@@ -210,10 +236,16 @@ export const ConfigPage: React.FC = () => {
       const baseline = getFieldSemanticValue(serverDocRef.current, field);
       if (!areValuesSemanticallyEqual(current, baseline)) changed.add(field.id);
     }
+    for (const fieldId of Object.keys(stringMapIssues)) {
+      changed.add(fieldId);
+    }
+    for (const fieldId of Object.keys(patternRulesIssues)) {
+      changed.add(fieldId);
+    }
     return changed;
     // rawYaml is the draft's revision: the refs are rewritten before it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDirty, rawYaml, docRef, serverDocRef]);
+  }, [isDirty, rawYaml, docRef, serverDocRef, stringMapIssues, patternRulesIssues]);
   const changedSectionIds = React.useMemo(
     () => new Set(ALL_CONFIG_FIELDS.filter((field) => changedFieldIds.has(field.id)).map((field) => field.sectionId)),
     [changedFieldIds],
@@ -247,7 +279,7 @@ export const ConfigPage: React.FC = () => {
   const sourceTools = (
     <>
       <Button
-        size="small"
+        size="sm"
         icon={<FormatPainterOutlined />}
         disabled={!rawYaml}
         onClick={() => {
@@ -276,7 +308,7 @@ export const ConfigPage: React.FC = () => {
               {configQuery.isError ? t('cfg.status_error') : configQuery.isPending && !rawYaml ? t('cfg.status_loading') : isDirty ? t('cfg.source_dirty') : t('cfg.source_clean')}
             </span>
             <Segmented
-              size="small"
+              size="sm"
               value={viewMode}
               onChange={(value) => void handleViewModeChange(value as 'visual' | 'source')}
               options={[
@@ -287,7 +319,12 @@ export const ConfigPage: React.FC = () => {
             <ActionMenu label={t('cfg.tools')}>
               <ConfigBackupsButton isDirty={isDirty} onRestored={reloadBaseline} />
               <ToolButton icon={<ReloadOutlined />} label={t('cfg.reload')} disabled={isDirty || configQuery.isFetching} onClick={() => void configQuery.refetch()} />
-              <span className="action-menu-label">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length, status: isDirty ? t('cfg.source_dirty') : t('cfg.source_clean') })}</span>
+              <span className="action-menu-label">
+                <MetaLine>
+                  <b>{isDirty ? t('cfg.source_dirty') : t('cfg.source_clean')}</b>
+                  {t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length })}
+                </MetaLine>
+              </span>
             </ActionMenu>
           </div>
           {viewMode === 'visual' && (
@@ -298,101 +335,96 @@ export const ConfigPage: React.FC = () => {
         </div>
       ) : (
         <div className="config-toolbar">
-          <div className="config-toolbar-left">
-            <h1 className="terminal-title">{t('nav.config')}</h1>
-            {configQuery.isPending && !rawYaml ? (
-              <Tag className="config-sync-badge">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length, status: t('cfg.status_loading') })}</Tag>
-            ) : configQuery.isError && !rawYaml ? (
-              <Tag tone="danger" className="config-sync-badge">{t('cfg.status_error')}</Tag>
-            ) : configQuery.isError && rawYaml ? (
-              <Tag tone="warn" className="config-sync-badge">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length, status: t('cfg.status_stale') })}</Tag>
-            ) : isDirty ? (
-              <Tag tone="warn" className="config-sync-badge">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length, status: t('cfg.source_dirty') })}</Tag>
-            ) : (
-              <Tag tone="success" className="config-sync-badge">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length, status: t('cfg.source_clean') })}</Tag>
-            )}
-            <Segmented
-              value={viewMode}
-              onChange={(val) => void handleViewModeChange(val as 'visual' | 'source')}
-              options={[
-                { value: 'visual', label: t('cfg.mode_visual'), icon: <AppstoreOutlined /> },
-                { value: 'source', label: t('cfg.mode_source'), icon: <CodeOutlined /> },
-              ]}
-            />
-          </div>
+          <div className="config-toolbar-inner config-shell-band">
+            <div className="config-toolbar-left">
+              <h1 className="terminal-title">{t('nav.config')}</h1>
+              <div className="config-toolbar-meta">
+                {configQuery.isPending && !rawYaml ? (
+                  <Tag className="config-sync-badge">{t('cfg.status_loading')}</Tag>
+                ) : configQuery.isError && !rawYaml ? (
+                  <Tag tone="danger" className="config-sync-badge">{t('cfg.status_error')}</Tag>
+                ) : configQuery.isError && rawYaml ? (
+                  <Tag tone="warn" className="config-sync-badge">{t('cfg.status_stale')}</Tag>
+                ) : isDirty ? (
+                  <Tag tone="warn" className="config-sync-badge">{t('cfg.source_dirty')}</Tag>
+                ) : (
+                  <Tag tone="success" className="config-sync-badge">{t('cfg.source_clean')}</Tag>
+                )}
+                <span className="config-field-count">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length })}</span>
+              </div>
+            </div>
 
-          <div className="config-toolbar-actions">
-            {viewMode === 'visual' && (
-              <SearchInput
-                className="config-search-input"
-                label={t('cfg.search_placeholder')}
-                value={searchQuery}
-                onChange={setSearchQuery}
+            <div className="config-toolbar-actions">
+              {viewMode === 'visual' && (
+                <SearchInput
+                  className="config-search-input"
+                  label={t('cfg.search_placeholder')}
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
+              )}
+
+              <Segmented
+                value={viewMode}
+                onChange={(val) => void handleViewModeChange(val as 'visual' | 'source')}
+                options={[
+                  { value: 'visual', label: t('cfg.mode_visual'), icon: <AppstoreOutlined /> },
+                  { value: 'source', label: t('cfg.mode_source'), icon: <CodeOutlined /> },
+                ]}
               />
-            )}
 
-            <ConfigBackupsButton isDirty={isDirty} onRestored={reloadBaseline} />
+              <span className="config-toolbar-divider" aria-hidden="true" />
 
-            <ToolButton
-              icon={<ReloadOutlined />}
-              label={t('cfg.reload')}
-              onClick={() => void configQuery.refetch()}
-              loading={configQuery.isFetching}
-              disabled={isDirty}
-            />
+              <ConfigBackupsButton isDirty={isDirty} onRestored={reloadBaseline} />
 
-            {/* Discard needs no confirmation: it is the non-destructive direction. */}
-            {isDirty && (
-              <Button
-                icon={<UndoOutlined />}
-                disabled={saveMutation.isPending}
-                onClick={handleDiscardChanges}
-              >
-                {t('cfg.dirty_bar_discard')}
-              </Button>
-            )}
+              <ToolButton
+                icon={<ReloadOutlined />}
+                label={t('cfg.reload')}
+                onClick={() => void configQuery.refetch()}
+                loading={configQuery.isFetching}
+                disabled={isDirty}
+              />
 
-            {/* Save. Blocking validation errors are reported by saveConfig itself,
-                so that branch does not confirm first: there is nothing to confirm
-                when the save cannot proceed. A valid document goes through the
-                popconfirm and then straight to saveConfig - the bottom bar owns
-                that confirmation, so it must not ask a second time through the
-                global modal the keyboard path uses. */}
-            {hasConfigErrors ? (
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
-                loading={saveMutation.isPending}
-                disabled={!isDirty || isDemo}
-                title={isDemo ? t('demo.blocked') : undefined}
-                onClick={saveConfig}
-              >
-                {t('cfg.source_save')}
-              </Button>
-            ) : (
-              <ConfirmAction
-                title={t('cfg.source_save_confirm')}
-                description={t('cfg.source_save_confirm_desc')}
-                onConfirm={saveConfig}
-                disabled={!isDirty || saveMutation.isPending || isDemo}
-              >
+              {/* Save. Blocking validation errors are reported by saveConfig itself,
+                  so that branch does not confirm first: there is nothing to confirm
+                  when the save cannot proceed. A valid document goes through the
+                  popconfirm and then straight to saveConfig - the bottom bar owns
+                  that confirmation, so it must not ask a second time through the
+                  global modal the keyboard path uses. */}
+              {hasConfigErrors ? (
                 <Button
-                  type="primary"
+                  variant="primary"
                   icon={<SaveOutlined />}
                   loading={saveMutation.isPending}
-                  disabled={!isDirty || isDemo}
-                  title={isDemo ? t('demo.blocked') : undefined}
+                  disabled={!isDirty}
+                  onClick={saveConfig}
                 >
                   {t('cfg.source_save')}
                 </Button>
-              </ConfirmAction>
-            )}
+              ) : (
+                <ConfirmAction
+                  title={t('cfg.source_save_confirm')}
+                  description={t('cfg.source_save_confirm_desc')}
+                  onConfirm={saveConfig}
+                  disabled={!isDirty || saveMutation.isPending}
+                >
+                  <Button
+                    variant="primary"
+                    icon={<SaveOutlined />}
+                    loading={saveMutation.isPending}
+                    disabled={!isDirty}
+                  >
+                    {t('cfg.source_save')}
+                  </Button>
+                </ConfirmAction>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {storedLayout === 'legacy' && (
-        <Notice tone="info" title={t('cfg.stored_layout_legacy')} className="config-notice" />
+        <Notice tone="info" title={t('cfg.stored_layout_legacy')} className="config-notice config-shell-band" />
       )}
 
       {/* A failed re-read over a document already on screen is a warning above it; a failed
@@ -400,7 +432,7 @@ export const ConfigPage: React.FC = () => {
       {configQuery.isError && rawYaml && (
         <LoadFailure
           tone="warning"
-          className="config-notice"
+          className="config-notice config-shell-band"
           title={t('cfg.load_failed')}
           detail={t('cfg.load_failed_desc')}
           onRetry={() => void configQuery.refetch()}
@@ -408,11 +440,12 @@ export const ConfigPage: React.FC = () => {
       )}
 
       {configQuery.isPending && !rawYaml ? (
-        <Panel className="config-card">
+        <Panel className="config-card config-shell-band">
           <ParagraphPlaceholder rows={10} />
         </Panel>
       ) : configQuery.isError && !rawYaml ? (
         <LoadFailure
+          className="config-shell-band"
           title={t('cfg.load_failed')}
           detail={t('cfg.load_failed_desc')}
           onRetry={() => void configQuery.refetch()}
@@ -420,9 +453,9 @@ export const ConfigPage: React.FC = () => {
       ) : viewMode === 'visual' ? (
         /* Visual mode: sticky section nav beside the settings column, which on a
            wide viewport carries the section's card nav as its own second track. */
-        <div className="config-workbench">
+        <div className="config-workbench config-shell-band">
           {/* Left: sticky section navigation in the 216px track */}
-          <aside className="config-section-nav" aria-label={t('cfg.nav_aria')}>
+          <aside className="config-section-nav scroll-fade-x" aria-label={t('cfg.nav_aria')}>
             {CONFIG_SECTIONS.map((sec) => {
               const isActive = !searchQuery && activeSection === sec.id;
               return (
@@ -432,6 +465,9 @@ export const ConfigPage: React.FC = () => {
                   className={`config-nav-btn${isActive ? ' is-active' : ''}`}
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => {
+                    if (searchQuery || activeSection !== sec.id) {
+                      scrollConfigToTop();
+                    }
                     setSearchQuery('');
                     setActiveSection(sec.id);
                   }}
@@ -462,13 +498,12 @@ export const ConfigPage: React.FC = () => {
 
             {searchQuery ? (
               /* Search Results: Grouped by semantic Setting Group Panels */
-              <div className="settings-stack route-transition" key="search">
+              <div className="settings-stack" key="search">
                 {searchMatchedGroups.map((sg) => renderGroupPanel(sectionContext, sg.group, sg.matchedFieldIds, 'search'))}
               </div>
             ) : (
-              /* Standard Section Group Panels. Keyed by section, so a switch draws the new
-                 section's cards in with the route's own entrance instead of swapping them. */
-              <div className="settings-stack route-transition" key={activeSection}>
+              /* Standard Section Group Panels. */
+              <div className="settings-stack" key={activeSection}>
                 {sectionGroups.map((grp) => renderGroupPanel(sectionContext, grp))}
               </div>
             )}
@@ -482,43 +517,53 @@ export const ConfigPage: React.FC = () => {
         /* ── Source Mode: YAML Editor ───────────────────────────────────── */
         <div
           ref={sourceRef}
-          className={`config-source-container${isSourceFocused ? ' is-focused' : ''}`}
+          className={`config-source-container config-shell-band${isSourceFocused ? ' is-focused' : ''}`}
           role={isSourceFocused ? 'dialog' : undefined}
           aria-modal={isSourceFocused ? true : undefined}
           aria-label={isSourceFocused ? t('cfg.source_focus') : undefined}
           style={isSourceFocused ? { top: visibleViewport.top, height: visibleViewport.height } : undefined}
         >
           <div className="config-source-toolbar">
-            {!isPhone && !isSourceFocused && <Space size={12}>
-              <Tag tone={isDirty ? 'warn' : 'success'}>
-                {isDirty ? t('cfg.source_dirty') : t('cfg.source_clean')}
-              </Tag>
-              {rawYaml && (
-                <Text type="secondary" className="mono-num">
-                  {(new Blob([rawYaml]).size / 1024).toFixed(1)} KB · {t('cfg.lines_count', { n: rawYaml.split('\n').length })}
-                </Text>
-              )}
-            </Space>}
+            {!isPhone && (
+              <div className="inline-flex items-center gap-3">
+                {isSourceFocused && (
+                  <Tag tone={isDirty ? 'warn' : 'success'}>
+                    {isDirty ? t('cfg.source_dirty') : t('cfg.source_clean')}
+                  </Tag>
+                )}
+                {rawYaml && (
+                  <MetaLine className="mono-num text-xs">
+                    {`${(new Blob([rawYaml]).size / 1024).toFixed(1)} KB`}
+                    {t('cfg.lines_count', { n: rawYaml.split('\n').length })}
+                  </MetaLine>
+                )}
+              </div>
+            )}
             <div className="config-source-actions">
-              {isSourceFocused && <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => setIsSourceFocused(false)}>{t('cfg.source_return')}</Button>}
+              {isSourceFocused && <Button size="sm" icon={<ArrowLeftOutlined />} onClick={() => setIsSourceFocused(false)}>{t('cfg.source_return')}</Button>}
               <Button
-                size="small"
+                size="sm"
                 icon={<SearchOutlined />}
                 disabled={!rawYaml}
                 onClick={() => editorRef.current?.find()}
               >
                 {t('cfg.source_find')}
               </Button>
-              <Button size="small" aria-pressed={wordWrap === 'on'} onClick={() => setWordWrapOverride(wordWrap === 'on' ? 'off' : 'on')}>
+              <Button size="sm" aria-pressed={wordWrap === 'on'} onClick={() => setWordWrapOverride(wordWrap === 'on' ? 'off' : 'on')}>
                 {t('cfg.source_wrap')}
               </Button>
-              {!isSourceFocused && <Button ref={sourceFocusTriggerRef} size="small" icon={<FullscreenOutlined />} onClick={() => setIsSourceFocused(true)}>
+              {!isSourceFocused && <Button ref={sourceFocusTriggerRef} size="sm" icon={<FullscreenOutlined />} onClick={() => setIsSourceFocused(true)}>
                 {t('cfg.source_focus')}
               </Button>}
               {isPhone || isSourceFocused ? (
                 <ActionMenu label={t('cfg.source_tools')}>
                   {sourceTools}
-                  <span className="action-menu-label">{(new Blob([rawYaml]).size / 1024).toFixed(1)} KB · {t('cfg.lines_count', { n: rawYaml.split('\n').length })}</span>
+                  <span className="action-menu-label">
+                    <MetaLine className="mono-num">
+                      {`${(new Blob([rawYaml]).size / 1024).toFixed(1)} KB`}
+                      {t('cfg.lines_count', { n: rawYaml.split('\n').length })}
+                    </MetaLine>
+                  </span>
                 </ActionMenu>
               ) : sourceTools}
             </div>
@@ -552,9 +597,9 @@ export const ConfigPage: React.FC = () => {
           </div>
 
           <div className="config-source-hint">
-            <Text type="secondary" style={{ fontSize: 11 }}>
+            <span className="text-xs text-muted-foreground">
               <kbd>Ctrl+S</kbd> / <kbd>Cmd+S</kbd> {t('cfg.save_shortcut', { key: '' })}
-            </Text>
+            </span>
           </div>
         </div>
       )}
@@ -571,10 +616,10 @@ export const ConfigPage: React.FC = () => {
         isSaving={saveMutation.isPending}
         yamlError={hasYamlErrors}
         payloadIssuesCount={payloadIssues.length}
+        validationError={firstFieldErrorMessage}
         showErrorFeedback={showErrorFeedback}
         onSave={saveConfig}
         onDiscard={handleDiscardChanges}
-        disabled={isDemo}
       />
 
       {/* ── Conflict Modal ────────────────────────────────────────────── */}
@@ -585,7 +630,7 @@ export const ConfigPage: React.FC = () => {
           <CopyButton key="copy" showLabel size="middle" text={rawYaml} label={t('cfg.conflict_copy')} />,
           <Button
             key="reload"
-            type="primary"
+            variant="primary"
             icon={<ReloadOutlined />}
             onClick={() => void reloadAfterConflict()}
           >

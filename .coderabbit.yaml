@@ -8,7 +8,7 @@
 # this repository.
 language: en-US
 tone_instructions: >-
-  Read AGENTS.md for the guide map and docs/architecture.md for security boundaries. Report
+  Read AGENTS.md for the guide map and docs/dev/architecture.md for security boundaries. Report
   defects this change introduces, its security-boundary impact, and the
   documentation it makes stale; suggest the smallest correct fix.
 reviews:
@@ -31,6 +31,13 @@ reviews:
   # `scripts/release-plan.mjs`. The keyword is the title prefix such a pull
   # request carries (`chore(release): prepare vX.Y.Z`), matched case-insensitively.
   auto_review:
+    drafts: false
+    # Extend auto-review beyond `main` so GitHub Stacked PRs targeting another
+    # PR's branch are reviewed when opened. Keeping multiple patterns prevents
+    # the local CLI from treating a single entry as its default comparison base.
+    base_branches:
+      - '^main$'
+      - '.*'
     ignore_title_keywords:
       - 'chore(release)'
     # One automatic review per non-draft pull request, when it opens. A push
@@ -39,11 +46,13 @@ reviews:
     # further review is asked for by commenting `@coderabbitai review`.
     auto_incremental_review: false
   # Generated artifacts whose freshness a gate already proves. The README
-  # screenshots are binary, so a review can say nothing about them, and the
-  # demonstration dataset is regenerated from the real handlers and pinned by
+  # screenshots are binary, so a review can say nothing about them, the
+  # Swagger spec is checked by `pnpm check:openapi` and `TestOpenAPIRouteCoverage`,
+  # and the demonstration dataset is regenerated from the real handlers and pinned by
   # `TestExportDemoDataset`; the generators and the pages they capture stay in review.
   path_filters:
     - '!docs/images/**'
+    - '!docs/openapi/swagger.json'
     - '!deploy/cloudflare/data/**'
   # Biome has no configuration in this repository, so its profile defaults would
   # report against rules `pnpm verify` does not enforce.
@@ -72,7 +81,7 @@ reviews:
           prose did not. Describe the adopted state rather than alternatives
           that were considered and rejected during the session. Do not invent
           line numbers and do not reference files that no longer exist.
-          Technical prose stays in English, except README.zh-CN.md and
+          Technical prose stays in English, except README.zh-CN.md, docs/zh/**, and
           localized UI copy.
   pre_merge_checks:
     # A coverage percentage is not a meaningful target for a codebase whose
@@ -100,12 +109,19 @@ reviews:
         `errors.Is`; handlers return explicit status codes with a JSON `error`
         field (plus a stable machine-readable `code`, or `details`, where a
         refusal must be distinguished programmatically). Comments explain why in
-        English and never restate the code. JSON tags, DB columns, CPA fields
+        English and never restate the code (excluding `swaggo` OpenAPI handler
+        annotations in `internal/api/`). JSON tags, DB columns, CPA fields
         and other external contract names keep their required spelling.
     - path: 'internal/api/**'
       instructions: >-
         Console endpoints. Every response field must be explicitly allowlisted,
-        so name any field that bypasses the allowlist. A new user-visible
+        so name any field that bypasses the allowlist. Every `/api` route
+        registered in `handler.go` requires `swaggo` annotations (`@Summary`,
+        `@Description`, `@Tags`, `@Success`, `@Failure`, `@Router`) referencing
+        safe explicit DTOs (never raw CPA/secret-bearing models), and
+        `docs/openapi/swagger.json` must be regenerated with
+        `pnpm openapi:generate` (enforced by `pnpm check:openapi` and
+        `TestOpenAPIRouteCoverage`). A new user-visible
         string is an i18n key rather than hardcoded copy; a shared frontend
         concept belongs in `web/src/types/` rather than in page-local helpers.
         Flag a new route, middleware or data-flow stage whose documentation
@@ -154,23 +170,23 @@ reviews:
         typed client in `web/src/api/client.ts`; a page calling `fetch` directly is
         a defect. Colors come from the resolved palette in
         `web/src/theme/palette.ts` and the shared CSS tokens; use
-        `docs/design.md` for composition and interaction intent rather than
+        `docs/dev/design.md` for composition and interaction intent rather than
         duplicating token values. Static structure is flat; overlays use the
         shared elevation tokens. Status colors convey actual state. CSS-module classes are kebab-case and read
         as `styles['kebab-case']`. The SPA must stay embeddable in the single Go
         binary; an asset loaded from a CDN needs a working local fallback.
         State must not be communicated by color alone: keep keyboard
-        operability, visible focus, WCAG AA contrast, and
-        `prefers-reduced-motion`. Disposable resources must survive React
-        StrictMode's mount-unmount-mount, which only the dev-server path
-        exercises.
+        operability, visible focus, WCAG AA contrast, and respect the root
+        `data-reduced-motion` attribute rather than `@media (prefers-reduced-motion)`.
+        Disposable resources must survive React StrictMode's mount-unmount-mount,
+        which only the dev-server path exercises.
     - path: 'web/src/**/*.css'
       instructions: >-
         Styles consume the palette through CSS variables; a hardcoded color, a
         page-local replacement for a shared design token, or a class name that does not match its CSS-module
         definition (checked by `pnpm check-css-modules`) is a defect. Prefer an
-        existing token over a new one, and keep motion optional under
-        `prefers-reduced-motion`.
+        existing token over a new one, and follow the root `data-reduced-motion`
+        policy instead of adding `@media (prefers-reduced-motion)` rules.
     - path: '**/*.md'
       instructions: >-
         Flag documentation this change makes wrong: any statement it
@@ -180,8 +196,8 @@ reviews:
         the implementation rather than against the intent of the change, and
         prefer a symbol or file reference over an absolute line number. Flag
         broken references and duplicated catalogs that should link to their
-        executable source. Put design intent in `docs/design.md`. Technical
-        prose is English; `README.zh-CN.md` and localized UI copy are the
+        executable source. Put design intent in `docs/dev/design.md`. Technical
+        prose is English; `README.zh-CN.md`, `docs/zh/**`, and localized UI copy are the
         intended exceptions.
     - path: 'migrations/**'
       instructions: >-
@@ -200,14 +216,18 @@ reviews:
         credible owner and net cost. Prefer a case or replacement to another file or
         layer; internal refactors need no new tests by default. Flag a new self-test
         for tooling that does not ship, a skip switch, a retry or a longer wait
-        (see docs/testing.md).
+        (see docs/dev/testing.md).
     - path: '.github/workflows/**'
       instructions: >-
         Every `uses:` is pinned to a commit SHA and every checkout sets
         `persist-credentials: false` (`pnpm verify:workflow:lint`). The required
-        `static`, `browser` and `probes` checks are aggregates that must wait on
-        the `changes` job and fail on any lane result other than success or skipped,
-        or a failed scope decision would read as a pass.
+        `static`, `browser` and `probes` checks are aggregates: `static` must
+        wait on `changes` and require `changes`, `static-repo`, and every
+        selected static lane (`static-go`, `static-frontend`, `docs-site`, `docker-check`)
+        to succeed (and unselected lanes to be skipped); `browser` must wait on
+        `changes` and require `changes` plus `browser-acceptance` (when selected)
+        to succeed; `probes` and `verify` require both `static` and `browser`
+        to succeed, so a failed scope decision can never read as a pass.
     - path: '{Dockerfile,.env.example,deploy/**}'
       instructions: >-
         Deployment surface. The image is one CGO-free binary with the SPA
@@ -225,7 +245,7 @@ knowledge_base:
     # guides under `docs/` name the code they govern.
     filePatterns:
       - 'CONTEXT.md'
-      - files: 'docs/architecture.md'
+      - files: 'docs/dev/architecture.md'
         applyTo: 'internal/**, cmd/**, migrations/**, deploy/**, Dockerfile, web/src/**'
-      - files: 'docs/design.md'
+      - files: 'docs/dev/design.md'
         applyTo: 'web/src/**'

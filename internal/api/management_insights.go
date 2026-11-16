@@ -52,8 +52,9 @@ type insightsCubeResponse struct {
 	Dims         insightsDims           `json:"dims"`
 	Columns      []string               `json:"columns"`
 	Rows         [][]int64              `json:"rows"`
-	// PreviousRows are the comparison period's totals per dimension tuple, in the
-	// same columns without the leading bucket.
+	// PreviousRows are the comparison period's per-bucket totals per dimension tuple,
+	// carrying the same columns as Rows so the client can compute outlier-robust baselines
+	// under arbitrary dimension filters.
 	PreviousRows [][]int64        `json:"previous_rows"`
 	Coverage     insightsCoverage `json:"coverage"`
 }
@@ -106,6 +107,20 @@ func (h *Handler) insightsRangeFromRequest(ctx context.Context, request *http.Re
 	return resolved, message, err
 }
 
+// @Summary Query multi-dimensional insights cube
+// @Description Return usage facts partitioned by bucket, client key, call point, model, provider, and credential.
+// @Tags Insights
+// @Produce json
+// @Security CookieAuth
+// @Param preset query string false "Insights time preset (today, yesterday, this_week, last_week, this_month, last_month, 24h, 7d, 30d, 90d, all)"
+// @Param from query integer false "Custom window start timestamp in Unix milliseconds"
+// @Param to query integer false "Custom window end timestamp in Unix milliseconds"
+// @Param compare query string false "Comparison window mode"
+// @Success 200 {object} insightsCubeResponse
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/insights/cube [get]
 func (h *Handler) insightsCube(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if h.repo == nil {
@@ -162,21 +177,53 @@ func (h *Handler) insightsCube(writer http.ResponseWriter, request *http.Request
 		Coverage: insightsCoverage{FactRequests: current.FactRequests, DetailRequests: current.DetailRequests},
 	}
 	if resolved.compare != nil {
+		prevBucketMS, prevCalendar, prevBucket := compareBucketSpec(resolved.compare.FromMS, resolved.compare.ToMS, zone)
 		previous, errPrevious := h.repo.QueryUsageFacts(ctx, repository.UsageFactQuery{
 			InstanceID: defaultInstanceID(), FromMS: resolved.compare.FromMS, ToMS: resolved.compare.ToMS,
-			Dimensions: insightsCubeDimensions,
+			BucketMS: prevBucketMS, Calendar: prevCalendar, Dimensions: insightsCubeDimensions,
 		})
 		if errPrevious != nil {
 			writeInternalError(writer, fmt.Errorf("query insights comparison: %w", errPrevious))
 			return
 		}
 		response.Compare = &insightsCompareWindow{FromMS: previous.FromMS, ToMS: previous.ToMS}
-		for _, row := range previous.Rows {
-			response.PreviousRows = append(response.PreviousRows, builder.row(-1, row)[1:])
+		if prevCalendar != nil {
+			prevStarts := prevBucket.bucketStarts(previous.FromMS, previous.ToMS, zone)
+			response.PreviousRows = builder.bucketedRows(previous.Rows, prevStarts, prevBucket, zone)
+			for len(response.PreviousRows) > maxInsightsCubeRows && (prevBucket == insightsBucketHour || prevBucket == insightsBucketDay) {
+				if prevBucket == insightsBucketHour {
+					prevBucket = insightsBucketDay
+					prevCalendar.Unit = repository.UsageCalendarDay
+				} else {
+					prevBucket = insightsBucketWeek
+					prevCalendar.Unit = repository.UsageCalendarWeek
+				}
+				previousCoarse, errCoarse := h.repo.QueryUsageFacts(ctx, repository.UsageFactQuery{
+					InstanceID: defaultInstanceID(), FromMS: resolved.compare.FromMS, ToMS: resolved.compare.ToMS,
+					Calendar: prevCalendar, Dimensions: insightsCubeDimensions,
+				})
+				if errCoarse != nil {
+					writeInternalError(writer, fmt.Errorf("query insights comparison: %w", errCoarse))
+					return
+				}
+				response.Compare = &insightsCompareWindow{FromMS: previousCoarse.FromMS, ToMS: previousCoarse.ToMS}
+				prevStarts = prevBucket.bucketStarts(previousCoarse.FromMS, previousCoarse.ToMS, zone)
+				response.PreviousRows = builder.bucketedRows(previousCoarse.Rows, prevStarts, prevBucket, zone)
+			}
+		} else {
+			firstStart := (previous.FromMS / prevBucketMS) * prevBucketMS
+			for _, row := range previous.Rows {
+				bucketIdx := (row.StartMS - firstStart) / prevBucketMS
+				response.PreviousRows = append(response.PreviousRows, builder.row(bucketIdx, row))
+			}
+		}
+		if len(response.PreviousRows) > maxInsightsCubeRows {
+			writeError(writer, http.StatusBadRequest, "the comparison window holds too many combinations; choose a narrower range")
+			return
 		}
 	}
 	response.Rows = builder.remap(response.Rows, 1)
-	response.PreviousRows = builder.remap(response.PreviousRows, 0)
+	response.PreviousRows = builder.remap(response.PreviousRows, 1)
 	dims, err := builder.dimensions(ctx, h.repo)
 	if err != nil {
 		writeInternalError(writer, fmt.Errorf("name insights keys: %w", err))
@@ -236,27 +283,33 @@ func (dictionary *insightsDictionary) bucketedRows(facts []repository.UsageFactR
 	for index, start := range starts {
 		positions[start] = int64(index)
 	}
-	merged := map[string][]int64{}
-	order := []string{}
+	needsRealign := bucket == insightsBucketMonth
+	rows := make([][]int64, 0, len(facts))
+	merged := make(map[[6]int64]int, len(facts))
 	for _, fact := range facts {
-		position, onGrid := positions[bucket.bucketStart(time.UnixMilli(fact.StartMS), zone).UnixMilli()]
+		startMS := fact.StartMS
+		if needsRealign {
+			startMS = bucket.bucketStart(time.UnixMilli(startMS), zone).UnixMilli()
+		}
+		position, onGrid := positions[startMS]
 		if !onGrid {
-			continue
+			position, onGrid = positions[bucket.bucketStart(time.UnixMilli(fact.StartMS), zone).UnixMilli()]
+			if !onGrid {
+				continue
+			}
 		}
 		encoded := dictionary.row(position, fact)
-		identity := fmt.Sprint(encoded[:6])
-		if existing, seen := merged[identity]; seen {
+		var identity [6]int64
+		copy(identity[:], encoded[:6])
+		if rowIdx, seen := merged[identity]; seen {
+			existing := rows[rowIdx]
 			for column := 6; column < len(encoded); column++ {
 				existing[column] += encoded[column]
 			}
 			continue
 		}
-		merged[identity] = encoded
-		order = append(order, identity)
-	}
-	rows := make([][]int64, 0, len(order))
-	for _, identity := range order {
-		rows = append(rows, merged[identity])
+		merged[identity] = len(rows)
+		rows = append(rows, encoded)
 	}
 	return rows
 }
@@ -382,6 +435,24 @@ func (h *Handler) insightsRhythmFilters(request *http.Request) map[repository.Us
 // insightsRhythm answers when in the week usage happens. It needs local hours,
 // which the cube's coarser buckets cannot give, so it is its own read; it honours
 // the same filters the page applies to the cube.
+// @Summary Query weekly usage rhythm
+// @Description Return a 7x24 weekday-by-hour usage matrix under optional Insights dimension filters.
+// @Tags Insights
+// @Produce json
+// @Security CookieAuth
+// @Param preset query string false "Insights time preset"
+// @Param from query integer false "Custom window start timestamp in Unix milliseconds"
+// @Param to query integer false "Custom window end timestamp in Unix milliseconds"
+// @Param api_key query []string false "Client API key or hmac fingerprint filters" collectionFormat(multi)
+// @Param model query []string false "Upstream model filters" collectionFormat(multi)
+// @Param model_alias query []string false "Call point filters" collectionFormat(multi)
+// @Param provider query []string false "Provider filters" collectionFormat(multi)
+// @Param auth_index query []string false "Credential auth_index filters" collectionFormat(multi)
+// @Success 200 {object} insightsRhythmResponse
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/management/insights/rhythm [get]
 func (h *Handler) insightsRhythm(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if h.repo == nil {

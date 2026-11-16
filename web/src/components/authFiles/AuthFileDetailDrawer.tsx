@@ -1,30 +1,31 @@
 import { CredentialRecoveryPanel } from './CredentialRecoveryPanel';
+import { MetaLine } from '../common/MetaLine';
 import { SecretInput } from '../common/SecretInput';
 import type { MessageKey } from '../../i18n/catalog';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  Tabs,
-  Button,
-  Typography,
-  Input,
-  Form,
-  Table,
-  Segmented,
-  App as AntdApp,
-} from 'antd';
+import { Field } from '@/components/ui/field';
+import { Table } from '@/components/ui/table';
+import { Tabs } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Segmented } from '@/components/ui/segmented';
 import { NumberInput } from '../common/NumberInput';
 import { Switch } from '../common/Switch';
 import {
   SaveOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
+  ExternalLinkOutlined,
   CopyOutlined,
   SyncOutlined,
 } from '../icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { OAuthExcludedModelsPanel, type OAuthModelCatalogState } from './OAuthExcludedModelsPanel';
+import { normalizeExcludedModelRules } from './oauthExcludedModelLogic';
+import { normalizeOAuthModelAliasProvider } from './oauthModelAliasLogic';
 import { api, ApiError, describeError } from '../../api/client';
 import { useT } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
 import type {
   ManagementAuthFile,
   ManagementAuthFileModel,
@@ -33,6 +34,7 @@ import type {
 import {
   credentialNameProblem,
   deriveAuthFileIdentity,
+  deriveAuthFileTOSAppeal,
   hasAuthFileStatusWarning,
   isAuthFileDisabled,
   isAuthFileProblem,
@@ -41,7 +43,7 @@ import {
 } from './authFileLogic';
 import styles from './AuthFileDetailDrawer.module.css';
 import { copyText } from '../../utils/clipboard';
-import { useToast } from '../feedback';
+import { useConfirmModal, useToast } from '../feedback';
 import { LoadFailure, Notice } from '../feedback';
 import { ErrorRulesEditor } from '../policy/ErrorRulesEditor';
 import { CredentialModelAliasesEditor } from './CredentialModelAliasesEditor';
@@ -72,13 +74,11 @@ import { SectionHeading } from '../common/SectionHeading';
 import { AppDrawer } from '../common/AppDrawer';
 import { Tag } from '../common/Tag';
 import { FactList } from '../common/FactList';
-import { TAB_OVERFLOW } from '../common/tabOverflow';
 import { CredentialMark } from '../LobeIcon';
 import type { PluginOAuthLogos } from '../../types/pluginOAuthProviders';
 import { getCredentialProviderMetadata } from '../../types/providerMetadata';
 import { successRateTone } from '../../types/usageEventMetrics';
 
-const { Text } = Typography;
 
 interface AuthFileDetailDrawerProps {
   file: ManagementAuthFile | null;
@@ -208,11 +208,10 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
   pluginLogos,
 }) => {
   const t = useT();
-  const isDemo = isDemoMode();
-  const { modal } = AntdApp.useApp();
+  const modal = useConfirmModal();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [form] = Form.useForm<FormValues>();
+  const [draft, setDraft] = useState<FormValues>({});
   const [baseline, setBaseline] = useState<FormValues>({});
   const isVertex = file ? isVertexServiceAccount(file) : false;
   const [isDirty, setIsDirty] = useState(false);
@@ -249,37 +248,37 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
     setActiveSection(initialSection);
   }, [file?.name, file?.auth_index, initialSection, open]);
 
-  // The drawer mounts its content on first open, so the form has nothing to reset before then -
-  // and resetting an unmounted form is what antd warns about on every page load.
-  const hasOpenedRef = useRef(false);
   useEffect(() => {
     if (file && open) {
-      hasOpenedRef.current = true;
       sessionCounterRef.current += 1;
       const sid = sessionCounterRef.current;
       currentSessionRef.current = sid;
 
       const initial = formValues(file);
       setBaseline(initial);
-      form.setFieldsValue(initial);
+      setDraft(initial);
       setIsDirty(false);
       resetPolicy(EMPTY_CREDENTIAL_POLICY_DRAFT);
     } else {
       currentSessionRef.current = 0;
-      if (hasOpenedRef.current) form.resetFields();
+      setDraft({});
       setBaseline({});
       setIsDirty(false);
       resetPolicy(EMPTY_CREDENTIAL_POLICY_DRAFT);
     }
-  }, [file?.name, file?.auth_index, open, form, resetPolicy]);
+  }, [file?.name, file?.auth_index, open, resetPolicy]);
 
-  const handleValuesChange = () => {
-    setIsDirty(!sameFormValues(form.getFieldsValue(), baseline) || !isSameCredentialPolicy(policy, policyBaseline));
+  const updateDraft = (patch: Partial<FormValues>) => {
+    setDraft((prev) => {
+      const next = { ...prev, ...patch };
+      setIsDirty(!sameFormValues(next, baseline) || !isSameCredentialPolicy(policy, policyBaseline));
+      return next;
+    });
   };
 
   const handlePolicyChange = (next: CredentialPolicyDraft) => {
     setPolicy(next);
-    setIsDirty(!sameFormValues(form.getFieldsValue(), baseline) || !isSameCredentialPolicy(next, policyBaseline));
+    setIsDirty(!sameFormValues(draft, baseline) || !isSameCredentialPolicy(next, policyBaseline));
   };
 
   const saveMutation = useMutation({
@@ -318,7 +317,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
         if (response.file) {
           const next = formValues(response.file, response.fields);
           setBaseline(next);
-          form.setFieldsValue(next);
+          setDraft(next);
         }
         if (response.fields) resetPolicy(readCredentialPolicyDraft(response.fields));
         if (response.fields) {
@@ -391,9 +390,9 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
     if (!file || !open || !safeFieldsQuery.data || isDirty) return;
     const next = formValues(file, safeFieldsQuery.data);
     setBaseline(next);
-    form.setFieldsValue(next);
+    setDraft(next);
     resetPolicy(readCredentialPolicyDraft(safeFieldsQuery.data));
-  }, [file, form, isDirty, open, resetPolicy, safeFieldsQuery.data]);
+  }, [file, isDirty, open, resetPolicy, safeFieldsQuery.data]);
 
   const {
     data: modelsData,
@@ -407,8 +406,41 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
     staleTime: 60000,
   });
 
+  // The provider's catalogue, which the excluded-models picker lists. The credential's own model list
+  // cannot serve: it already leaves out the models this credential excludes.
+  const excludedCatalogProvider = normalizeOAuthModelAliasProvider(provider || file?.provider || file?.type || '');
+  const excludedCatalogQuery = useQuery({
+    queryKey: ['management-oauth-provider-models', excludedCatalogProvider],
+    queryFn: () => api.getManagementOAuthProviderModels(excludedCatalogProvider),
+    enabled: open && activeSection === 'configuration' && Boolean(excludedCatalogProvider),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const excludedCatalogState: OAuthModelCatalogState = excludedCatalogQuery.isLoading
+    ? 'loading'
+    : excludedCatalogQuery.isError
+      ? 'error'
+      : excludedCatalogQuery.data?.available === false
+        ? 'unavailable'
+        : 'ready';
+
+  const priorityInvalid =
+    draft.priority !== undefined &&
+    (!Number.isSafeInteger(draft.priority) || draft.priority < -MAX_SAFE_INTEGER || draft.priority > MAX_SAFE_INTEGER);
+  const weightInvalid =
+    draft.weight !== undefined &&
+    (!Number.isSafeInteger(draft.weight) || draft.weight > MAX_CREDENTIAL_WEIGHT);
+
   const handleFinish = (values: FormValues) => {
     if (!file || file.runtime_only || !canEdit || isPendingRef.current || saveMutation.isPending) return;
+    if (priorityInvalid) {
+      toast.warning(t('af.val_priority_safe_int'));
+      return;
+    }
+    if (weightInvalid) {
+      toast.warning(t('af.val_weight_range'));
+      return;
+    }
     const policyProblem = credentialPolicyProblem(policy);
     if (policyProblem) {
       setIsPolicyChecked(true);
@@ -481,7 +513,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
     }
     if (Object.keys(patch).length === 0 && !hasNameChange) {
       isPendingRef.current = false;
-      form.setFieldsValue(baseline);
+      setDraft(baseline);
       setIsDirty(false);
       onClose();
       return;
@@ -527,17 +559,41 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
   // The account under a renamed credential, else the file it lives in: the line that says which
   // credential this is when the title is the operator's own name for it.
   const heroSubtitle = file?.display_name ? identity?.primary : identity?.primary ? file?.name : undefined;
-  const statusWarning = file && hasWarning && file.status_message ? (
+  const appeal = deriveAuthFileTOSAppeal(file, t('af.tos_appeal_action'));
+  const appealAction = appeal ? (
+    <Button
+      size="sm"
+      icon={<ExternalLinkOutlined />}
+      href={appeal.url}
+      target="_blank"
+      rel="noreferrer noopener"
+      className={styles['appeal-link']}
+      data-testid="auth-file-tos-appeal"
+    >
+      <span className={styles['appeal-link-label']} data-tip={appeal.label} data-tip-overflow="">
+        {appeal.label}
+      </span>
+    </Button>
+  ) : undefined;
+  const warningMessage = file && hasWarning && file.status_message ? file.status_message : undefined;
+  const statusWarning = file && (warningMessage || appeal) ? (
     <Notice
       tone="warning"
       title={t('af.warning_status')}
+      action={appealAction}
       description={
-        <>
-          <div>{summarizeAuthFileStatusMessage(file.status_message)}</div>
-          {summarizeAuthFileStatusMessage(file.status_message) !== file.status_message.trim() && (
-            <pre className={styles['identity-alert-raw']}>{file.status_message}</pre>
-          )}
-        </>
+        warningMessage ? (
+          <>
+            <div>{summarizeAuthFileStatusMessage(warningMessage)}</div>
+            {/* The upstream body backs the summary; it stays folded so the warning reads as one line. */}
+            {summarizeAuthFileStatusMessage(warningMessage) !== warningMessage.trim() && (
+              <details className={styles['identity-alert-details']}>
+                <summary>{t('af.warning_raw')}</summary>
+                <pre className={styles['identity-alert-raw']}>{warningMessage}</pre>
+              </details>
+            )}
+          </>
+        ) : undefined
       }
       className={styles['identity-alert']}
     />
@@ -545,25 +601,25 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
 
   const renderModelsContent = () => {
     if (file?.runtime_only) {
-      return <Text type="secondary">{t('af.runtime_only_badge')}</Text>;
+      return <span className="text-muted-foreground">{t('af.runtime_only_badge')}</span>;
     }
     if (modelsLoading) {
-      return <Text type="secondary">{t('common.loading')}</Text>;
+      return <span className="text-muted-foreground">{t('common.loading')}</span>;
     }
     if (modelsIsError) {
       const is501 = modelsError instanceof ApiError && modelsError.status === 501;
       return (
-        <Text type="secondary">
+        <span className="text-muted-foreground">
           {is501
             ? t('af.unsupported')
             : modelsError instanceof Error
               ? modelsError.message
               : t('af.request_failed')}
-        </Text>
+        </span>
       );
     }
     if (models.length === 0) {
-      return <Text type="secondary">{t('af.models_empty')}</Text>;
+      return <span className="text-muted-foreground">{t('af.models_empty')}</span>;
     }
     return (
       <div className={styles['models-scroll']}>
@@ -599,8 +655,8 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                 width: 52,
                 render: (_, model) => (
                   <Button
-                    type="text"
-                    size="small"
+                    variant="ghost"
+                    size="sm"
                     icon={<CopyOutlined />}
                     aria-label={`${t('common.copy')}: ${model.id}`}
                     onClick={() => {
@@ -630,11 +686,11 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
       // however far down the form an edit was made. The other tabs keep the credential's actions.
       footer={file && activeSection === 'configuration' ? (
         <Button
-          type="primary"
+          variant="primary"
           icon={<SaveOutlined />}
           loading={saveMutation.isPending}
           disabled={!isDirty || file.runtime_only || !canEdit}
-          onClick={() => form.submit()}
+          onClick={() => handleFinish(draft)}
         >
           {t('af.save_fields')}
         </Button>
@@ -643,20 +699,15 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
           <Button
             icon={<SyncOutlined />}
             loading={refreshMutation.isPending}
-            // A refresh spends the credential's refresh token with its provider, which the
-            // demonstration never contacts.
-            disabled={file.runtime_only || !canEdit || isDemo}
-            title={isDemo ? t('demo.blocked') : t('af.refresh_desc')}
+            disabled={file.runtime_only || !canEdit}
+            data-tip={t('af.refresh_desc')}
             onClick={() => refreshMutation.mutate({ fileName: file.name, authIndex: file.auth_index })}
           >
             {t('af.refresh')}
           </Button>
           <Button
             icon={<DownloadOutlined />}
-            // Downloading credential material is refused by the demonstration, here as
-            // well as on the card behind this drawer.
-            disabled={file.runtime_only || isDemo}
-            title={isDemo ? t('demo.blocked') : undefined}
+            disabled={file.runtime_only}
             onClick={() => onDownload(file)}
           >
             {t('af.download_credential')}
@@ -673,10 +724,10 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
               </span>
               <div className={styles['hero-names']}>
                 <h2 className={styles['hero-title']}>{heroTitle}</h2>
-                <span className={styles['hero-subtitle']}>
+                <MetaLine className={styles['hero-subtitle']}>
                   {getCredentialProviderMetadata(providerKey).label}
-                  {heroSubtitle && <> · <span className="mono-num">{heroSubtitle}</span></>}
-                </span>
+                  {heroSubtitle && <span className="mono-num">{heroSubtitle}</span>}
+                </MetaLine>
               </div>
               <span className={styles['hero-status']}>{statusBadge}</span>
             </div>
@@ -705,7 +756,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
               </div>
             </dl>
           </header>
-          <Tabs more={TAB_OVERFLOW}
+          <Tabs
             activeKey={activeSection}
             onChange={(key) => setActiveSection(key as typeof activeSection)}
             items={[
@@ -740,9 +791,10 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                                 key: 'requests',
                                 label: t('af.detail_total_requests'),
                                 value: (
-                                  <span className="mono-num">
-                                    {t('dash.success_n', { n: file.success })} · {t('dash.failure_n', { n: file.failed })}
-                                  </span>
+                                  <MetaLine className="mono-num">
+                                    {t('dash.success_n', { n: file.success })}
+                                    <span className={file.failed > 0 ? 'text-danger' : undefined}>{t('dash.failure_n', { n: file.failed })}</span>
+                                  </MetaLine>
                                 ),
                               },
                             ]}
@@ -760,7 +812,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                               }))}
                             />
                           ) : (
-                            <Text type="secondary">{t('af.quota_empty')}</Text>
+                            <span className="text-muted-foreground">{t('af.quota_empty')}</span>
                           )}
                         </section>
                       </div>
@@ -777,7 +829,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
               {
                 key: 'configuration',
                 forceRender: true,
-                label: <span className={styles['tab-label']}>{t('omc.tab_configuration')}{isDirty && <Tag tone="warn">{t('cfg.dirty_bar_unsaved')}</Tag>}</span>,
+                label: <span className={styles['tab-label']}>{t('omc.tab_configuration')}{isDirty && <span className={styles['tab-dirty']} role="img" aria-label={t('cfg.dirty_bar_unsaved')} />}</span>,
                 children: (
                   <div className={styles['drawer-section']}>
                     <SectionHeading
@@ -793,66 +845,92 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                           onRetry={() => void safeFieldsQuery.refetch()}
                         />
                       )}
-                      <Form
-                        form={form}
-                        layout="vertical"
-                        onValuesChange={handleValuesChange}
-                        onFinish={handleFinish}
-                        disabled={saveMutation.isPending || file.runtime_only || !canEdit}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleFinish(draft);
+                        }}
                       >
-                        <Form.Item name="display_name" label={t('af.field_display_name')}>
-                          <Input placeholder={t('af.display_name_placeholder')} />
-                        </Form.Item>
+                        <Field label={t('af.field_display_name')} htmlFor="af-field-display-name">
+                          <Input
+                            id="af-field-display-name"
+                            value={draft.display_name ?? ''}
+                            disabled={saveMutation.isPending || file.runtime_only || !canEdit}
+                            placeholder={t('af.display_name_placeholder')}
+                            onChange={(e) => updateDraft({ display_name: e.target.value })}
+                          />
+                        </Field>
                         <div className={styles['field-grid']}>
-                          <Form.Item
-                            name="priority"
+                          <Field
                             label={t('af.field_priority')}
+                            htmlFor="af-field-priority"
+                            error={priorityInvalid ? t('af.val_priority_safe_int') : undefined}
                             extra={t('af.field_priority_hint')}
-                            rules={[
-                              {
-                                type: 'integer',
-                                min: -MAX_SAFE_INTEGER,
-                                max: MAX_SAFE_INTEGER,
-                                message: t('af.val_priority_safe_int'),
-                              },
-                            ]}
                           >
                             <NumberInput
+                              id="af-field-priority"
                               style={{ width: '100%' }}
                               min={-MAX_SAFE_INTEGER}
                               max={MAX_SAFE_INTEGER}
                               precision={0}
+                              disabled={saveMutation.isPending || file.runtime_only || !canEdit}
+                              value={draft.priority ?? 0}
+                              onChange={(val) => updateDraft({ priority: val ?? 0 })}
                             />
-                          </Form.Item>
-                          <Form.Item
-                            name="weight"
+                          </Field>
+                          <Field
                             label={t('af.field_weight')}
+                            htmlFor="af-field-weight"
+                            error={weightInvalid ? t('af.val_weight_range') : undefined}
                             extra={t('af.field_weight_hint')}
-                            rules={[
-                              {
-                                type: 'integer',
-                                max: MAX_CREDENTIAL_WEIGHT,
-                                message: t('af.val_weight_range'),
-                              },
-                            ]}
                           >
-                            <NumberInput style={{ width: '100%' }} max={MAX_CREDENTIAL_WEIGHT} precision={0} />
-                          </Form.Item>
+                            <NumberInput
+                              id="af-field-weight"
+                              style={{ width: '100%' }}
+                              max={MAX_CREDENTIAL_WEIGHT}
+                              precision={0}
+                              disabled={saveMutation.isPending || file.runtime_only || !canEdit}
+                              value={draft.weight ?? 1}
+                              onChange={(val) => updateDraft({ weight: val ?? 1 })}
+                            />
+                          </Field>
 
-                          <Form.Item name="prefix" label={t('af.field_prefix')}>
-                            <Input allowClear maxLength={4096} disabled={!safeFieldsReady} />
-                          </Form.Item>
-                          <Form.Item name="proxy_url" label={t('af.field_proxy_url')} extra={t('af.field_proxy_auth_hint')}>
-                            <SecretInput allowClear maxLength={4096} disabled={!safeFieldsReady} />
-                          </Form.Item>
+                          <Field label={t('af.field_prefix')} htmlFor="af-field-prefix">
+                            <Input
+                              id="af-field-prefix"
+                              allowClear
+                              maxLength={4096}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              value={draft.prefix ?? ''}
+                              onChange={(e) => updateDraft({ prefix: e.target.value })}
+                            />
+                          </Field>
+                          <Field label={t('af.field_proxy_url')} htmlFor="af-field-proxy-url" extra={t('af.field_proxy_auth_hint')}>
+                            <SecretInput
+                              id="af-field-proxy-url"
+                              allowClear
+                              maxLength={4096}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              value={draft.proxy_url ?? ''}
+                              onChange={(e) => updateDraft({ proxy_url: e.target.value })}
+                            />
+                          </Field>
 
-                          <Form.Item
-                            name="expired"
+                          <Field
                             label={t('af.field_expired')}
+                            htmlFor="af-field-expired"
                             extra={t('af.field_expired_hint')}
                           >
-                            <Input allowClear maxLength={4096} disabled={!safeFieldsReady} placeholder="2027-01-02T03:04:05Z" />
-                          </Form.Item>
+                            <Input
+                              id="af-field-expired"
+                              allowClear
+                              maxLength={4096}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              placeholder="2027-01-02T03:04:05Z"
+                              value={draft.expired ?? ''}
+                              onChange={(e) => updateDraft({ expired: e.target.value })}
+                            />
+                          </Field>
                         </div>
 
                         <div className={styles['switch-grid']}>
@@ -860,25 +938,34 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                             <div className={styles['switch-info']}>
                               <span className={styles['switch-title']}>{t('af.field_disable_cooling')}</span>
                             </div>
-                            <Form.Item name="disable_cooling" valuePropName="checked" noStyle>
-                              <Switch disabled={!safeFieldsReady} aria-label={t('af.field_disable_cooling')} />
-                            </Form.Item>
+                            <Switch
+                              checked={Boolean(draft.disable_cooling)}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              aria-label={t('af.field_disable_cooling')}
+                              onChange={(checked) => updateDraft({ disable_cooling: checked })}
+                            />
                           </div>
                           <div className={styles['switch-item']}>
                             <div className={styles['switch-info']}>
                               <span className={styles['switch-title']}>{t('af.field_websockets')}</span>
                             </div>
-                            <Form.Item name="websockets" valuePropName="checked" noStyle>
-                              <Switch disabled={!safeFieldsReady} aria-label={t('af.field_websockets')} />
-                            </Form.Item>
+                            <Switch
+                              checked={Boolean(draft.websockets)}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              aria-label={t('af.field_websockets')}
+                              onChange={(checked) => updateDraft({ websockets: checked })}
+                            />
                           </div>
                           <div className={styles['switch-item']}>
                             <div className={styles['switch-info']}>
                               <span className={styles['switch-title']}>{t('af.field_using_api')}</span>
                             </div>
-                            <Form.Item name="using_api" valuePropName="checked" noStyle>
-                              <Switch disabled={!safeFieldsReady} aria-label={t('af.field_using_api')} />
-                            </Form.Item>
+                            <Switch
+                              checked={Boolean(draft.using_api)}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                              aria-label={t('af.field_using_api')}
+                              onChange={(checked) => updateDraft({ using_api: checked })}
+                            />
                           </div>
                         </div>
 
@@ -895,7 +982,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                               min={0}
                               max={MAX_CREDENTIAL_REQUEST_RETRY}
                               precision={0}
-                              disabled={!safeFieldsReady}
+                              disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
                               placeholder={t('policy.retry_placeholder')}
                               onChange={(requestRetry) => handlePolicyChange({ ...policy, requestRetry })}
                             />
@@ -919,6 +1006,7 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                               <CredentialModelAliasesEditor
                                 isVertex={isVertex}
                                 aliases={policy.modelAliases}
+                                isDisabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
                                 onChange={(modelAliases) => handlePolicyChange({ ...policy, modelAliases })}
                               />
                             )}
@@ -929,39 +1017,51 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                           <div className={styles['policy']} data-testid="vertex-openapi-section">
                             <h4 className={styles['policy-title']}>{t('af.vertex_openapi_section')}</h4>
                             <div className={styles['policy-desc']}>{t('af.vertex_openapi_section_desc')}</div>
-                            <Form.Item
-                              name="openapi_mode"
+                            <Field
                               label={t('af.vertex_openapi_mode')}
                               extra={t('af.vertex_openapi_mode_hint')}
                             >
                               <Segmented
-                                disabled={!safeFieldsReady}
+                                value={draft.openapi_mode ?? 'inherit'}
+                                disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                                onChange={(val) => updateDraft({ openapi_mode: val as VertexOpenAPIMode })}
                                 options={[
                                   { value: 'inherit', label: t('af.vertex_openapi_mode_inherit') },
                                   { value: 'on', label: t('af.vertex_openapi_mode_on') },
                                   { value: 'off', label: t('af.vertex_openapi_mode_off') },
                                 ]}
                               />
-                            </Form.Item>
-                            <Form.Item
-                              name="openapi_location"
+                            </Field>
+                            <Field
                               label={t('af.vertex_openapi_location')}
+                              htmlFor="af-vertex-openapi-location"
                               extra={t('af.vertex_openapi_location_hint')}
                             >
-                              <Input allowClear maxLength={64} disabled={!safeFieldsReady} placeholder="global" />
-                            </Form.Item>
-                            <Form.Item
-                              name="openapi_models"
+                              <Input
+                                id="af-vertex-openapi-location"
+                                allowClear
+                                maxLength={64}
+                                disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
+                                placeholder="global"
+                                value={draft.openapi_location ?? ''}
+                                onChange={(e) => updateDraft({ openapi_location: e.target.value })}
+                              />
+                            </Field>
+                            <Field
                               label={t('af.vertex_openapi_models')}
+                              htmlFor="af-vertex-openapi-models"
                               extra={t('af.vertex_openapi_models_hint')}
                             >
-                              <Input.TextArea
+                              <Textarea
+                                id="af-vertex-openapi-models"
                                 rows={3}
                                 maxLength={65536}
-                                disabled={!safeFieldsReady}
+                                disabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
                                 placeholder="meta/llama-3.3-70b-instruct-maas"
+                                value={draft.openapi_models ?? ''}
+                                onChange={(e) => updateDraft({ openapi_models: e.target.value })}
                               />
-                            </Form.Item>
+                            </Field>
                             {(safeFieldsQuery.data?.openapi_legacy_models?.length ?? 0) > 0 && (
                               <div className={styles['policy-desc']} data-testid="vertex-openapi-legacy-models">
                                 {t('af.vertex_openapi_legacy_models', {
@@ -972,25 +1072,38 @@ export const AuthFileDetailDrawer: React.FC<AuthFileDetailDrawerProps> = ({
                           </div>
                         )}
 
-                        <Form.Item
+                        {/* Models are chosen from the provider's catalogue rather than typed: an ID typed
+                            wrong excludes nothing and says nothing. A pattern can still be added. */}
+                        <Field
                           className={styles['field-grid-wide']}
-                          name="excluded_models"
                           label={t('af.field_excluded_models')}
                           extra={t('af.field_excluded_models_hint')}
                         >
-                          <Input.TextArea
-                            rows={4}
-                            maxLength={8192}
-                            disabled={!safeFieldsReady}
-                            placeholder="model-a&#10;model-b"
+                          <OAuthExcludedModelsPanel
+                            rules={normalizeExcludedModelRules(normalizeExcludedModelsText(draft.excluded_models))}
+                            scope="credential"
+                            onChange={(rules) => updateDraft({ excluded_models: rules.join('\n') })}
+                            catalog={excludedCatalogQuery.data?.models ?? []}
+                            catalogState={excludedCatalogState}
+                            catalogError={excludedCatalogQuery.error}
+                            onRetryCatalog={() => void excludedCatalogQuery.refetch()}
+                            isDisabled={!safeFieldsReady || saveMutation.isPending || file.runtime_only || !canEdit}
                           />
-                        </Form.Item>
+                        </Field>
 
-                        <Form.Item name="note" label={t('af.field_note')}>
-                          <Input.TextArea rows={3} maxLength={500} showCount />
-                        </Form.Item>
+                        <Field label={t('af.field_note')} htmlFor="af-field-note">
+                          <Textarea
+                            id="af-field-note"
+                            rows={3}
+                            maxLength={500}
+                            showCount
+                            disabled={saveMutation.isPending || file.runtime_only || !canEdit}
+                            value={draft.note ?? ''}
+                            onChange={(e) => updateDraft({ note: e.target.value })}
+                          />
+                        </Field>
 
-                      </Form>
+                      </form>
                     </div>
                   </div>
 

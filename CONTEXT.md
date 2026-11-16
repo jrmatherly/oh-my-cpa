@@ -64,12 +64,10 @@ free usage and must not be represented as an observed zero cost.
 **Quota Reading**: What an upstream published at an observation time. Unknown,
 unpublished, stale and failed are not interchangeable with exhausted or zero.
 
-**Estimated Window Capacity**: A quota window expressed in the recent workload's
-tokens and API-equivalent cost, with an estimated remaining amount. It informs the
-operator; availability and routing use upstream quota readings.
-
-**Capacity Reference**: A recent estimate for the same credential and quota scope,
-used while a new window accumulates usage evidence.
+**Window Capacity**: The estimated 100% full-window allowance in API-equivalent cost,
+tokens and requests, scaled linearly from recorded window consumption and the upstream
+used share, or carried forward from the last completed same-plan cycle when a fresh
+window has no recorded usage yet.
 
 **Window Warmup**: A policy-approved request intended to activate a credential's
 billing window. An uncertain attempt is not permission to issue another one.

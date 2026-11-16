@@ -70,7 +70,7 @@ Tags on a listed commit: `[merge]`, `[picked]`, `[merged]` (already an ancestor 
 
 ### Validation batch
 
-A merge commit runs no hook, so run the checks by hand. `pick-checks.sh` reads the diff since the pre-merge SHA and selects the lanes from docs/testing.md; `pnpm test:fast` is the floor.
+A merge commit runs no hook, so run the checks by hand. `pick-checks.sh` reads the diff since the pre-merge SHA and selects the lanes from docs/dev/testing.md; `pnpm test:fast` is the floor.
 
 ```bash
 before=$(git rev-parse HEAD)   # record before the merge
@@ -105,6 +105,7 @@ Upstream's release pipeline names its registry owner, signing key and repository
 | Release scripts | `scripts/release-plan.mjs`, `scripts/native-release.mjs`, `scripts/sign-release-manifest.mjs`, `scripts/tools-versions.json` |
 | Tests and contracts | `web/tests/logic/system-versions.test.ts`, `scripts/acceptance/contracts/system-updater.json`, `scripts/*.test.mjs` for the above |
 | Community surface | `.github/ISSUE_TEMPLATE/*`, `README*.md` badges and links |
+| Public site and docs | `deploy/site/wrangler.jsonc` (custom domain `omc.junze.dev`), `deploy/site/worker.mjs` (reads `WizisCool/oh-my-cpa/releases/latest`), install guides under `docs/install/` and `docs/zh/` that name `wiziscool/oh-my-cpa` |
 
 The path-scoped rule `.claude/rules/release-identity.md` repeats the short version whenever one of these files is opened.
 
@@ -125,10 +126,11 @@ A new deviation gets a row; a SKIP revert gets a row with the upstream SHA.
 | no `.upstream-review/` | `watermark.json`, `reviews/` | landed 2026-11-09 | Fork-only. KEEP. |
 | `.gitignore` ends at upstream's last rule | a tail block `# Personal Claude Code overrides` ignoring `.claude/settings.local.json` | landed 2026-11-09 | Upstream hunks above the block merge cleanly; a conflict keeps both, our block stays last. |
 | `AGENTS.md` names `internal/repository/migrations/` | names `migrations/`, where the files are | landed 2026-11-09 | ADAPT. One token; if upstream corrects it differently, take theirs. Worth an upstream PR. |
-| `web/src/pages/routing/PolicyStrip.tsx` renders the Failover label as a bare text node after the chevron | wraps the label in `<span>` | landed 2026-11-09 | Fixes the `insertBefore` crash under a page translator. Worth an upstream PR once confirmed on a built artifact. An upstream hunk elsewhere in the file is ADOPT; one rewriting the toggle is ADAPT, pinned by `web/tests/routing-page.component.test.tsx`. The row goes when upstream picks it. |
+| `AGENTS.md` and `docs/dev/testing.md` say `pnpm verify:browser:smoke` builds the embedded SPA | say it compiles the Go binary around the SPA that `pnpm build` last wrote, and name `pnpm build && pnpm verify:browser:smoke` | landed 2026-11-09 | ADAPT. Keep ours while `scripts/browser-acceptance.mjs` runs no web build; if upstream makes the smoke build the SPA, take theirs. |
 | `web/src/components/dashboard/DashboardProviders.tsx` renders the provider list toggle label as a bare text node after the chevron | wraps the label in `<span>` | landed 2026-11-09 | Same translator crash as the routing toggle. An upstream hunk elsewhere in the file is ADOPT; one rewriting the toggle is ADAPT and keeps the wrap. |
-| `.coderabbit.yaml` uses the deprecated `request_changes_workflow`, bare `docs/*.md` guideline paths and a dead `code_generation` block | `auto_approvals.enabled`, `applyTo` guideline entries, Biome off | landed 2026-11-09 | Upstream hunks to `path_instructions` are ADOPT; one touching `knowledge_base`, `auto_approvals` or `tools` is ADAPT and keeps ours. Schema-checked with `check-jsonschema`. |
-| `web/index.html` carries only `omc-theme-boot` | adds `omc-lang-boot` after it; `LANG_KEY` exported from `web/src/i18n/language.ts` | landed 2026-11-09 | Fork-only until the translate trigger is confirmed. Upstream hunks to the theme boot are ADOPT, pinned by `web/tests/logic/theme-boot.test.ts`. |
+| `.coderabbit.yaml` uses the deprecated `request_changes_workflow`, bare `docs/*.md` guideline paths and a dead `code_generation` block | `auto_approvals.enabled`, `applyTo` guideline entries, Biome off | landed 2026-11-09 | Upstream hunks to `path_instructions` are ADOPT; one touching `knowledge_base`, `auto_approvals` or `tools` is ADAPT and keeps ours. The guides moved to `docs/dev/` in v0.4.3, so our `applyTo` entries name `docs/dev/architecture.md` and `docs/dev/design.md`. Schema-checked with `check-jsonschema`. |
+| `.github/workflows/readme-screenshots.yml` runs its `screenshots` job on any repository | the job carries `if: github.repository == 'WizisCool/oh-my-cpa'` | landed 2026-11-15 | The workflow force-pushes a branch, opens a PR and auto-merges it daily. The README images are upstream's and arrive with each sync. Upstream hunks elsewhere in the file are ADOPT; one rewriting the job header is ADAPT and keeps the guard. |
+| `web/index.html` carries only `omc-theme-boot` | adds `omc-lang-boot` after it; `LANG_KEY` exported from `web/src/i18n/language.ts` | landed 2026-11-09 | Fork-only until the translate trigger is confirmed. Since v0.4.0 upstream picks the first language from the stored choice, then `OMCPA_DEFAULT_LANGUAGE`, then the browser (`resolveInitialLang`); our boot reads only the stored choice, so a first visit keeps the shipped `lang` until React mounts. `web/src/i18n/index.tsx` imports `LANG_KEY` from `language.ts` and has no local copy; an upstream hunk re-adding one is ADAPT. Upstream hunks to the theme boot are ADOPT, pinned by `web/tests/logic/theme-boot.test.ts`. |
 
 ## Decision log template
 

@@ -59,6 +59,24 @@ func pullProtocol(family string) string {
 	return "openai"
 }
 
+// PullProviderModelsResponseDTO lists model IDs discovered from an upstream provider endpoint.
+type PullProviderModelsResponseDTO struct {
+	Models []string `json:"models"`
+	Total  int      `json:"total"`
+}
+
+// @Summary Pull upstream provider model list
+// @Description Query an upstream provider's models directory using supplied or stored provider credentials.
+// @Tags Providers
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body pullModelsRequest true "Provider endpoint and optional stored provider ID"
+// @Success 200 {object} PullProviderModelsResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/providers/pull-models [post]
 func (h *Handler) pullProviderModels(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	var req pullModelsRequest
@@ -115,7 +133,7 @@ func (h *Handler) pullProviderModels(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	models, err := fetchEndpointModels(request.Context(), baseURL, apiKey, proxyURL, family, headers)
+	models, err := fetchEndpointModels(request.Context(), baseURL, apiKey, proxyURL, family, headers, h.providerProxy())
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidModelPullURL):
@@ -141,9 +159,9 @@ func (h *Handler) pullProviderModels(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"models": models,
-		"total":  len(models),
+	writeJSON(writer, http.StatusOK, PullProviderModelsResponseDTO{
+		Models: models,
+		Total:  len(models),
 	})
 }
 
@@ -207,7 +225,7 @@ func modelDirectoryTargets(family, rawBaseURL string) []string {
 	return targets
 }
 
-func fetchEndpointModels(ctx context.Context, rawBaseURL, apiKey, proxyStr, family string, customHeaders map[string]string) ([]string, error) {
+func fetchEndpointModels(ctx context.Context, rawBaseURL, apiKey, proxyStr, family string, customHeaders map[string]string, proxyFor func(*http.Request) (*url.URL, error)) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
@@ -220,9 +238,10 @@ func fetchEndpointModels(ctx context.Context, rawBaseURL, apiKey, proxyStr, fami
 		return nil, fmt.Errorf("%w: base URL must use HTTPS unless it targets localhost, a loopback/private IP address, or a hostname resolving only to those addresses", errInvalidModelPullURL)
 	}
 
-	transport := &http.Transport{
-		Proxy: providerEnvironmentProxy,
+	if proxyFor == nil {
+		proxyFor = providerEnvironmentProxy
 	}
+	transport := &http.Transport{Proxy: proxyFor}
 	if proxyStr != "" {
 		// A proxy the operator named must be the path taken: falling back to
 		// a direct connection on a parse failure would silently change it.

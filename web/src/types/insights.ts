@@ -6,10 +6,10 @@
  * window itself is resolved by the server in the OMC Time Zone: a calendar unit such as "today" is a
  * fact of the deployment's calendar, not of whatever clock the browser runs.
  */
+import { CALENDAR_PRESETS } from './calendarPresets';
 
-export const INSIGHTS_CALENDAR_PRESETS = ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month'] as const;
 export const INSIGHTS_SPAN_PRESETS = ['24h', '7d', '30d', '90d', 'all'] as const;
-export const INSIGHTS_PRESETS = [...INSIGHTS_CALENDAR_PRESETS, ...INSIGHTS_SPAN_PRESETS] as const;
+export const INSIGHTS_PRESETS = [...CALENDAR_PRESETS, ...INSIGHTS_SPAN_PRESETS] as const;
 export type InsightsPreset = (typeof INSIGHTS_PRESETS)[number];
 
 export const INSIGHTS_BUCKETS = ['auto', 'hour', 'day', 'week', 'month'] as const;
@@ -72,16 +72,6 @@ export interface InsightsCompareWindow {
   to: number;
 }
 
-/**
- * Whether the window's comparison covers only the stretch of the previous period the window has
- * reached: a calendar unit still running ("today" at 03:00) is measured against the same hours of
- * yesterday, so the figure is not yesterday's total. A closed unit, a relative window and a custom
- * range each compare against a whole period, where "the previous period" is already exact.
- */
-export function comparesSameStretch(window: InsightsWindow): boolean {
-  return window.open_end && (INSIGHTS_CALENDAR_PRESETS as readonly string[]).includes(window.preset);
-}
-
 export interface InsightsKey {
   /** The usage fingerprint (`hmac:…`), or CPA's own label for traffic that carried no client key. */
   id: string;
@@ -106,7 +96,7 @@ export interface InsightsCubeResponse {
     providers: string[];
     credentials: InsightsCredential[];
   };
-  /** Cell names for `rows`; `previous_rows` carry the same without the leading bucket. */
+  /** Cell names for `rows`; `previous_rows` carry the same columns (per comparison bucket). */
   columns: string[];
   rows: number[][];
   previous_rows: number[][];

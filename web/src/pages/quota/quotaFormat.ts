@@ -1,7 +1,13 @@
 import dayjs from '../../utils/time';
 import type { TFunc } from '../../i18n';
-import type { QuotaItem, QuotaMetric } from '../../types/quota';
+import type { QuotaItem, QuotaMetric, QuotaWindow } from '../../types/quota';
 import { formatUsd } from '../../types/pricingDisplay';
+import { quotaWindowFullName, quotaWindowKindOf } from './quotaWindowSelection';
+
+const FIVE_HOURS_MS = 5 * 3_600_000;
+// Absorbs integer-second reset truncation and minor clock skew at observation without masking
+// active cycles observed shortly after starting.
+const UNSTARTED_CODEX_WINDOW_TOLERANCE_MS = 5_000;
 
 const pad2 = (n: number): string => (n < 10 ? `0${n}` : String(n));
 
@@ -41,13 +47,13 @@ export function formatCountdown(targetMS: number, nowMS: number, t: TFunc): stri
 }
 
 /**
- * Combined "09/30 01:05 · in 24 days" cell; falls back to the plain date when
- * no countdown applies (already expired / unknown target).
+ * An instant with its countdown in parentheses, "09/30 01:05 (24d left)"; the plain date when no
+ * countdown applies (already expired / unknown target).
  */
 export function formatTimeWithCountdown(targetMS: number, nowMS: number, t: TFunc): string {
   const date = formatShortDateTime(targetMS);
   const countdown = formatCountdown(targetMS, nowMS, t);
-  return countdown ? `${date} · ${countdown}` : date;
+  return countdown ? t('quota.time_with_countdown', { time: date, countdown }) : date;
 }
 
 /**
@@ -105,6 +111,32 @@ export function quotaResetCountdown(
   return t('quota.recovered');
 }
 
+/**
+ * Whether a Codex five-hour reading represents an unstarted (idle) window rather than an active
+ * cycle.
+ *
+ * OpenAI's usage endpoint returns `used_percent: 0` both before a five-hour window starts (where
+ * `reset_at` tracks `now + 5h` on every read) and after small requests start the window with usage
+ * still rounding to `0%` (where `reset_at` is fixed to `start + 5h` and counts down). Only an
+ * absent reset or one still ~5h out from the observation indicates an unstarted window; once the
+ * reset has counted down below that window, both list and detail views must show the countdown.
+ */
+export function isUnusedFullCodexFiveHourWindow(
+  provider: string | undefined,
+  window: QuotaWindow,
+  observedAtMS: number | undefined,
+  nowMS: number,
+): boolean {
+  if (provider?.trim().toLowerCase() !== 'codex') return false;
+  if (window.scope !== 'standard' || quotaWindowKindOf(window) !== 'five_hour') return false;
+  if (window.used_percent !== 0 || (window.remaining_percent ?? 100) !== 100) return false;
+  if (window.usage && window.usage.requests > 0) return false;
+  if (window.reset_at_ms == null) return true;
+  if (window.reset_at_ms <= nowMS) return false;
+  const referenceMS = observedAtMS != null && observedAtMS > 0 ? observedAtMS : nowMS;
+  return window.reset_at_ms - referenceMS >= FIVE_HOURS_MS - UNSTARTED_CODEX_WINDOW_TOLERANCE_MS;
+}
+
 /** The message an empty window list carries, as the dictionary key that states it. */
 export type QuotaEmptyStateKey =
   | 'quota.credential_disabled'
@@ -145,7 +177,7 @@ export function quotaWindowLabel(kind: string | undefined, label: string | undef
 }
 
 /**
- * When a window resets, as "09/24 20:11 · 4 hours left". A derived or approximate instant
+ * When a window resets, as "09/24 20:11 (4h left)". A derived or approximate instant
  * keeps its `~`, so a compact row cannot read as a verified deadline.
  */
 export function quotaResetText(
@@ -181,12 +213,12 @@ export function quotaPayloadSummary(item: Pick<QuotaItem, 'windows' | 'plan'>): 
   if (!windows.some((window) => window.description) && metrics.length === 0) return [];
   return [
     ...windows.map((window): [string, string] => [
-      window.label,
+      quotaWindowFullName(window),
       [
         quotaRemainingText(window),
         window.description,
         window.reset_at_ms ? new Date(window.reset_at_ms).toISOString() : '',
-      ].filter(Boolean).join(' · '),
+      ].filter(Boolean).join('\n'),
     ]),
     ...metrics.map((metric): [string, string] => [`summary.${metric.key || metric.label}`, formatQuotaMetric(metric)]),
   ];

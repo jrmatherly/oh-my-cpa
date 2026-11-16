@@ -1,4 +1,5 @@
 import type { MessageKey } from '../../i18n/catalog';
+import { quotaWindowParts } from '../../pages/quota/quotaWindowSelection';
 import React from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -46,15 +47,14 @@ import { Panel } from '../common/Panel';
 import { ReorderHandle, RowReorder, useReorderRow } from '../common/RowReorder';
 import { useSortableList } from '../../hooks/useSortableList';
 import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
+import { useVisibleNow } from '../../hooks/useVisibleNow';
+import { useIsRouteActive } from '../../performance/routeContract';
 import { DASHBOARD_ORDER_PREFERENCE } from '../../types/dashboardLayout';
 import './dashboard.css';
 
 /** The prefixes the page's refresh button invalidates; shared with the credential workspace. */
 export const CREDENTIAL_FILES_QUERY_KEY = 'management-auth-files';
 export const CREDENTIAL_QUOTA_QUERY_KEY = 'management-quota';
-
-/** Countdowns are minute-grained, so the clock they read ticks at half that. */
-const CLOCK_TICK_MS = 30_000;
 
 export type CredentialQuotaPanelState = 'loading' | 'unknown' | 'empty' | 'ready';
 
@@ -103,7 +103,7 @@ const QuotaWindowMeter: React.FC<{ window: QuotaWindow }> = ({ window }) => {
       {/* The panel keeps one compact line per credential; a plugin's own words for what is left
           (its only amounts) ride in the shared hint, which touch and keyboard focus reach too,
           rather than widening the row. */}
-      <Tooltip title={<>{window.label}{window.description && <div>{window.description}</div>}</>}>
+      <Tooltip card={{ heading: quotaWindowParts(window).name, notes: [quotaWindowParts(window).group, window.description] }}>
         <span className="quota-window-label" tabIndex={0}>{label}</span>
       </Tooltip>
       <span
@@ -155,9 +155,9 @@ const CredentialQuotaRowView: React.FC<QuotaRowProps> = ({ row, nowMS, pluginLog
         size={16}
         className="quota-row-icon"
       />
-      <span className="quota-row-name" title={row.primary}>{row.primary}</span>
+      <span className="quota-row-name" data-tip={row.primary} data-tip-overflow="">{row.primary}</span>
       {status ? (
-        <span className="quota-row-status" title={row.detail}>
+        <span className="quota-row-status" data-tip={row.detail}>
           <status.Icon className="quota-row-status-icon" aria-hidden="true" />
           {t(status.labelKey)}
         </span>
@@ -358,31 +358,30 @@ export const CredentialQuotaPanel: React.FC<CredentialQuotaPanelProps> = ({
  * spends nothing upstream. Only the refresh control does, through the same run the credential
  * workspace uses, and it reports under the same toast key so the two never stack reports.
  */
-export const CredentialQuota: React.FC = () => {
+export const CredentialQuota: React.FC = React.memo(function CredentialQuota() {
+  const isRouteActive = useIsRouteActive();
   const pluginLogos = usePluginOAuthLogos();
   const multiPortalKeys = usePluginMultiPortalKeys();
   const filesQuery = useQuery({
     queryKey: [CREDENTIAL_FILES_QUERY_KEY],
     queryFn: () => api.getManagementAuthFiles(),
-    refetchInterval: 60_000,
-    staleTime: 10_000,
+    refetchInterval: isRouteActive ? 60_000 : false,
+    refetchOnWindowFocus: isRouteActive,
+    staleTime: 30_000,
     placeholderData: keepPreviousData,
     meta: { silent: true },
   });
   const quotaQuery = useQuery({
     queryKey: [CREDENTIAL_QUOTA_QUERY_KEY],
     queryFn: api.getQuotaOverview,
-    refetchInterval: 60_000,
-    staleTime: 15_000,
+    refetchInterval: isRouteActive ? 60_000 : false,
+    refetchOnWindowFocus: isRouteActive,
+    staleTime: 30_000,
     placeholderData: keepPreviousData,
     meta: { silent: true },
   });
 
-  const [nowMS, setNowMS] = React.useState(() => Date.now());
-  React.useEffect(() => {
-    const timer = window.setInterval(() => setNowMS(Date.now()), CLOCK_TICK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
+  const nowMS = useVisibleNow();
 
   const t = useT();
   const toast = useToast();
@@ -444,4 +443,4 @@ export const CredentialQuota: React.FC = () => {
       }}
     />
   );
-};
+});

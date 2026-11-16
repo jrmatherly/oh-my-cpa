@@ -1,5 +1,5 @@
 #!/bin/bash
-# Prints (or with --run, runs) the lowest-layer checks from docs/testing.md that
+# Prints (or with --run, runs) the lowest-layer checks from docs/dev/testing.md that
 # cover the files changed since <base> (default: HEAD, plus untracked files).
 set -euo pipefail
 
@@ -34,13 +34,14 @@ if changed '^(web/src|web/tests|scripts/acceptance)/'; then
   add "pnpm test:logic"
   changed '^web/tests/.*\.component\.test\.tsx$|^web/src/components/' && add "pnpm test:components"
   changed '\.module\.css$|\.tsx$' && add "pnpm check-css-modules"
-  changed '^web/src/.*\.tsx?$' && add "pnpm check:feedback" && add "pnpm lint:antd"
+  changed '^web/src/.*\.tsx?$' && add "pnpm check:feedback"
   changed '^web/src/i18n/' && add "pnpm check-i18n"
 fi
 changed '^scripts/.*\.(mjs|ts)$' && add "pnpm type-check:tooling" && add "pnpm test:self"
 changed '\.md$' && add "pnpm check-docs"
 changed '^\.github/workflows/' && add "pnpm verify:workflow:lint"
 changed '^(internal/api|internal/demo)/' && add "pnpm check:demo"
+changed '^internal/api/' && add "pnpm check:openapi"
 
 [ ${#cmds[@]} -eq 0 ] && { echo "No repository check maps to these files; review them by hand."; exit 0; }
 

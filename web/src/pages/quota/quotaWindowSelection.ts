@@ -1,10 +1,12 @@
+import type { TFunc } from '../../i18n';
 import type { QuotaWindow } from '../../types/quota';
+import { quotaWindowLabel } from './quotaFormat';
 
 /**
  * Which window a reading describes.
  *
  * Providers that publish named model groups (Antigravity) send no `kind`, only a label such as
- * "Gemini Models · Five Hour Limit Remaining" and the period it covers. The period is the
+ * naming the group and the bucket ("Gemini Models", "Five Hour Limit Remaining") and the period it covers. The period is the
  * language-independent fact, so a row can name the window in the reader's own language instead
  * of repeating the provider's label, and ordering stops depending on the source sequence. A
  * period that matches no known bucket stays unnamed rather than being forced into one.
@@ -18,6 +20,27 @@ export function quotaWindowKindOf(window: QuotaWindow): QuotaWindow['kind'] {
   if (Math.abs(hours - 168) < 1) return 'weekly';
   if (hours >= 24 * 28 && hours <= 24 * 31) return 'monthly';
   return undefined;
+}
+
+/**
+ * The provider's stored label for a window in a named model group, split into the group and the
+ * window's own name. Antigravity's normalizer (Go `quota.translateAntigravityBucketLabel`) writes the
+ * group and the bucket joined by a middle dot into the persisted snapshot, so the joined label is
+ * data: this is the one place that reads it, and a surface shows the two parts as two elements, never
+ * the joined string.
+ */
+export const QUOTA_GROUP_LABEL_SEPARATOR = ' \u00b7 '; // separator-ok: parses the stored Antigravity label
+
+export function quotaWindowParts(window: Pick<QuotaWindow, 'label' | 'scope'>): { group: string | null; name: string } {
+  if (window.scope !== 'group') return { group: null, name: window.label };
+  const [group, ...rest] = window.label.split(QUOTA_GROUP_LABEL_SEPARATOR);
+  return rest.length > 0 ? { group: group.trim(), name: rest.join(QUOTA_GROUP_LABEL_SEPARATOR).trim() } : { group: group.trim(), name: window.label };
+}
+
+/** A window's whole name for an accessible label or a hint heading: the group, then the window. */
+export function quotaWindowFullName(window: Pick<QuotaWindow, 'label' | 'scope'>): string {
+  const { group, name } = quotaWindowParts(window);
+  return group ? `${group} ${name}` : name;
 }
 
 /**
@@ -47,7 +70,7 @@ function windowRank(kind?: string): number {
  * only limits were those would show one of them and hide the other.
  */
 export function quotaWindowGroupKey(window: QuotaWindow): string {
-  if (window.scope === 'group') return `group:${window.label.split(' · ')[0]}`;
+  if (window.scope === 'group') return `group:${quotaWindowParts(window).group}`;
   if (window.scope === 'model') return `model:${window.model || window.label}`;
   if (window.scope === 'standard') return 'standard';
   return window.scope;
@@ -64,4 +87,48 @@ export function orderQuotaWindows(windows: QuotaWindow[]): QuotaWindow[] {
     groups.get(quotaWindowGroupKey(left))! - groups.get(quotaWindowGroupKey(right))!
       || windowRank(quotaWindowKindOf(left)) - windowRank(quotaWindowKindOf(right))
   ));
+}
+
+/** The model group a window belongs to, by the provider's own name; null for a plan's own window. */
+export function quotaWindowGroupName(window: QuotaWindow): string | null {
+  return quotaWindowParts(window).group;
+}
+
+/**
+ * A window's name without its group: the period in the reader's language for a plan's window or a
+ * group's, the provider's label for a model's own limit.
+ */
+export function quotaWindowName(window: QuotaWindow, t: TFunc): string {
+  if (window.scope === 'group') {
+    const { name } = quotaWindowParts(window);
+    return quotaWindowLabel(quotaWindowKindOf(window), name, t);
+  }
+  return window.scope === 'model' ? window.label : quotaWindowLabel(window.kind, window.label, t);
+}
+
+/** Whether the server attaches capacity evidence or an unavailable reason to this window. */
+export function isEstimableQuotaWindow(window: QuotaWindow): boolean {
+  return Boolean(window.capacity || window.usage || window.capacity_unavailable);
+}
+
+/**
+ * All estimable sibling periods belonging to the same quota family (e.g. 5-hour and weekly on the
+ * plan or on one Antigravity model group), ordered shortest period first so the capacity modal can
+ * switch directly between them.
+ */
+export function siblingCapacityWindows(target: QuotaWindow, allWindows?: readonly QuotaWindow[]): QuotaWindow[] {
+  const familyKey = quotaWindowGroupKey(target);
+  const seen = new Set<string>();
+  const matched: QuotaWindow[] = [];
+  for (const candidate of allWindows ?? []) {
+    if (!candidate.id || seen.has(candidate.id)) continue;
+    if (quotaWindowGroupKey(candidate) !== familyKey) continue;
+    if (candidate.id !== target.id && !isEstimableQuotaWindow(candidate)) continue;
+    seen.add(candidate.id);
+    matched.push(candidate);
+  }
+  if (!seen.has(target.id)) {
+    matched.push(target);
+  }
+  return orderQuotaWindows(matched);
 }

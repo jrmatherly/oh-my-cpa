@@ -1,16 +1,16 @@
 import { useInsightsFormat } from '../useInsightsFormat';
 import React from 'react';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType } from '@/components/ui/table';
 import dayjs from '../../../utils/time';
 import { ResponsiveList } from '../../../components/common/ResponsiveList';
 import { useT } from '../../../i18n';
 import type { InsightsCompareWindow } from '../../../types/insights';
 import { formatTokens, formatTokensFull } from '../../../types/tokenDisplay';
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
-import { compareMetric, metricValue, NO_COMPARISON, rankingMetric, type InsightsMetric, type RankedGroup } from '../insightsCube';
-import { formatShare } from '../insightsFormat';
+import { compareMetric, metricValue, NO_COMPARISON, rankingMetric, type InsightsMetric, type RankedGroup } from '../../../types/insightsCube';
+import { formatShare } from '../../../types/insightsFormat';
 import { ComparisonText } from './ComparisonText';
-import type { InsightsLabels } from '../useInsightsLabels';
+import type { InsightsLabels } from '../../../hooks/useInsightsLabels';
 import { Sparkline } from './Sparkline';
 import { InsightsValue } from './InsightsValue';
 import styles from '../insights.module.css';
@@ -49,7 +49,7 @@ export const KeyTable: React.FC<KeyTableProps> = ({ groups, sparklines, lastActi
       key: 'name',
       title: t('insights.col.key'),
       render: (_, group) => (
-        <button type="button" className={styles['key-name']} onClick={() => onOpen(group.id)} title={group.id}>
+        <button type="button" className={styles['key-name']} onClick={() => onOpen(group.id)}>
           <InsightsValue dimension="key" id={group.id} labels={labels} />
           {labels.detail('key', group.id) && <span className={styles['key-mask']}>{labels.detail('key', group.id)}</span>}
         </button>
@@ -67,14 +67,14 @@ export const KeyTable: React.FC<KeyTableProps> = ({ groups, sparklines, lastActi
       title: t('insights.col.input'),
       align: 'right',
       sorter: byNumber((group) => group.measures.inputTokens),
-      render: (_, group) => <span title={formatTokensFull(group.measures.inputTokens)}>{formatTokens(group.measures.inputTokens, style)}</span>,
+      render: (_, group) => <span data-tip={formatTokensFull(group.measures.inputTokens)}>{formatTokens(group.measures.inputTokens, style)}</span>,
     },
     {
       key: 'output',
       title: t('insights.col.output'),
       align: 'right',
       sorter: byNumber((group) => group.measures.outputTokens),
-      render: (_, group) => <span title={formatTokensFull(group.measures.outputTokens)}>{formatTokens(group.measures.outputTokens, style)}</span>,
+      render: (_, group) => <span data-tip={formatTokensFull(group.measures.outputTokens)}>{formatTokens(group.measures.outputTokens, style)}</span>,
     },
     {
       key: 'cost',
@@ -107,7 +107,7 @@ export const KeyTable: React.FC<KeyTableProps> = ({ groups, sparklines, lastActi
       title: t('insights.col.change'),
       align: 'right',
       render: (_, group) => (
-        <ComparisonText comparison={group.previous ? compareMetric(group.measures, group.previous, ranking) : NO_COMPARISON} compare={compare} className={styles['change-text']} />
+        <ComparisonText comparison={group.previous ? compareMetric(group.measures, group.previous, ranking, group.previousRaw ?? undefined) : NO_COMPARISON} compare={compare} className={styles['change-text']} />
       ),
     },
     {

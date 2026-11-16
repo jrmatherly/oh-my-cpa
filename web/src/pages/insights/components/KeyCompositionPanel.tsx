@@ -1,5 +1,5 @@
 import React from 'react';
-import { Segmented } from 'antd';
+import { Segmented } from '@/components/ui/segmented';
 import { Panel } from '../../../components/common/Panel';
 import { PanelTitle } from '../../../components/common/PanelTitle';
 import { EmptyState } from '../../../components/common/EmptyState';
@@ -10,14 +10,13 @@ import { useTheme } from '../../../theme/ThemeContext';
 import {
   buildMatrix, matrixCellKey, metricValue, rankingMetric,
   type CubeRow, type InsightsCube, type InsightsDimension, type InsightsMetric,
-} from '../insightsCube';
-import type { InsightsLabels } from '../useInsightsLabels';
+} from '../../../types/insightsCube';
+import type { InsightsLabels } from '../../../hooks/useInsightsLabels';
 import type { CompositionSegment } from '../charts/InsightsCompositionChart';
+import { LazyInsightsCompositionChart as InsightsCompositionChart } from '../../../charts/lazyCharts';
 import { MatrixTable } from './MatrixTable';
 import { InsightsValue } from './InsightsValue';
 import { PanelNarrowing } from './PanelNarrowing';
-
-const InsightsCompositionChart = React.lazy(() => import('../charts/InsightsCompositionChart'));
 
 const ROW_LIMIT = 12;
 const SEGMENT_LIMIT = 6;
@@ -61,8 +60,8 @@ export const KeyCompositionPanel: React.FC<KeyCompositionPanelProps> = ({
     [columnDimension, cube, partMetric, rows],
   );
   const tableMatrix = React.useMemo(
-    () => buildMatrix(cube, rows, 'key', columnDimension, metric, 20, 10),
-    [columnDimension, cube, metric, rows],
+    () => (view === 'table' ? buildMatrix(cube, rows, 'key', columnDimension, metric, 20, 10) : null),
+    [columnDimension, cube, metric, rows, view],
   );
 
   const composition = React.useMemo(() => {
@@ -105,7 +104,7 @@ export const KeyCompositionPanel: React.FC<KeyCompositionPanelProps> = ({
                 onClear={onClear}
               />
               <Segmented
-                size="small"
+                size="sm"
                 value={view}
                 onChange={(next) => setView(next as 'chart' | 'table')}
                 aria-label={t('insights.view_label')}
@@ -153,7 +152,7 @@ export const KeyCompositionPanel: React.FC<KeyCompositionPanelProps> = ({
         </>
       ) : (
         <MatrixTable
-          matrix={tableMatrix}
+          matrix={tableMatrix!}
           rowDimension="key"
           columnDimension={columnDimension}
           metric={metric}

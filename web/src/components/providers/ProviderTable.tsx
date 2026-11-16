@@ -1,14 +1,22 @@
 import React from 'react';
+import { MetaLine } from '../common/MetaLine';
 import clsx from 'clsx';
-import { App as AntdApp, Button, Dropdown } from 'antd';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useConfirmModal } from '../feedback';
+import { Button } from '@/components/ui/button';
 import { Switch } from '../common/Switch';
 import { PriorityBadge } from '../common/PriorityBadge';
 import { GlyphBadge } from '../common/GlyphBadge';
 import { BoxOutlined, DeleteOutlined, EditOutlined, ExternalLinkOutlined, KeyOutlined, MoreOutlined, PictureOutlined, RenameOutlined, TagOutlined } from '../icons';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType } from '@/components/ui/table';
 
 import { useT } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
 import { LobeIcon, ProviderMark } from '../LobeIcon';
 import { safeExternalURL } from '../../utils/externalUrl';
 import { type PluginOAuthLogos } from '../../types/pluginOAuthProviders';
@@ -17,6 +25,7 @@ import { matchProviderFamily } from '../../types/providerFamilies';
 import { successRateTone } from '../../types/usageEventMetrics';
 import { ResponsiveList } from '../common/ResponsiveList';
 import { StatusLabel } from '../common/StatusLabel';
+import { TrafficCell } from '../common/TrafficCell';
 import styles from './ProviderTable.module.css';
 import type { useProviderManagement } from './useProviderManagement';
 import {
@@ -27,7 +36,6 @@ import {
 } from './providerOverview';
 import { Tag } from '../common/Tag';
 import { ConfirmAction } from '../common/ConfirmAction';
-import { Meter } from '../common/Meter';
 import { Tooltip } from '../common/Tooltip';
 import { InlineNameEditor, inlineNameEditableClass, inlineNamePersistentClass, RenameButton } from '../common/InlineName';
 import { RowContextHandle, RowHandleContext, RowReorder, useReorderList, useReorderRow } from '../common/RowReorder';
@@ -50,7 +58,8 @@ interface ProviderTableProps {
   providerIcons: Record<string, string>;
   /** Logos published by installed plugins, keyed by the OAuth provider they register. */
   pluginLogos?: PluginOAuthLogos;
-  statusQueue: ProviderManagement['statusQueue'];
+  toggleProviderStatus: ProviderManagement['toggleProviderStatus'];
+  busyProviderIds: ProviderManagement['busyProviderIds'];
   deleteProviderMutation: ProviderManagement['deleteProviderMutation'];
   /** Opens the editor on the row the operator clicked. */
   handleOpenEdit: (provider: ProviderItem) => void;
@@ -117,7 +126,8 @@ export function ProviderTable({
   traffic,
   providerIcons,
   pluginLogos,
-  statusQueue,
+  toggleProviderStatus,
+  busyProviderIds,
   deleteProviderMutation,
   handleOpenEdit,
   setIconPickerOpen,
@@ -127,7 +137,7 @@ export function ProviderTable({
 }: ProviderTableProps) {
   const t = useT();
   const isPhone = useIsPhoneViewport();
-  const { modal } = AntdApp.useApp();
+  const modal = useConfirmModal();
   const [listRef, listWidth] = useElementWidth<HTMLDivElement>();
   const columnSurplus = Math.max(0, Math.floor((listWidth - TABLE_FRAME - COLUMN_BASE_TOTAL) / COLUMN_COUNT));
   const columnWidth = (key: ProviderColumnKey) => COLUMN_BASE_WIDTHS[key] + columnSurplus;
@@ -136,9 +146,6 @@ export function ProviderTable({
   // field is a full save that also rewrites CPA's entry; the glyph is the only overlay-only rename,
   // so it stays painted on touch screens and phones.
   const [renamingID, setRenamingID] = React.useState<string | null>(null);
-  // Provider definitions live in the gateway's configuration, so creating, editing,
-  // enabling and deleting one are all refused by the demonstration.
-  const isDemo = isDemoMode();
 
   // ── Shared helpers ────────────────────────────────────────────────────────
   /**
@@ -148,10 +155,7 @@ export function ProviderTable({
    * one saying on and the other off: the intent wins while the queue is working,
    * and the gateway's own value is the answer at rest.
    */
-  const resolveEnabled = (record: ProviderItem): boolean => {
-    const target = statusQueue.targetFor(record.id);
-    return target === undefined ? !record.disabled : target;
-  };
+  const resolveEnabled = (record: ProviderItem): boolean => !record.disabled;
 
   const openIconPicker = (record: ProviderItem) => {
     setTargetProviderForIcon(record);
@@ -177,14 +181,13 @@ export function ProviderTable({
         // in a column of its own because most rows have none, and a column of "none" was the
         // widest empty space on the page.
         const upstreamName = record.upstream_name && record.upstream_name !== record.name ? record.upstream_name : '';
-        const meta = [upstreamName].filter(Boolean);
-        const hasMeta = Boolean(record.prefix) || meta.length > 0;
+        const hasMeta = Boolean(record.prefix) || Boolean(upstreamName);
         return (
           <div className={styles['provider-identity']}>
             {!isPhone && <RowContextHandle name={record.name} />}
             <div
               className={styles['provider-mark']}
-              title={t('pro.change_icon')}
+              data-tip={t('pro.change_icon')}
               role="button"
               tabIndex={0}
               aria-label={`${t('pro.change_icon')}: ${record.name}`}
@@ -199,9 +202,6 @@ export function ProviderTable({
               <ProviderMark provider={record} sources={{ providerIcons, pluginLogos }} size={22} />
             </div>
             <div className={clsx(styles['provider-text'], inlineNameEditableClass, inlineNamePersistentClass)}>
-              {renamingID !== record.id && (
-                <RenameButton label={record.name} onClick={() => setRenamingID(record.id)} data-testid="provider-rename" />
-              )}
               <div className={styles['provider-name']}>
                 {renamingID === record.id ? (
                   <InlineNameEditor
@@ -229,6 +229,9 @@ export function ProviderTable({
                 {/* The table is wide enough for the priority to follow the name, as the OAuth list's
                     badge does, rather than take a line of its own. */}
                 {renamingID !== record.id && Boolean(record.priority) && <PriorityBadge priority={record.priority} />}
+                {renamingID !== record.id && (
+                  <RenameButton label={record.name} onClick={() => setRenamingID(record.id)} data-testid="provider-rename" />
+                )}
               </div>
               {hasMeta && (
                 <div className={styles['provider-meta']}>
@@ -239,7 +242,7 @@ export function ProviderTable({
                       </span>
                     </Tooltip>
                   )}
-                  {meta.length > 0 && <span className={styles['provider-meta-text']}>{meta.join(' · ')}</span>}
+                  {upstreamName && <span className={styles['provider-meta-text']}>{upstreamName}</span>}
                 </div>
               )}
             </div>
@@ -301,9 +304,7 @@ export function ProviderTable({
       render: (_, record) => {
         if (!record.base_url) return <span className={styles['muted']}>{t('pro.none_text')}</span>;
         return (
-          <Tooltip title={record.base_url}>
-            <div className={styles['endpoint']}>{record.base_url}</div>
-          </Tooltip>
+          <div className={styles['endpoint']} data-tip={record.base_url} data-tip-overflow="">{record.base_url}</div>
         );
       },
     },
@@ -352,30 +353,7 @@ export function ProviderTable({
       title: t('pro.col_traffic'),
       key: 'traffic',
       width: columnWidth('traffic'),
-      render: (_, record) => {
-        const row = traffic?.get(record.id);
-        if (!row) {
-          return (
-            <Tooltip title={t('pro.traffic_unknown')}>
-              <span className={styles['muted']}>—</span>
-            </Tooltip>
-          );
-        }
-        if (row.total === 0) return <span className={styles['muted']}>{t('pro.traffic_none')}</span>;
-        // The rate's colour is the console's one band (successRateTone), carried by the number as
-        // well as by the meter: at a measured 0% the meter has no width to paint.
-        const tone = successRateTone(row.successRate);
-        const rate = row.successRate ?? 0;
-        return (
-          <div className={styles['traffic']}>
-            <div className={styles['traffic-line']}>
-              <span className={styles['traffic-requests']}>{t('pro.traffic_requests', { n: row.total.toLocaleString() })}</span>
-              <span className={clsx(styles['traffic-rate'], styles[`tone-${tone}`])}>{`${rate.toFixed(1)}%`}</span>
-            </div>
-            <Meter className={styles['traffic-meter']} value={rate} color={`var(--${tone === 'neutral' ? 'meta' : tone})`} />
-          </div>
-        );
-      },
+      render: (_, record) => <TrafficCell traffic={traffic?.get(record.id)} />,
     },
 
     // 6. status
@@ -407,12 +385,9 @@ export function ProviderTable({
           <Switch
             size="small"
             checked={resolveEnabled(record)}
-            aria-busy={statusQueue.isBusy(record.id)}
+            aria-busy={busyProviderIds.has(record.id)}
             aria-label={`${t('pro.col_switch')}: ${record.name}`}
-            // Enabling or disabling a provider writes the gateway's own configuration,
-            // which the demonstration refuses.
-            disabled={isDemo}
-            onChange={(checked) => statusQueue.request(record.id, checked)}
+            onChange={(checked) => toggleProviderStatus(record.id, checked)}
           />
         );
       },
@@ -428,8 +403,8 @@ export function ProviderTable({
         <div className="row-actions">
           <Tooltip title={t('common.edit')}>
             <Button
-              size="small"
-              className="row-action-btn"
+              size="sm"
+              variant="ghost" className="row-action-btn"
               icon={<EditOutlined />}
               onClick={() => handleOpenEdit(record)}
               aria-label={`${t('common.edit')}: ${record.name}`}
@@ -439,15 +414,13 @@ export function ProviderTable({
             title={t('pro.delete_provider_confirm')}
             onConfirm={() => deleteProviderMutation.mutate(record.id)}
             isDanger
-            disabled={isDemo}
-            tooltip={isDemo ? t('demo.blocked') : t('common.delete')}
+            tooltip={t('common.delete')}
           >
             <Button
-              size="small"
+              size="sm"
               danger
-              className="row-action-btn"
+              variant="ghost" className="row-action-btn"
               icon={<DeleteOutlined />}
-              disabled={isDemo}
               loading={deleteProviderMutation.isPending && deleteProviderMutation.variables === record.id}
               aria-label={`${t('common.delete')}: ${record.name}`}
             />
@@ -498,8 +471,10 @@ export function ProviderTable({
           {record.prefix && <span className={styles['prefix-chip']}>{record.prefix}</span>}
         </span>
         <span className={styles['phone-card-route']}>
-          {family && <LobeIcon iconId={family.iconId} size={12} variant="mono" />}
-          <span>{family ? t(family.labelKey) : record.protocol || record.family || t('pro.none_text')}</span>
+          <span className={styles['phone-card-family']}>
+            {family && <LobeIcon iconId={family.iconId} size={12} variant="mono" />}
+            <span>{family ? t(family.labelKey) : record.protocol || record.family || t('pro.none_text')}</span>
+          </span>
           {host && <span className={styles['phone-card-host']}>{host}</span>}
           {record.behavior?.websockets && <span>{t('pro.websockets_tag')}</span>}
         </span>
@@ -507,13 +482,11 @@ export function ProviderTable({
           {health}
           {row && (
             <span className={styles['phone-card-traffic']}>
-              {t('pro.window_24h')} {row.total === 0
-                ? t('pro.traffic_none')
-                : <>
-                    {t('pro.traffic_requests', { n: row.total.toLocaleString() })}
-                    {' · '}
-                    <span className={clsx(isLowRate && styles[`tone-${tone}`])}>{`${(row.successRate ?? 0).toFixed(1)}%`}</span>
-                  </>}
+              <MetaLine>
+                {t('pro.window_24h')}
+                {row.total === 0 ? t('pro.traffic_none') : t('pro.traffic_requests', { n: row.total.toLocaleString() })}
+                {row.total > 0 && <span className={clsx(isLowRate && styles[`tone-${tone}`])}>{`${(row.successRate ?? 0).toFixed(1)}%`}</span>}
+              </MetaLine>
             </span>
           )}
         </span>
@@ -551,32 +524,36 @@ export function ProviderTable({
         )}
         <div className={styles['phone-card-switch']}>{cell('switch')}</div>
         <div className={styles['phone-card-tools']}>
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: [
-                { key: 'edit', icon: <EditOutlined />, label: t('common.edit') },
-                { key: 'rename', icon: <RenameOutlined />, label: t('af.rename') },
-                { key: 'icon', icon: <PictureOutlined />, label: t('pro.change_icon') },
-                // On a desktop the name is the website link; the card's name opens the editor instead.
-                ...(website ? [{
-                  key: 'website',
-                  icon: <ExternalLinkOutlined />,
-                  label: <a href={website} target="_blank" rel="noopener noreferrer">{t('pro.field_website')}</a>,
-                }] : []),
-                { type: 'divider' as const },
-                { key: 'delete', icon: <DeleteOutlined />, label: t('common.delete'), danger: true, disabled: isDemo },
-              ],
-              onClick: ({ key }) => {
-                if (key === 'edit') handleOpenEdit(record);
-                else if (key === 'rename') setRenamingID(record.id);
-                else if (key === 'icon') openIconPicker(record);
-                else if (key === 'delete') confirmDelete();
-              },
-            }}
-          >
-            <Button type="text" size="small" className="row-action-btn" icon={<MoreOutlined />} aria-label={`${t('keys.actions_more')}: ${record.name}`} />
-          </Dropdown>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="sm" className="row-action-btn" icon={<MoreOutlined />} aria-label={`${t('keys.actions_more')}: ${record.name}`} />
+              }
+            />
+            <DropdownMenuContent placement="bottomRight">
+              <DropdownMenuItem icon={<EditOutlined />} onClick={() => handleOpenEdit(record)}>
+                {t('common.edit')}
+              </DropdownMenuItem>
+              <DropdownMenuItem icon={<RenameOutlined />} onClick={() => setRenamingID(record.id)}>
+                {t('af.rename')}
+              </DropdownMenuItem>
+              <DropdownMenuItem icon={<PictureOutlined />} onClick={() => openIconPicker(record)}>
+                {t('pro.change_icon')}
+              </DropdownMenuItem>
+              {website && (
+                <DropdownMenuItem
+                  icon={<ExternalLinkOutlined />}
+                  render={<a href={website} target="_blank" rel="noopener noreferrer" />}
+                >
+                  {t('pro.field_website')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem icon={<DeleteOutlined />} danger onClick={confirmDelete}>
+                {t('common.delete')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <RowContextHandle name={record.name} variant="inline" />
         </div>
       </article>

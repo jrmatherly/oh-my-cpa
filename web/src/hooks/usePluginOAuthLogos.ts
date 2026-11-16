@@ -1,48 +1,80 @@
-import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { QUERY_KEYS } from '../api/queryKeys';
+import { useIsRouteActive } from '../performance/routeContract';
+import { type PluginOAuthLogos } from '../types/pluginOAuthProviders';
 import {
-  pluginOAuthProviderLogos,
-  pluginOAuthProviderTitles,
-  pluginMultiPortalKeys,
-  pluginOwnsProvider,
-  type PluginOAuthLogos,
-} from '../types/pluginOAuthProviders';
+  getIdentityDirectoryProjection,
+  isPluginOwnedInDirectory,
+} from './useIdentityDirectory';
 
 /**
- * The logos the installed plugins publish for their OAuth providers.
- *
- * Every provider surface needs the same answer, and the plugin list is the same
- * query the OAuth page and the dashboard already read, so it is fetched under one
- * query key and shared rather than asking CPA once per page.
+ * The logos the installed (and archived) plugins publish for their OAuth providers,
+ * read from the shared `management-identity-directory` query.
  */
 export function usePluginOAuthLogos(): PluginOAuthLogos {
+  const isRouteActive = useIsRouteActive();
   const { data } = useQuery({
-    queryKey: ['management-plugins'],
-    queryFn: api.getPlugins,
-    staleTime: 30000,
+    queryKey: QUERY_KEYS.identityDirectory,
+    queryFn: ({ signal }) => api.getIdentityDirectory({ signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: isRouteActive,
+    meta: { silent: true },
   });
 
-  return useMemo(() => pluginOAuthProviderLogos(data?.plugins), [data]);
+  return getIdentityDirectoryProjection(data).pluginLogos;
 }
 
-/** The titles the installed plugins' login cards give their OAuth providers, read from the same shared query. */
+/** The titles the installed (and archived) plugins' login cards give their OAuth providers. */
 export function usePluginOAuthTitles(): ReadonlyMap<string, string> {
+  const isRouteActive = useIsRouteActive();
   const { data } = useQuery({
-    queryKey: ['management-plugins'],
-    queryFn: api.getPlugins,
-    staleTime: 30000,
+    queryKey: QUERY_KEYS.identityDirectory,
+    queryFn: ({ signal }) => api.getIdentityDirectory({ signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: isRouteActive,
+    meta: { silent: true },
   });
 
-  return useMemo(() => pluginOAuthProviderTitles(data?.plugins), [data]);
+  return getIdentityDirectoryProjection(data).pluginTitles;
 }
 
 export function usePluginMultiPortalKeys(): ReadonlySet<string> {
-  const { data } = useQuery({ queryKey: ['management-plugins'], queryFn: api.getPlugins, staleTime: 30000 });
-  return useMemo(() => pluginMultiPortalKeys(data?.plugins), [data]);
+  const isRouteActive = useIsRouteActive();
+  const { data } = useQuery({
+    queryKey: QUERY_KEYS.identityDirectory,
+    queryFn: ({ signal }) => api.getIdentityDirectory({ signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: isRouteActive,
+    meta: { silent: true },
+  });
+  return getIdentityDirectoryProjection(data).multiPortalKeys;
+}
+
+export function usePluginOAuthIds(): Set<string> {
+  const isRouteActive = useIsRouteActive();
+  const { data } = useQuery({
+    queryKey: QUERY_KEYS.identityDirectory,
+    queryFn: ({ signal }) => api.getIdentityDirectory({ signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: isRouteActive,
+    meta: { silent: true },
+  });
+  return getIdentityDirectoryProjection(data).pluginOAuthIds;
 }
 
 export function usePluginProviderOwnership(providerKeys: readonly (string | undefined)[], isEnabled: boolean) {
-  const query = useQuery({ queryKey: ['management-plugins'], queryFn: api.getPlugins, staleTime: 30000, enabled: isEnabled });
-  return { isOwned: pluginOwnsProvider(query.data?.plugins, providerKeys), isUnknown: isEnabled && !query.data };
+  const isRouteActive = useIsRouteActive();
+  const query = useQuery({
+    queryKey: QUERY_KEYS.identityDirectory,
+    queryFn: ({ signal }) => api.getIdentityDirectory({ signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: isRouteActive,
+    enabled: isEnabled,
+    meta: { silent: true },
+  });
+  return {
+    isOwned: isPluginOwnedInDirectory(query.data, providerKeys),
+    isUnknown: isEnabled && (!query.data || !query.data.catalog_status.plugins_known),
+  };
 }

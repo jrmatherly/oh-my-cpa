@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, vi } from 'vitest';
+import { resetSettledRemoteSources } from '../src/components/common/RemoteImage';
 import { finishOmcApi } from './support/omcApi';
 
 const isBrowserEnvironment = typeof window !== 'undefined';
@@ -18,6 +19,24 @@ if (isBrowserEnvironment) {
   const nativeGetComputedStyle = window.getComputedStyle.bind(window);
   window.getComputedStyle = ((elt: Element, _pseudoElt?: string | null) =>
     nativeGetComputedStyle(elt)) as typeof window.getComputedStyle;
+
+  if (typeof window.PointerEvent === 'undefined') {
+    class MockPointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      readonly pointerType: string;
+      constructor(type: string, params: PointerEventInit = {}) {
+        super(type, params);
+        this.pointerId = params.pointerId ?? 1;
+        this.pointerType = params.pointerType ?? 'mouse';
+      }
+    }
+    window.PointerEvent = MockPointerEvent as unknown as typeof PointerEvent;
+    globalThis.PointerEvent = window.PointerEvent;
+  }
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
 
   const schedule = globalThis.setTimeout;
   globalThis.setTimeout = ((handler: (...args: unknown[]) => void, timeout?: number, ...args: unknown[]) => {
@@ -65,6 +84,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup?.();
   clearTestQueryClients?.();
+  resetSettledRemoteSources();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   if (isBrowserEnvironment) {

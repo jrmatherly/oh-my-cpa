@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n/catalog';
 import { ApiOutlined, ArrowRightOutlined, KeyOutlined, SafetyCertificateOutlined, SwapOutlined, ThunderboltFilled } from '../icons';
@@ -9,7 +9,7 @@ import { Tooltip } from '../common/Tooltip';
 import { formatTokens, formatTokensFull } from '../../types/tokenDisplay';
 import type { TokenNumberStyle } from '../../types/tokenDisplay';
 import { formatCacheRate } from '../../theme/cacheScale';
-import { effortBadgeName, effortColor, effortStep } from '../../theme/effortScale';
+import { effortBadgeName } from '../../theme/effortScale';
 import type { UsageEventDetail } from '../../types/usageEvents';
 import type { ResolvedProviderInfo } from '../../types/usageEventIdentity';
 import {
@@ -23,6 +23,7 @@ import {
 } from '../../types/usageEventMetrics';
 import { requestFailureCause, tokenComposition, type TokenSegmentKey } from '../../types/requestDetailSummary';
 import './RequestList.css';
+import { EffortTag, Tag } from '../common/Tag';
 
 type DetailEvent = UsageEventDetail['event'];
 
@@ -101,11 +102,11 @@ function RouteNode({ icon, label, value, badge }: { icon: React.ReactNode; label
       <span className="req-route-icon" aria-hidden>{icon}</span>
       <span className="req-route-text">
         <span className="req-route-label">{label}</span>
-        <strong className={value ? undefined : 'terminal-muted'} title={value}>
+        <strong className={value ? undefined : 'terminal-muted'} data-tip={value} data-tip-overflow="">
           {value || t('events.not_captured')}
         </strong>
       </span>
-      {badge && <span className="req-route-badge">{badge}</span>}
+      {badge && <Tag size="small" className="req-route-badge">{badge}</Tag>}
     </li>
   );
 }
@@ -130,7 +131,7 @@ function FailureSummary({ event, onShowDiagnostics }: { event: DetailEvent; onSh
       {body && <pre className="req-failure-body">{body}</pre>}
       <div className="req-failure-actions">
         {body && <CopyButton showLabel text={body} label={t('events.copy_error')} />}
-        <Button size="small" type="link" onClick={onShowDiagnostics}>
+        <Button size="sm" variant="link" onClick={onShowDiagnostics}>
           {t('events.view_diagnostics')} →
         </Button>
       </div>
@@ -197,7 +198,7 @@ function TokenCard({ event, tokenStyle }: { event: DetailEvent; tokenStyle: Toke
     <section className="req-card" aria-label={t('events.summary_tokens')}>
       <div className="req-card-head">
         <h3 className="req-card-title">{t('events.summary_tokens')}</h3>
-        <strong className="req-card-reading" title={formatTokensFull(event.tokens.total)}>
+        <strong className="req-card-reading" data-tip={formatTokensFull(event.tokens.total)}>
           {formatTokens(event.tokens.total, tokenStyle)}
         </strong>
       </div>
@@ -216,7 +217,7 @@ function TokenCard({ event, tokenStyle }: { event: DetailEvent; tokenStyle: Toke
             {segments.map((segment) => (
               <div key={segment.key}>
                 <dt><i className={`req-swatch is-${segment.key}`} />{t(SEGMENT_LABELS[segment.key])}</dt>
-                <dd title={formatTokensFull(segment.value)}>{formatTokens(segment.value, tokenStyle)}</dd>
+                <dd data-tip={formatTokensFull(segment.value)}>{formatTokens(segment.value, tokenStyle)}</dd>
               </div>
             ))}
             {cache.hasData && cache.cached > 0 && (
@@ -245,8 +246,6 @@ function SettingsCard({ event }: { event: DetailEvent }) {
   const isRouted = Boolean(event.model_alias && event.model && event.model_alias !== event.model);
   const isSubstituted = Boolean(event.model_substituted && event.response_model);
   const transport = requestTransport(event);
-  const effortName = effortBadgeName(event.reasoning_effort);
-  const effortHue = effortColor(effortStep(event.reasoning_effort));
   const isFast = isFastTierEvent(event);
   const tier = event.resolved_service_tier;
   const missing = <span className="terminal-muted">{t('events.not_captured')}</span>;
@@ -285,11 +284,7 @@ function SettingsCard({ event }: { event: DetailEvent }) {
         <div>
           <dt>{t('events.reasoning_effort')}</dt>
           <dd>
-            {effortName ? (
-              <span className="req-effort-badge" style={effortHue ? ({ '--effort-hue': effortHue } as React.CSSProperties) : undefined}>
-                {effortName}
-              </span>
-            ) : missing}
+            {effortBadgeName(event.reasoning_effort) ? <EffortTag effort={event.reasoning_effort} /> : missing}
           </dd>
         </div>
         <div>

@@ -1,15 +1,10 @@
 import type { MessageKey } from '../i18n/catalog';
 import { useTimeZone } from '../utils/TimeZoneProvider';
-import { registerVirtualScrollDriver } from '../utils/scrollSmoothing';
 import React from 'react';
-import {
-  Badge,
-  Button,
-  Listy,
-  Popover,
-} from 'antd';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
+import { StatusDot } from '@/components/ui/badge';
 import clsx from 'clsx';
-import { Switch } from '../components/common/Switch';
 import { TablePlaceholder } from '../components/common/ContentPlaceholder';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from '../utils/time';
@@ -28,7 +23,7 @@ import {
   eventWindowQuery,
   type EventFilterKey,
 } from '../types/usageEventQuery';
-import { createProviderNameResolver, credentialOptionLabel, indexCredentialFiles } from '../types/usageEventIdentity';
+import { createProviderNameResolver, credentialOptionLabel } from '../types/usageEventIdentity';
 import {
   UNKNOWN_EVENT_GROUP,
   eventCredentialIdentity,
@@ -40,7 +35,7 @@ import {
 import { useRequestColumnLayout } from '../components/usage/useRequestColumnLayout';
 import { useUsageEventViewState } from '../components/usage/useUsageEventViewState';
 import { RequestBackToTop, RequestCollapsibleHeader, RequestFoldToggle } from '../components/usage/RequestFoldControls';
-import { useRequestListHeight } from '../components/usage/useRequestListHeight';
+import { RequestVirtualList, type RequestGroupConfig } from '../components/usage/RequestVirtualList';
 import { useRequestListScroll } from '../components/usage/useRequestListScroll';
 import { useUsageEventSync } from '../components/usage/useUsageEventSync';
 import { isListStale, isViewChange } from '../components/usage/pollingPolicy';
@@ -65,10 +60,12 @@ import {
 import { RequestToolbar } from '../components/usage/RequestToolbar';
 import './UsageEventsPage.css';
 import { RefreshButton } from '../components/common/RefreshButton';
+import { ToolButton } from '../components/common/ToolButton';
+import type { SelectionAnchor } from '../types/rowSelection';
+import { CheckSquareOutlined } from '../components/icons';
 import { LoadFailure, Notice } from '../components/feedback';
 import { EmptyState } from '../components/common/EmptyState';
 import { FactList } from '../components/common/FactList';
-import { Tooltip } from '../components/common/Tooltip';
 
 export const UsageEventsPage: React.FC = () => {
   useTimeZone();
@@ -84,8 +81,6 @@ export const UsageEventsPage: React.FC = () => {
     setSearch,
     grouping,
     changeGrouping,
-    isAutoRefresh,
-    toggleAutoRefresh,
     commit,
     setFilter,
     removeFilterValue,
@@ -96,6 +91,15 @@ export const UsageEventsPage: React.FC = () => {
     resetSearchQueue,
     isEnabled,
   } = useUsageEventViewState();
+
+  // The records picked for export, kept as the rows themselves rather than their
+  // ids: a selection outlives the page it was made on, and a poll may replace the
+  // loaded rows before the image is drawn.
+  const [selection, setSelection] = React.useState<ReadonlyMap<number, UsageEvent>>(() => new Map());
+  // A choice is under way from the toolbar's button or the first pick until it is cleared; only then
+  // does the list carry a selection column, and a plain click on a row picks it.
+  const [isSelectMode, setIsSelectMode] = React.useState(false);
+  const isSelecting = isSelectMode || selection.size > 0;
 
   const {
     colWidths,
@@ -108,7 +112,7 @@ export const UsageEventsPage: React.FC = () => {
     handleResetColumn,
     handleResetAllColumns,
     handleResizeKeyDown,
-  } = useRequestColumnLayout();
+  } = useRequestColumnLayout(isSelecting);
 
   // The sync hook's poll reads the list's in-flight state through this ref rather
   // than closing over it; the interval it installs explains why the dependency
@@ -122,21 +126,17 @@ export const UsageEventsPage: React.FC = () => {
     facetRevision,
     refresh,
     liveRevision,
-    liveState,
     notifySettled,
     handleManualRefresh,
-  } = useUsageEventSync({ query, isAutoRefresh, isFetchingRef });
-  // Pushed or polled is told by the dot's colour and tooltip, so the dot also names it for
-  // a reader who has neither: a keyboard, a screen reader, or a finger with no hover.
-  const liveLabel = t(liveState === 'live' ? 'events.live_pushed' : 'events.live_polling');
-  // The header's estimate of the window, re-read on every poll. It is display only:
+  } = useUsageEventSync({ query, isFetchingRef });
+  // The header's estimate of the window, re-read on every live update. It is display only:
   // the reads below send the window unresolved, so the server decides what "now" is.
   const displayWindow = React.useMemo(() => eventWindow(query, Date.now()), [query, refresh]);
 
 
   // viewScope identifies the view the reader is looking at: the filters and
-  // window they picked, plus which page of it. The auto-refresh counter is
-  // deliberately absent. It used to be part of this scope, so every poll looked
+  // window they picked, plus which page of it. The live-refresh counter is
+  // deliberately absent. It used to be part of this scope, so every refresh looked
   // like a brand-new view: pagination fell back to page one and the list was
   // remounted by its key, which threw a reader who was halfway down the list
   // back to the top every few seconds.
@@ -150,51 +150,31 @@ export const UsageEventsPage: React.FC = () => {
   const liveEdge = useRequestListScroll({ viewScope, cursor });
   const {
     pageRef,
+    scrollAreaRef,
     listRef,
     isNativeScroll,
     collapse,
     scrolledDown,
     observeLatest,
+    getHeldBoundaryID,
+    noteFetchedBoundaryID,
+    resolveDisplayedItems,
     pendingArrivals,
     markPageNavigation,
     handleScroll,
-    handleWheel,
     handleBackToTop,
     handleToggleExpand,
     scrollListToTop,
     schedulePageNavigationReset,
   } = liveEdge;
+  const listHostRef = React.useRef<HTMLDivElement>(null);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = React.useState(false);
-  // The records picked for export, kept as the rows themselves rather than their
-  // ids: a selection outlives the page it was made on, and a poll may replace the
-  // loaded rows before the image is drawn.
-  const [selection, setSelection] = React.useState<ReadonlyMap<number, UsageEvent>>(() => new Map());
   const [isExportOpen, setIsExportOpen] = React.useState(false);
-  /** The row last clicked without Shift, which a Shift click extends from. */
-  const selectionAnchorRef = React.useRef<number | null>(null);
+  /** The row last picked without Shift, which a Shift click runs from. */
+  const selectionAnchorRef = React.useRef<SelectionAnchor<number> | null>(null);
 
   const isQueryEnabled = isEnabled;
-  const facetParams = usageEventParams(facetWindow);
-  const facets = useQuery({
-    queryKey: ['usage-facets', facetParams, facetRevision],
-    queryFn: async () => {
-      const response = await api.getUsageFacets(facetParams);
-      // A response missing a facet is treated as a failed load, not as an empty
-      // window: an empty dropdown for a dimension that certainly has values is
-      // the one way this control can lie about the data.
-      if (!isUsageFacetsResponse(response)) {
-        throw new Error('usage facets response is incomplete');
-      }
-      return response;
-    },
-    enabled: isQueryEnabled,
-    placeholderData: keepPreviousData,
-    // Facets materialize the window once and group its dimensions. They change
-    // only when the window moves - not on every poll - and the cache keeps the
-    // dropdowns populated while a poll is in flight.
-    staleTime: 5 * 60_000,
-  });
   // While the reader is holding rows, ask the server how much has been recorded
   // since the newest row id they are holding. The anchor is an id rather than a
   // timestamp because the list is sorted by request time: the records ingested
@@ -208,15 +188,20 @@ export const UsageEventsPage: React.FC = () => {
   //
   // The window travels as the reader chose it; `eventWindowQuery` explains why a
   // bound resolved on the browser's clock must never reach the server.
-  const queryString = usageEventParams({
-    ...query,
-    ...eventWindowQuery(query),
-    cursor,
-    since: liveEdge.heldBoundaryID,
-  });
-  // A live signal moves the list to a new key, so its read has no data yet and would count as a
-  // load. Only the read the signal alone caused is silent: the same key change that also carries a
-  // new filter, page or manual sync is one the operator asked for.
+  const baseEventParams = React.useMemo(
+    () => ({
+      ...query,
+      ...eventWindowQuery(query),
+      cursor,
+    }),
+    [cursor, query],
+  );
+  const queryString = React.useMemo(() => usageEventParams(baseEventParams), [baseEventParams]);
+  // Only a read caused solely by a live signal is silent: a filter/page change
+  // or manual sync is one the operator asked for. Keeping `refresh` out of the
+  // query key lets live signals refetch the current view in place instead of
+  // minting a new key with `isPlaceholderData: true` (which flashed "Updating"
+  // in the pagination footer on every live tick).
   const readCauseRef = React.useRef({ queryString, refresh, liveRevision, isLiveRead: false });
   if (readCauseRef.current.queryString !== queryString || readCauseRef.current.refresh !== refresh) {
     const previous = readCauseRef.current;
@@ -228,40 +213,90 @@ export const UsageEventsPage: React.FC = () => {
     };
   }
   const result = useQuery({
-    queryKey: ['usage-events', queryString, refresh],
-    queryFn: () => api.getUsageEvents(queryString),
+    queryKey: ['usage-events', queryString],
+    queryFn: async ({ signal }) => {
+      const heldBoundaryID = getHeldBoundaryID();
+      const params = heldBoundaryID !== undefined
+        ? usageEventParams({ ...baseEventParams, since: heldBoundaryID })
+        : queryString;
+      const page = await api.getUsageEvents(params, signal);
+      noteFetchedBoundaryID(heldBoundaryID);
+      return page;
+    },
     enabled: isQueryEnabled,
     placeholderData: keepPreviousData,
     staleTime: 5_000,
-    // Every live signal is a new key and a superseded page is never read again, so
-    // keeping it would hold a page per signal for the default five minutes.
-    // keepPreviousData works from the observer's last result, not the old entry.
-    gcTime: 0,
     meta: { silent: readCauseRef.current.isLiveRead },
   });
+  const facetParams = usageEventParams(facetWindow);
+  const facets = useQuery({
+    queryKey: ['usage-facets', facetParams, facetRevision],
+    queryFn: async ({ signal }) => {
+      const response = await api.getUsageFacets(facetParams, signal);
+      // A response missing a facet is treated as a failed load, not as an empty
+      // window: an empty dropdown for a dimension that certainly has values is
+      // the one way this control can lie about the data.
+      if (!isUsageFacetsResponse(response)) {
+        throw new Error('usage facets response is incomplete');
+      }
+      return response;
+    },
+    // The full-window facet scan must not queue ahead of the bounded page read
+    // on the server's shared SQLite connection, including when old rows are shown.
+    enabled: isQueryEnabled && !result.isPending && !result.isPlaceholderData && !result.isFetching,
+    placeholderData: keepPreviousData,
+    // Facets scan the window once to count its dimensions. They change
+    // only when the window moves - not on every poll - and the cache keeps the
+    // dropdowns populated while a poll is in flight.
+    staleTime: 5 * 60_000,
+  });
+  const refetchEvents = result.refetch;
+  const lastRefreshTriggerRef = React.useRef({ queryString, refresh });
+  React.useEffect(() => {
+    const previous = lastRefreshTriggerRef.current;
+    lastRefreshTriggerRef.current = { queryString, refresh };
+    if (!isQueryEnabled) return;
+    if (previous.queryString !== queryString) {
+      void refetchEvents({ cancelRefetch: false });
+      return;
+    }
+    if (previous.refresh === refresh) return;
+    void refetchEvents();
+  }, [isQueryEnabled, queryString, refresh, refetchEvents]);
+
   // Assigned after the read it describes, so the poll's interval always observes
   // the latest value without naming it in its dependency list.
   isFetchingRef.current = result.isFetching;
+  const wasFetchingRef = React.useRef(false);
   // A record that landed while this read was in flight was held for it; it is read now.
   React.useEffect(() => {
-    if (!result.isFetching) notifySettled();
+    if (result.isFetching) {
+      wasFetchingRef.current = true;
+      return;
+    }
+    if (wasFetchingRef.current) {
+      wasFetchingRef.current = false;
+      readCauseRef.current.isLiveRead = false;
+    }
+    notifySettled();
   }, [result.isFetching, notifySettled]);
+  const isVisibleFetching = result.isFetching && !readCauseRef.current.isLiveRead;
 
   const handlePrevPage = React.useCallback(() => {
-    if (!cursors.length || result.isFetching) return;
+    if (!cursors.length || isVisibleFetching) return;
     markPageNavigation();
     setPagination({ scope: viewScope, cursors: cursors.slice(0, -1) });
     scrollListToTop();
     schedulePageNavigationReset();
-  }, [cursors, markPageNavigation, result.isFetching, schedulePageNavigationReset, scrollListToTop, viewScope]);
+  }, [cursors, isVisibleFetching, markPageNavigation, schedulePageNavigationReset, scrollListToTop, viewScope]);
 
   const handleNextPage = React.useCallback(() => {
-    if (!result.data?.has_more || !result.data?.next_cursor || result.isFetching || result.isError) return;
+    if (!result.data?.has_more || !result.data?.next_cursor || isVisibleFetching || result.isError) return;
     markPageNavigation();
     setPagination({ scope: viewScope, cursors: [...cursors, result.data.next_cursor] });
     scrollListToTop();
     schedulePageNavigationReset();
-  }, [cursors, markPageNavigation, result.data, result.isFetching, result.isError, schedulePageNavigationReset, scrollListToTop, viewScope]);
+  }, [cursors, isVisibleFetching, markPageNavigation, result.data, result.isError, schedulePageNavigationReset, scrollListToTop, viewScope]);
 
 
   // keepPreviousData covers in-flight changes; retain the last successful page
@@ -290,64 +325,63 @@ export const UsageEventsPage: React.FC = () => {
 
   const latestItems = displayedPage?.items;
   observeLatest(latestItems);
-  const events = liveEdge.heldItems ?? latestItems ?? [];
+  const events = resolveDisplayedItems(latestItems);
 
   // Read through a ref so the row's toggle keeps one identity: a new callback per
   // poll would re-render every memoized row on screen.
   const eventsRef = React.useRef(events);
   eventsRef.current = events;
+  const selectionRef = React.useRef(selection);
+  selectionRef.current = selection;
   const handleToggleSelect = React.useCallback((id: number, isRange: boolean) => {
-    const anchorId = selectionAnchorRef.current;
-    setSelection((previous) => toggleSelection(previous, eventsRef.current, id, anchorId, isRange));
-    if (!isRange || anchorId === null) selectionAnchorRef.current = id;
+    const pick = toggleSelection(selectionRef.current, eventsRef.current, id, selectionAnchorRef.current, isRange);
+    selectionAnchorRef.current = pick.anchor;
+    setSelection(pick.selection);
   }, []);
   const handleToggleAll = React.useCallback((isSelected: boolean) => {
+    selectionAnchorRef.current = null;
     setSelection((previous) => setLoadedSelection(previous, eventsRef.current, isSelected));
   }, []);
-  const clearSelection = React.useCallback(() => {
+  const clearSelectedRows = React.useCallback(() => {
     selectionAnchorRef.current = null;
     setSelection((previous) => (previous.size === 0 ? previous : new Map()));
   }, []);
+  const clearSelection = React.useCallback(() => {
+    clearSelectedRows();
+    setIsSelectMode(false);
+  }, [clearSelectedRows]);
   // A selection belongs to the view it was made in. Paging keeps it; a different
   // filter or window shows other records, and rows nobody can see must not ride
   // along into an export.
-  React.useEffect(clearSelection, [clearSelection, signature]);
+  React.useEffect(clearSelectedRows, [clearSelectedRows, signature]);
   const pendingCount = pendingArrivals(result.data?.arrived_count);
 
-  // Safe file metadata only: never download credential contents for the stream.
-  const authFiles = useQuery({
-    queryKey: ['management-auth-files'],
-    queryFn: () => api.getManagementAuthFiles(),
-    staleTime: 60_000,
-  });
-  const credentials = React.useMemo(
-    () => indexCredentialFiles(authFiles.data?.files || []),
-    [authFiles.data],
-  );
-  // A plugin that registers an OAuth provider also publishes its logo, which the
-  // request row shows in place of the console's catalog mark. The catalog itself
-  // comes from the shared hook: a page-local copy of this query drifted from the
-  // freshness rule the other surfaces apply to the same data.
+  // Safe credential metadata and historical archive come from the consolidated
+  // identity directory so live and deleted credentials resolve identically.
   const {
+    credentials,
+    isCredentialsUnavailable,
     providerIcons,
     pluginLogos,
     multiPortalKeys,
     pluginTitles,
     configuredProviders,
+    archivedProvidersByKey,
+    archive,
     isProviderCatalogUnproven,
     refetchProviders,
   } = useProviderBranding();
   // Resolves CPA's stored provider key to the name the operator configured, so
   // the filter names a line the same way the providers page does.
   const providerName = React.useMemo(
-    () => createProviderNameResolver(configuredProviders, pluginTitles),
-    [configuredProviders, pluginTitles],
+    () => createProviderNameResolver(configuredProviders, pluginTitles, archivedProvidersByKey),
+    [configuredProviders, pluginTitles, archivedProvidersByKey],
   );
   // Records resolve by runtime credential index, not a projected positional id.
   // A routine catalog refetch does not withdraw an identity already resolved.
   const renderFacetMark = React.useMemo(
-    () => createFacetMarkRenderer({ credentials, providerIcons, configuredProviders, pluginLogos, multiPortalKeys, isProviderCatalogUnknown: isProviderCatalogUnproven }),
-    [credentials, providerIcons, configuredProviders, pluginLogos, multiPortalKeys, isProviderCatalogUnproven],
+    () => createFacetMarkRenderer({ credentials, providerIcons, configuredProviders, pluginLogos, multiPortalKeys, isProviderCatalogUnknown: isProviderCatalogUnproven, archive }),
+    [credentials, providerIcons, configuredProviders, pluginLogos, multiPortalKeys, isProviderCatalogUnproven, archive],
   );
 
   /**
@@ -386,6 +420,11 @@ export const UsageEventsPage: React.FC = () => {
     transport: 'events.filter_chip_transport',
   };
 
+  const credentialNames = React.useMemo(
+    () => new Map([...credentials].map(([index, file]) => [index, credentialOptionLabel(file)] as const)),
+    [credentials],
+  );
+
   const describeChip = React.useCallback(
     (key: EventFilterKey, values: string[]): { label: string; display?: string } => {
       if (key === 'regex') {
@@ -403,9 +442,7 @@ export const UsageEventsPage: React.FC = () => {
       const shown = chipDisplayValue({
         key,
         value: values[0] ?? '',
-        credentialNames: new Map(
-          [...credentials].map(([index, file]) => [index, credentialOptionLabel(file)] as const),
-        ),
+        credentialNames,
         callerFacets: facets.data?.facets.api_group_keys,
         resolveProviderName: providerName,
         costLabels: {
@@ -424,7 +461,7 @@ export const UsageEventsPage: React.FC = () => {
       });
       return { label: t(chipLabels[key], { val: shown }) };
     },
-    [credentials, facets.data, t, providerName],
+    [credentialNames, facets.data, t, providerName],
   );
 
   const activeFilters = EVENT_FILTER_KEYS.filter((key) => (committedParams[key]?.length ?? 0) > 0);
@@ -433,21 +470,16 @@ export const UsageEventsPage: React.FC = () => {
   // hidden would be a filter the operator can only clear by guessing.
   const hasActiveFilter = activeFilters.length > 0 || query.result !== 'all';
 
-  const { hostRef: listHost, height } = useRequestListHeight(pageRef);
-  const hasList = isQueryEnabled && !result.isLoading && events.length > 0;
-  /**
-   * The list moves itself; the glide only names where it should be.
-   *
-   * The glide hands the list an offset instead of dispatching a wheel event it would apply a
-   * frame later, so the list's own offset stays its own: it is kept in React state, and writing the
-   * holder under it is reverted by the next commit, which spends a frame on the previous value.
-   */
-  React.useLayoutEffect(() => {
-    if (isNativeScroll || !hasList) return undefined;
-    const holder = listHost.current?.querySelector<HTMLElement>('.request-list .ant-listy-holder');
-    if (!holder) return undefined;
-    return registerVirtualScrollDriver(holder, (top) => listRef.current?.scrollTo({ top }));
-  }, [grouping, hasList, isNativeScroll, listHost, listRef, viewScope]);
+  const openFilterDrawer = React.useCallback(() => setIsFilterDrawerOpen(true), []);
+  const getEventKey = React.useCallback((event: UsageEvent) => event.id, []);
+  const streamStyle = React.useMemo(
+    () =>
+      ({
+        '--req-grid-columns': gridTemplate,
+        '--req-min-width': `${gridMinWidth}px`,
+      }) as React.CSSProperties,
+    [gridMinWidth, gridTemplate],
+  );
 
   /**
    * Clear-all is offered in two places (the bar and the chip strip) and must
@@ -472,44 +504,79 @@ export const UsageEventsPage: React.FC = () => {
     [credentials, events, providerName, unknownProviderLabel],
   );
 
-  const group =
-    grouping === 'time'
-      ? undefined
-      : {
-          key: (event: UsageEvent) => {
-            if (grouping === 'ua') return eventUserAgentGroupKey(event);
-            const provider = eventProviderIdentity(event, providerName, unknownProviderLabel).key;
-            const credential = eventCredentialIdentity(event, credentials, unknownCredentialLabel).key;
-            return JSON.stringify([provider, credential]);
-          },
-          title: (_key: React.Key, items: UsageEvent[]) => {
-            if (grouping === 'ua') {
-              const label = eventUserAgentGroupKey(items[0]);
-              return (
-                <div className="request-group-title">
-                  <strong>
-                    {label === UNKNOWN_EVENT_GROUP ? t('events.unknown_ua') : items[0].user_agent?.trim()}
-                  </strong>
-                  <span>{t('events.record_count', { n: items.length })}</span>
-                </div>
-              );
-            }
-            const provider = eventProviderIdentity(items[0], providerName, unknownProviderLabel);
-            const credential = eventCredentialIdentity(items[0], credentials, unknownCredentialLabel);
-            return (
-              <div className="request-group-title">
-                <strong>
-                  {formatEventSourceGroupTitle(
-                    provider.label,
-                    credential.label,
-                    multipleAuthSources.has(provider.key),
-                  )}
-                </strong>
-                <span>{t('events.record_count', { n: items.length })}</span>
-              </div>
-            );
-          },
-        };
+  const group = React.useMemo<RequestGroupConfig<UsageEvent> | undefined>(() => {
+    if (grouping === 'time') return undefined;
+    return {
+      key: (event: UsageEvent) => {
+        if (grouping === 'ua') return eventUserAgentGroupKey(event);
+        const provider = eventProviderIdentity(event, providerName, unknownProviderLabel).key;
+        const credential = eventCredentialIdentity(event, credentials, unknownCredentialLabel).key;
+        return JSON.stringify([provider, credential]);
+      },
+      title: (_key: string, items: UsageEvent[]) => {
+        if (grouping === 'ua') {
+          const label = eventUserAgentGroupKey(items[0]);
+          return (
+            <div className="request-group-title">
+              <strong>
+                {label === UNKNOWN_EVENT_GROUP ? t('events.unknown_ua') : items[0].user_agent?.trim()}
+              </strong>
+              <span>{t('events.record_count', { n: items.length })}</span>
+            </div>
+          );
+        }
+        const provider = eventProviderIdentity(items[0], providerName, unknownProviderLabel);
+        const credential = eventCredentialIdentity(items[0], credentials, unknownCredentialLabel);
+        return (
+          <div className="request-group-title">
+            <strong>
+              {formatEventSourceGroupTitle(
+                provider.label,
+                credential.label,
+                multipleAuthSources.has(provider.key),
+              )}
+            </strong>
+            <span>{t('events.record_count', { n: items.length })}</span>
+          </div>
+        );
+      },
+    };
+  }, [credentials, grouping, multipleAuthSources, providerName, t, unknownCredentialLabel, unknownProviderLabel]);
+
+  const renderRequestRow = React.useCallback(
+    (event: UsageEvent) => (
+      <RequestRow
+        event={event}
+        credentials={credentials}
+        providerIcons={providerIcons}
+        configuredProviders={configuredProviders}
+        pluginLogos={pluginLogos}
+        multiPortalKeys={multiPortalKeys}
+        pluginTitles={pluginTitles}
+        isProviderCatalogUnknown={isProviderCatalogUnproven}
+        archive={archive}
+        onOpen={setSelected}
+        isSelected={selected === event.id}
+        isChecked={selection.has(event.id)}
+        isSelecting={isSelecting}
+        onToggleSelect={handleToggleSelect}
+      />
+    ),
+    [
+      configuredProviders,
+      credentials,
+      handleToggleSelect,
+      isProviderCatalogUnproven,
+      isSelecting,
+      multiPortalKeys,
+      pluginLogos,
+      pluginTitles,
+      providerIcons,
+      archive,
+      selected,
+      selection,
+    ],
+  );
   const ingestTone =
     !status || ingest.isError
       ? 'default'
@@ -530,7 +597,7 @@ export const UsageEventsPage: React.FC = () => {
 
   return (
     <div ref={pageRef} className="terminal-page usage-events-page request-events-page">
-      <RequestCollapsibleHeader collapse={collapse}>
+      <RequestCollapsibleHeader collapse={collapse} pageRef={pageRef}>
         <div className="request-header-content">
           <header className="terminal-page-head">
             <div className="terminal-page-heading">
@@ -540,28 +607,18 @@ export const UsageEventsPage: React.FC = () => {
               </p>
             </div>
             <div className="request-actions">
-              <label className="req-auto-refresh-control" htmlFor="req-auto-refresh">
-                {/* The pulse only appears while the poll is actually running, so it
-                    means "this list is moving" rather than "this page has a
-                    setting". */}
-                {isAutoRefresh && (
-                  <Tooltip title={liveLabel}>
-                    <span role="img" aria-label={liveLabel} className={clsx('req-live-pulse-dot', liveState !== 'live' && 'is-polling')} />
-                  </Tooltip>
-                )}
-                <span className="req-auto-refresh-label">{t('events.auto_refresh')}</span>
-                <Switch
-                  id="req-auto-refresh"
-                  size="small"
-                  checked={isAutoRefresh}
-                  onChange={toggleAutoRefresh}
-                  aria-label={t('events.auto_refresh')}
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button variant="ghost">
+                      <StatusDot status={ingestTone} text={t(ingestLabel)} />
+                    </Button>
+                  }
                 />
-              </label>
-              <Popover
-                trigger="click"
-                title={t('events.ingest_status')}
-                content={
+                <PopoverContent placement="bottomRight">
+                  <PopoverTitle className="m-0 mb-2 text-base font-semibold text-foreground">
+                    {t('events.ingest_status')}
+                  </PopoverTitle>
                   <div className="request-ingest">
                     <FactList
                       emphasis="quiet"
@@ -575,25 +632,28 @@ export const UsageEventsPage: React.FC = () => {
                     <p>{t('events.delivery_semantics_hint')}</p>
                     {status?.collector?.last_error && <p>{status.collector.last_error}</p>}
                   </div>
-                }
-              >
-                <Button type="text">
-                  <Badge status={ingestTone} text={t(ingestLabel)} />
-                </Button>
+                </PopoverContent>
               </Popover>
               {hasCustomWidths && (
                 <Button
-                  size="small"
-                  type="text"
+                  size="sm"
+                  variant="ghost"
                   className="req-reset-columns-btn"
                   onClick={handleResetAllColumns}
                 >
                   {t('events.reset_columns')}
                 </Button>
               )}
+              <ToolButton
+                icon={<CheckSquareOutlined />}
+                label={t('events.select_requests')}
+                variant={isSelecting ? 'active' : 'secondary'}
+                aria-pressed={isSelecting}
+                onClick={() => (isSelecting ? clearSelection() : setIsSelectMode(true))}
+              />
               <RequestFoldToggle collapse={collapse} onToggle={handleToggleExpand} />
               <RefreshButton
-                isRefreshing={isSyncing || result.isFetching}
+                isRefreshing={isSyncing || isVisibleFetching}
                 disabled={isSyncing}
                 onRefresh={handleManualRefresh}
               />
@@ -610,7 +670,10 @@ export const UsageEventsPage: React.FC = () => {
             <LoadFailure
               title={t('events.load_error')}
               error={result.error}
-              onRetry={() => void result.refetch()}
+              onRetry={() => {
+                readCauseRef.current.isLiveRead = false;
+                void result.refetch();
+              }}
             />
           )}
           <RequestToolbar
@@ -627,7 +690,7 @@ export const UsageEventsPage: React.FC = () => {
             credentials={credentials}
             resolveProviderName={providerName}
             filterCount={filterCount}
-            onOpenFilters={() => setIsFilterDrawerOpen(true)}
+            onOpenFilters={openFilterDrawer}
             hasActiveFilter={hasActiveFilter}
             activeFilterCount={activeFilters.length}
             onClearFilters={clearFilters}
@@ -657,104 +720,86 @@ export const UsageEventsPage: React.FC = () => {
               setIsFilterDrawerOpen(false);
             }}
           />
-          {authFiles.isError && (
+          {isCredentialsUnavailable && (
             <div className="request-detail-note" role="status">
               {t('events.credentials_unavailable')}
             </div>
           )}
         </div>
       </RequestCollapsibleHeader>
-      <section
-        ref={streamRef}
-        className="request-stream"
-        data-folded-columns={foldedColumns}
-        aria-label={t('events.title')}
-        aria-busy={result.isFetching}
-        style={
-          {
-            '--req-grid-columns': gridTemplate,
-            '--req-min-width': `${gridMinWidth}px`,
-          } as React.CSSProperties
-        }
-      >
-        {selection.size > 0 && (
-          <RequestSelectionBar
-            count={selection.size}
-            isEveryLoadedSelected={loadedSelectionState(selection, events) === 'all'}
-            onSelectLoaded={() => handleToggleAll(true)}
-            onClear={clearSelection}
-            onExport={() => setIsExportOpen(true)}
-          />
-        )}
-        <div className="request-table-scroll-area" onWheel={handleWheel}>
-          <RequestStreamHeader
-            colWidths={colWidths}
-            handleResizeStart={handleResizeStart}
-            handleResetColumn={handleResetColumn}
-            handleResizeKeyDown={handleResizeKeyDown}
-            selectionState={loadedSelectionState(selection, events)}
-            onToggleAll={handleToggleAll}
-          />
-          <div ref={listHost} className="request-list-host">
-            <RequestTooltipLayer hostRef={listHost} />
-            {!isQueryEnabled || result.isLoading ? (
-              <TablePlaceholder rows={8} className="request-loading" />
-            ) : events.length ? (
-              <Listy<UsageEvent>
-                ref={listRef}
-                key={`${viewScope}:${grouping}`}
-                virtual={!isNativeScroll}
-                height={height}
-                items={events}
-                rowKey="id"
-                group={group}
-                sticky
-                className={clsx('request-list', isNativeScroll && 'is-native-scroll')}
-                onScroll={handleScroll}
-                itemRender={(event) => (
-                  <RequestRow
-                    event={event}
-                    credentials={credentials}
-                    providerIcons={providerIcons}
-                    configuredProviders={configuredProviders}
-                    pluginLogos={pluginLogos}
-                    multiPortalKeys={multiPortalKeys}
-                    pluginTitles={pluginTitles}
-                    isProviderCatalogUnknown={isProviderCatalogUnproven}
-                    onOpen={setSelected}
-                    isSelected={selected === event.id}
-                    isChecked={selection.has(event.id)}
-                    onToggleSelect={handleToggleSelect}
-                  />
-                )}
-              />
-            ) : !result.isError ? (
-              <EmptyState
-                title={t('events.empty_title')}
-                description={t(hasActiveFilter ? 'events.empty_filtered' : 'events.empty_hint')}
-              />
-            ) : (
-              <div className="request-empty-error">{t('events.load_error')}</div>
-            )}
+      <div className="request-stream-slot">
+        <section
+          ref={streamRef}
+          className={clsx('request-stream', isSelecting && 'is-selecting')}
+          data-folded-columns={foldedColumns}
+          aria-label={t('events.title')}
+          aria-busy={isVisibleFetching}
+          style={streamStyle}
+        >
+          <div ref={scrollAreaRef} className="request-table-scroll-area">
+            <RequestStreamHeader
+              colWidths={colWidths}
+              handleResizeStart={handleResizeStart}
+              handleResetColumn={handleResetColumn}
+              handleResizeKeyDown={handleResizeKeyDown}
+              isSelecting={isSelecting}
+              selectionState={loadedSelectionState(selection, events)}
+              onToggleAll={handleToggleAll}
+            />
+            <div ref={listHostRef} className="request-list-host">
+              <RequestTooltipLayer hostRef={listHostRef} />
+              {!isQueryEnabled || result.isLoading ? (
+                <TablePlaceholder rows={8} className="request-loading" />
+              ) : events.length ? (
+                <RequestVirtualList<UsageEvent>
+                  ref={listRef}
+                  key={`${viewScope}:${grouping}`}
+                  overscanPx={isNativeScroll ? 640 : 432}
+                  items={events}
+                  getItemKey={getEventKey}
+                  group={group}
+                  onScroll={handleScroll}
+                  renderItem={renderRequestRow}
+                />
+              ) : !result.isError ? (
+                <EmptyState
+                  title={t('events.empty_title')}
+                  description={t(hasActiveFilter ? 'events.empty_filtered' : 'events.empty_hint')}
+                />
+              ) : (
+                <div className="request-empty-error">{t('events.load_error')}</div>
+              )}
+            </div>
           </div>
-        </div>
+          <RequestPagination
+            collapse={collapse}
+            onRestoreHeader={handleToggleExpand}
+            stale={stale}
+            isPlaceholderData={result.isPlaceholderData}
+            page={cursors.length + 1}
+            count={events.length}
+            limit={query.limit!}
+            isFetching={isVisibleFetching}
+            isError={result.isError}
+            hasMore={!!result.data?.has_more}
+            hasNextCursor={!!result.data?.next_cursor}
+            hasPrev={cursors.length > 0}
+            onPageSizeChange={setPageSize}
+            onPrev={handlePrevPage}
+            onNext={handleNextPage}
+            dock={isSelecting && (
+              <RequestSelectionBar
+                count={selection.size}
+                isEveryLoadedSelected={loadedSelectionState(selection, events) === 'all'}
+                onSelectLoaded={() => handleToggleAll(true)}
+                onClear={clearSelection}
+                onExport={() => setIsExportOpen(true)}
+              />
+            )}
+          />
+        </section>
         <RequestBackToTop scrolledDown={scrolledDown} pendingCount={pendingCount} onBackToTop={handleBackToTop} />
-        <RequestPagination
-          stale={stale}
-          isPlaceholderData={result.isPlaceholderData}
-          page={cursors.length + 1}
-          count={events.length}
-          limit={query.limit!}
-          isFetching={result.isFetching}
-          isError={result.isError}
-          hasMore={!!result.data?.has_more}
-          hasNextCursor={!!result.data?.next_cursor}
-          hasPrev={cursors.length > 0}
-          onPageSizeChange={setPageSize}
-          onPrev={handlePrevPage}
-          onNext={handleNextPage}
-        />
-      </section>
+      </div>
       <UsageEventDrawer
         credentials={credentials}
         eventId={selected}
@@ -767,6 +812,7 @@ export const UsageEventsPage: React.FC = () => {
         multiPortalKeys={multiPortalKeys}
         pluginTitles={pluginTitles}
         isProviderCatalogUnknown={isProviderCatalogUnproven}
+        archive={archive}
       />
       <RequestExportDialog
         open={isExportOpen}
@@ -781,6 +827,7 @@ export const UsageEventsPage: React.FC = () => {
         pluginTitles={pluginTitles}
         isProviderUnproven={isProviderCatalogUnproven}
         onRetryProviders={() => void refetchProviders()}
+        archive={archive}
       />
     </div>
   );

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/management"
+	"github.com/oh-my-cpa/oh-my-cpa/internal/statecoord"
 )
 
 const (
@@ -16,10 +18,67 @@ const (
 	managementOAuthExcludedModelFieldLimit = 256
 )
 
+// OAuthExcludedModelsResponseDTO maps provider names to excluded model patterns.
+type OAuthExcludedModelsResponseDTO struct {
+	Version        uint64              `json:"version,omitempty"`
+	ExcludedModels map[string][]string `json:"excluded_models"`
+}
+
+// OAuthExcludedModelsPatchRequestDTO replaces excluded model patterns for one OAuth provider.
+type OAuthExcludedModelsPatchRequestDTO struct {
+	Provider string    `json:"provider" validate:"required"`
+	Models   *[]string `json:"models" validate:"required"`
+}
+
+// OAuthExcludedModelsPatchResponseDTO returns the verified excluded model rules for a provider.
+type OAuthExcludedModelsPatchResponseDTO struct {
+	Status   string   `json:"status"`
+	Provider string   `json:"provider"`
+	Models   []string `json:"models"`
+	Version  uint64   `json:"version,omitempty"`
+}
+
+// OAuthProviderModelsResponseDTO lists available model definitions for an OAuth provider.
+type OAuthProviderModelsResponseDTO struct {
+	Provider  string                    `json:"provider"`
+	Available bool                      `json:"available"`
+	Models    []managementAuthFileModel `json:"models"`
+}
+
+// @Summary List OAuth excluded models
+// @Description Return per-provider excluded model patterns configured in CPA.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} OAuthExcludedModelsResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/excluded-models [get]
 func (h *Handler) listManagementOAuthExcludedModels(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
 	client, ok := h.managementClientOrError(writer, request)
 	if !ok {
 		return
+	}
+	if h.stateCoord != nil {
+		env, err := statecoord.ProjectTyped(request.Context(), h.stateCoord, func(state projectedConfigState, _ uint64) (map[string][]string, error) {
+			if state.OAuthExcludedUnavailable {
+				return nil, errStateSliceUnavailable
+			}
+			copied := make(map[string][]string, len(state.OAuthExcluded))
+			for provider, list := range state.OAuthExcluded {
+				copied[provider] = slices.Clone(list)
+			}
+			return copied, nil
+		})
+		if err == nil {
+			setStateVersionHeader(writer, env.Version)
+			writeJSON(writer, http.StatusOK, OAuthExcludedModelsResponseDTO{
+				Version:        env.Version,
+				ExcludedModels: env.Data,
+			})
+			return
+		}
 	}
 	stored, err := client.OAuthExcludedModels(request.Context())
 	if err != nil {
@@ -31,7 +90,7 @@ func (h *Handler) listManagementOAuthExcludedModels(writer http.ResponseWriter, 
 		writeError(writer, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"excluded_models": projected})
+	writeJSON(writer, http.StatusOK, OAuthExcludedModelsResponseDTO{ExcludedModels: projected})
 }
 
 // errOAuthExcludedModelsMismatch reports a write CPA accepted but did not read back as requested.
@@ -44,14 +103,21 @@ func (h *Handler) applyManagementOAuthExcludedModels(ctx context.Context, client
 		return nil, errors.New("write_busy")
 	}
 	defer h.providerWrites.release()
+	if err := h.flushCoordinatorUnderProviderGate(ctx); err != nil {
+		return nil, err
+	}
 	if beforeWrite != nil {
 		if err := beforeWrite(ctx); err != nil {
 			return nil, err
 		}
 	}
 	if err := client.PatchOAuthExcludedModels(ctx, provider, rules); err != nil {
+		if errors.Is(err, management.ErrConfigPartiallyApplied) {
+			h.invalidateCoordinator("management-oauth-excluded-models", "management-config")
+		}
 		return nil, err
 	}
+	h.invalidateCoordinator("management-oauth-excluded-models", "management-config")
 	stored, err := client.OAuthExcludedModels(ctx)
 	if err != nil {
 		return nil, err
@@ -74,11 +140,21 @@ func (h *Handler) applyManagementOAuthExcludedModels(ctx context.Context, client
 	return current, nil
 }
 
+// @Summary Update OAuth excluded models for a provider
+// @Description Replace excluded model patterns for one OAuth provider and verify persistence.
+// @Tags AuthFiles
+// @Accept json
+// @Produce json
+// @Security CookieAuth
+// @Param body body OAuthExcludedModelsPatchRequestDTO true "Provider excluded models payload"
+// @Success 200 {object} OAuthExcludedModelsPatchResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 500 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/excluded-models [patch]
 func (h *Handler) patchManagementOAuthExcludedModels(writer http.ResponseWriter, request *http.Request) {
-	var payload struct {
-		Provider string    `json:"provider"`
-		Models   *[]string `json:"models"`
-	}
+	var payload OAuthExcludedModelsPatchRequestDTO
 	if err := decodeManagementJSON(writer, request, managementAuthFileRequestLimit, &payload); err != nil {
 		return
 	}
@@ -104,6 +180,48 @@ func (h *Handler) patchManagementOAuthExcludedModels(writer http.ResponseWriter,
 		writeError(writer, http.StatusInternalServerError, "audit log failure; excluded models update aborted")
 		return
 	}
+	if h.stateCoord != nil {
+		domain := statecoord.DomainKey(stateDomainOAuthExclusionsPrefix + provider)
+		var useFallback bool
+		version, mutErr := h.mutateCoordinatorWithAudit(
+			request,
+			domain,
+			"oauth_excluded_models.update",
+			"oauth_provider",
+			provider,
+			map[string]any{"count": len(rules), "verified": true},
+			func(state *projectedConfigState) error {
+				if state.OAuthExcludedUnavailable {
+					useFallback = true
+					return errStateSliceUnavailable
+				}
+				if state.OAuthExcluded == nil {
+					state.OAuthExcluded = make(map[string][]string)
+				}
+				if len(rules) == 0 {
+					delete(state.OAuthExcluded, provider)
+				} else {
+					state.OAuthExcluded[provider] = slices.Clone(rules)
+				}
+				return nil
+			},
+		)
+		if !useFallback {
+			if mutErr != nil {
+				_ = h.recordAudit(request, "oauth_excluded_models.update", "oauth_provider", provider, "failure", map[string]any{"error": mutErr.Error()})
+				writeProviderWriteError(writer, mutErr)
+				return
+			}
+			setStateVersionHeader(writer, version)
+			writeJSON(writer, http.StatusOK, OAuthExcludedModelsPatchResponseDTO{
+				Status:   "ok",
+				Provider: provider,
+				Models:   rules,
+				Version:  version,
+			})
+			return
+		}
+	}
 	current, err := h.applyManagementOAuthExcludedModels(request.Context(), client, provider, rules, nil)
 	if err != nil {
 		_ = h.recordAudit(request, "oauth_excluded_models.update", "oauth_provider", provider, "failure", map[string]any{"error": err.Error()})
@@ -116,16 +234,28 @@ func (h *Handler) patchManagementOAuthExcludedModels(writer http.ResponseWriter,
 	}
 	// CPA has already persisted and verified the rules; an audit failure cannot undo that write.
 	_ = h.recordAudit(request, "oauth_excluded_models.update", "oauth_provider", provider, "success", map[string]any{"count": len(current), "verified": true})
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"status":   "ok",
-		"provider": provider,
-		"models":   current,
+	writeJSON(writer, http.StatusOK, OAuthExcludedModelsPatchResponseDTO{
+		Status:   "ok",
+		Provider: provider,
+		Models:   current,
 	})
 }
 
 // listManagementOAuthProviderModels serves the model catalog the rule editors
 // pick from. `available` is false for a provider CPA keeps no catalog for; the
 // editors then accept typed model IDs only.
+//
+// @Summary List OAuth provider model definitions
+// @Description Return available model definitions for a given OAuth provider channel.
+// @Tags AuthFiles
+// @Produce json
+// @Security CookieAuth
+// @Param provider query string true "OAuth provider name"
+// @Success 200 {object} OAuthProviderModelsResponseDTO
+// @Failure 400 {object} ErrorResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 502 {object} ErrorResponseDTO
+// @Router /v1/management/auth-files/provider-models [get]
 func (h *Handler) listManagementOAuthProviderModels(writer http.ResponseWriter, request *http.Request) {
 	provider, err := normalizeManagementOAuthModelAliasProvider(request.URL.Query().Get("provider"))
 	if err != nil {
@@ -155,7 +285,7 @@ func (h *Handler) listManagementOAuthProviderModels(writer http.ResponseWriter, 
 			break
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"provider": provider, "available": isAvailable, "models": projected})
+	writeJSON(writer, http.StatusOK, OAuthProviderModelsResponseDTO{Provider: provider, Available: isAvailable, Models: projected})
 }
 
 func projectManagementOAuthExcludedModels(source map[string][]string) (map[string][]string, error) {

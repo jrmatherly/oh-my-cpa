@@ -12,8 +12,6 @@ export interface QuotaWindow {
   scope: 'standard' | 'model' | 'group' | 'code_review';
   model?: string;
   model_families?: string[];
-  has_mid_cycle_reset?: boolean;
-  has_incomplete_history?: boolean;
   used?: number;
   limit?: number;
   used_percent?: number;
@@ -26,7 +24,7 @@ export interface QuotaWindow {
   description?: string;
   /** What this deployment recorded for the credential in the window's current cycle, up to the observation. */
   usage?: QuotaWindowUsage;
-  /** The estimated size of the whole window and what is left of it; absent when `capacity_unavailable` says why. */
+  /** Estimated 100% full-window capacity scaled from recorded usage and used share. */
   capacity?: QuotaWindowCapacity;
   capacity_unavailable?: QuotaCapacityUnavailableReason;
 }
@@ -37,22 +35,39 @@ export interface QuotaWindowUsage {
   requests: number;
   priced_requests: number;
   tokens: number;
+  prompt_tokens?: number;
+  cached_tokens?: number;
+  cache_rate?: number;
   cost_nanos: number;
 }
 
 export interface QuotaWindowCapacity {
-  basis?: 'current_cycle' | 'observed_delta' | 'blended' | 'previous_cycle';
-  observed_at_ms?: number;
-  from_ms?: number;
-  reset_at_ms?: number;
+  basis: 'current_window' | 'previous_window';
+  sample_requests: number;
+  sample_priced_requests?: number;
+  requests: number;
   tokens: number;
-  /** Absent when too much of the sample carries no price. */
   cost_nanos?: number;
-  /** What is left of the window, given only with a live reading of the used share. */
-  remaining_tokens?: number;
-  remaining_cost_nanos?: number;
-  /** Relative effect, in percent, of upstream rounding the used share to whole points. */
-  error_percent: number;
+  cache_rate?: number;
+}
+
+/** One cycle of a window as the capacity details state it. */
+export interface QuotaCapacityCycle {
+  from_ms: number;
+  reset_at_ms: number;
+  /** The cycle's latest used share; for an earlier cycle, its last reading. */
+  used_percent?: number;
+  /** What this gateway recorded in the cycle. */
+  usage?: QuotaWindowUsage;
+}
+
+/** `GET /management/quota/{authIndex}/capacity?window=`: the cycle being read, the one before it, and estimated full-window capacity. */
+export interface QuotaCapacityHistory {
+  window_id: string;
+  current: QuotaCapacityCycle | null;
+  previous: QuotaCapacityCycle | null;
+  capacity?: QuotaWindowCapacity;
+  capacity_unavailable?: QuotaCapacityUnavailableReason;
 }
 
 export type QuotaCapacityUnavailableReason =

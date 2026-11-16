@@ -16,7 +16,7 @@ func TestSafeQuotaIncludesSubscriptionWithoutRawSignals(t *testing.T) {
 		{PlanType: "pro_max", PlanLabel: "Pro 500", Tier: "elite"},
 	} {
 		t.Run(plan.PlanLabel, func(t *testing.T) {
-			value := &quota.NormalizedQuota{AuthIndex: "fixture-plan", Plan: plan, RawSignals: map[string]string{"dca_token": "synthetic-private-token"}}
+			value := &quota.NormalizedQuota{AuthIndex: "fixture-plan", Plan: plan, Windows: []quota.QuotaWindow{{ID: "five_hour", Scope: "standard", Capacity: &quota.WindowCapacity{Basis: quota.CapacityBasisCurrentWindow, SampleRequests: 10, Requests: 100, Tokens: 10000}}}, RawSignals: map[string]string{"dca_token": "synthetic-private-token"}}
 			safe := SafeQuota(value)
 			if safe.Plan == nil || safe.Plan.PlanType != plan.PlanType || safe.Plan.PlanLabel != plan.PlanLabel || safe.Plan.Tier != plan.Tier {
 				t.Fatalf("subscription missing: %+v", safe)
@@ -31,6 +31,9 @@ func TestSafeQuotaIncludesSubscriptionWithoutRawSignals(t *testing.T) {
 			encoded, err := json.Marshal(safe)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if !strings.Contains(string(encoded), `"capacity":`) || strings.Contains(string(encoded), `"model_forecasts"`) {
+				t.Fatalf("invalid agent quota projection: %s", encoded)
 			}
 			if strings.Contains(string(encoded), "synthetic-private-token") || strings.Contains(string(encoded), "raw_signals") {
 				t.Fatalf("unsafe agent result: %s", encoded)

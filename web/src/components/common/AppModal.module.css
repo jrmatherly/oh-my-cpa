@@ -24,7 +24,7 @@
   max-height: calc(100dvh - 48px);
   padding: 0;
   overflow: hidden;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
 }
 
 .header.header {
@@ -81,7 +81,7 @@
   inset-inline-end: 18px;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   color: var(--fg-2);
   transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
@@ -122,7 +122,7 @@
   border-top: 1px solid var(--border) !important;
 }
 
-.footer.footer > :global(.ant-btn) { margin-inline-start: 0 !important; }
+.footer.footer > :global([data-slot='button']) { margin-inline-start: 0 !important; }
 
 .footer-row {
   display: flex;
@@ -154,9 +154,15 @@
 /* A phone's dialog is a bottom sheet: edge to edge, rounded only where it meets the page, rising
    from the edge the thumb is on, and clear of the home indicator. */
 @media (max-width: 640px) {
+  /* The sheet holds its own height and scrolls inside itself, so the layer around it never scrolls.
+     It must not: the sheet's entrance offset below the screen made the layer scrollable, and the
+     focus moving into the sheet scrolled the layer to it. The scroll then rose with the slide and
+     the two cancelled out, so the sheet appeared mid-screen and settled from there. */
   .wrapper {
     align-items: flex-end;
     padding: 0 0 var(--sheet-bottom, 0px);
+    /* `clip`, not `hidden`: a hidden box can still be scrolled by script, which is what focus does. */
+    overflow: clip !important;
   }
 
   .modal.modal {
@@ -166,7 +172,7 @@
 
   .container.container {
     max-height: calc(var(--sheet-height, 100dvh) - max(24px, env(safe-area-inset-top)));
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     border-bottom: 0;
   }
 
@@ -176,19 +182,27 @@
   .scroll { padding: 4px 16px 20px; }
   .scroll:last-child { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
   .footer.footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
-  .footer.footer > :global(.ant-btn) { min-height: 40px; }
+  .footer.footer :global([data-slot='button']) { min-height: 40px; }
 
-  .modal.modal:global(.ant-zoom-enter.ant-zoom-enter-active),
-  .modal.modal:global(.ant-zoom-appear.ant-zoom-appear-active) {
-    animation-name: sheet-in !important;
-    animation-duration: var(--motion-slow) !important;
-    animation-timing-function: var(--ease-out) !important;
+  .modal.modal {
+    transition: transform var(--motion-sheet-in) var(--ease-sheet-in), opacity var(--motion-fast) var(--ease-out);
   }
-
-  .modal.modal:global(.ant-zoom-leave.ant-zoom-leave-active) {
-    animation-name: sheet-out !important;
-    animation-duration: var(--motion-base) !important;
-    animation-timing-function: var(--ease-standard) !important;
+  .modal.modal[data-starting-style] {
+    opacity: 1;
+    transform: translateY(100%);
+  }
+  .modal.modal[data-ending-style] {
+    opacity: 1;
+    transform: translateY(100%);
+    transition-duration: var(--motion-sheet-out);
+    transition-timing-function: var(--ease-sheet-out);
+  }
+  /* The sheet's own entrance frame for the browser, over the dialog's global one (`index.css`). */
+  @starting-style {
+    :global(:root:not([data-reduced-motion='true'])) .modal.modal[data-open] {
+      opacity: 1;
+      transform: translateY(100%);
+    }
   }
 }
 
@@ -202,11 +216,4 @@
   to { transform: translateY(100%); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .modal.modal:global(.ant-zoom-enter.ant-zoom-enter-active),
-  .modal.modal:global(.ant-zoom-appear.ant-zoom-appear-active),
-  .modal.modal:global(.ant-zoom-leave.ant-zoom-leave-active) {
-    animation: none !important;
-  }
-  .header.header { transition: none; }
-}
+:global(:root[data-reduced-motion='true']) .header.header { transition: none; }

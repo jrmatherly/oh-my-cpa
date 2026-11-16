@@ -363,6 +363,9 @@ func (r *Repository) UpdatePricingSyncSchedule(ctx context.Context, source strin
 // pricingReviewMigration adds pricing_match_reviews.
 const pricingReviewMigration = 31
 
+// upstreamMetadataMigration adds OpenRouter specification columns to pricing_upstream_catalog.
+const upstreamMetadataMigration = 66
+
 // hasMigration reports whether a migration is recorded, reading through the
 // caller's transaction; an unreadable state counts as absent.
 func (r *Repository) hasMigration(ctx context.Context, tx *sql.Tx, version int) bool {
@@ -377,6 +380,12 @@ func (r *Repository) requirePricingReviewSchema(ctx context.Context) error {
 	if err := r.requirePricingSchema(ctx); err != nil {
 		return err
 	}
+	r.pricingSchemaCacheMu.Lock()
+	ready := r.pricingReviewReady
+	r.pricingSchemaCacheMu.Unlock()
+	if ready {
+		return nil
+	}
 	var applied int
 	if err := r.SQL().QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, pricingReviewMigration).Scan(&applied); err != nil {
 		return fmt.Errorf("pricing review schema check: %w", err)
@@ -384,6 +393,9 @@ func (r *Repository) requirePricingReviewSchema(ctx context.Context) error {
 	if applied == 0 {
 		return fmt.Errorf("pricing match review migration %d is not applied", pricingReviewMigration)
 	}
+	r.pricingSchemaCacheMu.Lock()
+	r.pricingReviewReady = true
+	r.pricingSchemaCacheMu.Unlock()
 	return nil
 }
 
@@ -434,9 +446,38 @@ func (r *Repository) SaveMatchReview(ctx context.Context, model, upstreamID stri
 	return nil
 }
 
+func (r *Repository) requireUpstreamMetadataSchema(ctx context.Context) error {
+	if err := r.requirePricingSchema(ctx); err != nil {
+		return err
+	}
+	r.pricingSchemaCacheMu.Lock()
+	ready := r.upstreamMetadataReady
+	r.pricingSchemaCacheMu.Unlock()
+	if ready {
+		return nil
+	}
+	var applied int
+	if err := r.SQL().QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, upstreamMetadataMigration).Scan(&applied); err != nil {
+		return fmt.Errorf("upstream metadata schema check: %w", err)
+	}
+	if applied == 0 {
+		return fmt.Errorf("upstream model metadata schema migration %d is not applied", upstreamMetadataMigration)
+	}
+	r.pricingSchemaCacheMu.Lock()
+	r.upstreamMetadataReady = true
+	r.pricingSchemaCacheMu.Unlock()
+	return nil
+}
+
 func (r *Repository) requirePricingSchema(ctx context.Context) error {
 	if r == nil || r.SQL() == nil {
 		return errors.New("repository is not initialized")
+	}
+	r.pricingSchemaCacheMu.Lock()
+	ready := r.pricingSchemaReady
+	r.pricingSchemaCacheMu.Unlock()
+	if ready {
+		return nil
 	}
 	var applied int
 	if err := r.SQL().QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = 29`).Scan(&applied); err != nil {
@@ -445,6 +486,9 @@ func (r *Repository) requirePricingSchema(ctx context.Context) error {
 	if applied == 0 {
 		return errors.New("model pricing schema migration 29 is not applied")
 	}
+	r.pricingSchemaCacheMu.Lock()
+	r.pricingSchemaReady = true
+	r.pricingSchemaCacheMu.Unlock()
 	return nil
 }
 

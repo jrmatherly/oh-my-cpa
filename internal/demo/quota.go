@@ -12,7 +12,7 @@ import (
 )
 
 // Seed observations, not estimates: the real handlers join the same locked
-// request costs and scoped models a live deployment uses.
+// usage and cycle evidence a live deployment uses.
 func seedQuotaObservations(ctx context.Context, repo *repository.Repository, now time.Time) error {
 	payloads := quotaPayloads(now)
 	for _, credential := range []struct{ authIndex, provider, url string }{
@@ -69,8 +69,12 @@ func saveDemoQuotaSnapshot(ctx context.Context, repo *repository.Repository, aut
 	if err != nil {
 		return fmt.Errorf("marshal quota snapshot for %s: %w", authIndex, err)
 	}
+	windowKey := "all"
+	if len(windows) == 1 {
+		windowKey = windows[0].ID
+	}
 	record := repository.QuotaSnapshotRecord{
-		ID:           "demo-quota-" + authIndex + "-" + strconv.FormatInt(observedAtMS, 10),
+		ID:           "demo-quota-" + authIndex + "-" + windowKey + "-" + strconv.FormatInt(observedAtMS, 10),
 		CreatedAtMS:  observedAtMS,
 		AuthIndex:    authIndex,
 		Provider:     provider,

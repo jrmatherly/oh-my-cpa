@@ -1,9 +1,10 @@
 import { formatCurrency } from '../../types/currencyDisplay';
+import { MetaLine } from '../common/MetaLine';
 import { useDisplayCurrency } from '../../types/CurrencyDisplayContext';
 import { TokenAccountingNote } from '../usage/TokenAccountingNote';
 import { useTimeZone } from '../../utils/TimeZoneProvider';
 import React from 'react';
-import { Button } from 'antd';
+import { Button } from '@/components/ui/button';
 import dayjs from '../../utils/time';
 import { DollarOutlined } from '../icons';
 import { useT } from '../../i18n';
@@ -41,7 +42,7 @@ export const CostBreakdownView: React.FC<CostBreakdownViewProps> = ({ breakdown,
   const openEditor = useOpenPriceEditor();
   const setPrice = openEditor ? (
     <div className={styles['breakdown-action']}>
-      <Button size="small" icon={<DollarOutlined />} onClick={() => openEditor(model)} data-testid="cost-set-price">
+      <Button size="sm" icon={<DollarOutlined />} onClick={() => openEditor(model)} data-testid="cost-set-price">
         {t('cost.set_price', { model })}
       </Button>
       <span className={styles['mode-hint']}>{t('cost.set_price_note')}</span>
@@ -128,15 +129,14 @@ export const CostBreakdownView: React.FC<CostBreakdownViewProps> = ({ breakdown,
         <p className={styles['field-error']}>{t('cost.mismatch')}</p>
       )}
       {version && (
-        <p className={styles['breakdown-source']}>
+        <MetaLine className={styles['breakdown-source']}>
           {version.price.source === 'manual'
             ? t('cost.source_manual')
             : version.price.source === 'modelsdev'
               ? t('cost.source_modelsdev')
               : t('cost.source_openrouter', { id: version.price.upstream_id || version.price.model })}
-          {' · '}
           {t('cost.effective', { time: dayjs(version.effective_from_ms).format('YYYY-MM-DD HH:mm') })}
-        </p>
+        </MetaLine>
       )}
     </div>
   );

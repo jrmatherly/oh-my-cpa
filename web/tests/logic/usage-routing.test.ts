@@ -8,7 +8,13 @@
  * `internal/api/usage_routing_test.go`; this pins what the panel draws from it.
  */
 import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'vitest';
+
+import { DashboardTilesPlaceholder } from '../../src/components/dashboard/DashboardSkeleton.tsx';
+import { I18nProvider } from '../../src/i18n/index.tsx';
+import { DEFAULT_DASHBOARD_LAYOUT } from '../../src/types/dashboardLayout.ts';
 
 import {
   MAX_DRAWN_MODELS,
@@ -25,6 +31,7 @@ import {
   reconcilePresence,
   type Presence,
 } from '../../src/types/usageRouting.ts';
+import { nextRoutingExpiryDelayMs } from '../../src/components/dashboard/routing/RoutingPanel.tsx';
 import type { UsageEvent } from '../../src/types/usageEvents.ts';
 
 const NOW = 1_000_000;
@@ -96,7 +103,7 @@ test('rows keep their order by name while volume decides only which are drawn', 
   const records: UsageEvent[] = [];
   let id = 0;
   for (let index = 0; index <= MAX_DRAWN_MODELS; index++) {
-    // model-0 is called once, model-7 eight times: the least called one is folded away.
+    // model-0 is called once and higher-indexed models more often: the least called one is folded away.
     for (let call = 0; call <= index; call++) records.push(event(++id, { model: `model-${index}` }));
   }
   const model = buildRoutingModel(records, [], NOW);
@@ -146,4 +153,40 @@ test('a row that left the window exits from where it was, and one that returns i
   assert.deepEqual(back.map((entry) => `${entry.key}:${entry.phase}`), ['a:present', 'b:present', 'c:present', 'd:present']);
   const first = reconcilePresence(start, ['b', 'c'], keyOf);
   assert.deepEqual(first.map((entry) => `${entry.key}:${entry.phase}`), ['a:exiting', 'b:present', 'c:present']);
+});
+
+test('routing expiry scheduler sleeps when idle and wakes right after the earliest record or cooldown expires', () => {
+  assert.equal(nextRoutingExpiryDelayMs(undefined, NOW), null);
+  assert.equal(
+    nextRoutingExpiryDelayMs({ records: new Map(), cooldowns: [], windowMs: MINUTE, skewMs: 0 }, NOW),
+    null,
+  );
+
+  // Record finished at (NOW - 50_000 + 500) -> expires at NOW + 10_500 -> delay is 10_525ms.
+  const rec = event(1, { timestamp_ms: NOW - 50_000, latency_ms: 500 });
+  const delayForRecord = nextRoutingExpiryDelayMs(
+    { records: new Map([[1, rec]]), cooldowns: [], windowMs: MINUTE, skewMs: 0 },
+    NOW,
+  );
+  assert.equal(delayForRecord, 10_525);
+
+  // An earlier cooldown wins over a later record expiry.
+  const cooldown = { auth_index: 'auth-1', provider: 'codex', status_code: 429, quota_exceeded: false, until_at_ms: NOW + 3_000 };
+  const delayForCooldown = nextRoutingExpiryDelayMs(
+    { records: new Map([[1, rec]]), cooldowns: [cooldown], windowMs: MINUTE, skewMs: 0 },
+    NOW,
+  );
+  assert.equal(delayForCooldown, 3_025);
+});
+
+test('dashboard skeleton renders the routing topology placeholder without nested status regions', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(DashboardTilesPlaceholder, { layout: DEFAULT_DASHBOARD_LAYOUT }),
+    ),
+  );
+  assert.match(html, /data-testid="routing-skeleton"/);
+  assert.equal(html.match(/role="status"/g)?.length ?? 0, 1);
 });

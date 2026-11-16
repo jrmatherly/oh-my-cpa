@@ -1,5 +1,5 @@
 /**
- * The palette model: nine authored tokens, eighteen derived ones, and the built-in
+ * The palette model: nine authored tokens, twenty-two derived ones, and the built-in
  * palettes each mode offers.
  *
  * **The split is the design.** A palette used to be thirty hand-tuned hex values, which
@@ -20,16 +20,21 @@
  */
 
 import type { MessageKey } from '../i18n/catalog';
-import { contrastRatio, mixOklch, oklchLightness, withLightness, type InkChoice } from './colorMath';
+import { contrastRatio, mixOklch, mixSrgb, oklchLightness, withLightness, type InkChoice } from './colorMath';
+import {
+  isValidExternalThemeId,
+  validateThemeManifest,
+  type LocalizedThemeText,
+  type OMCThemeManifest,
+  type RegisteredTheme,
+  type ThemePrimaryOverride,
+  type ThemeSemanticOverrides,
+} from './themeContract';
 
 // Conversation objects use foreground transparency rather than authored colours, so every
 // preset and custom palette keeps the same relationship to the conversation's ground.
 // Live labels sweep this same foreground over secondary ink; motion adds no palette colour.
 export const THREAD_FILL_SHARES = { field: 5, fieldHover: 8, hairline: 12 } as const;
-
-// Conversation shapes sit on the console's corner scale: controls take the
-// control step, printed documents and floating surfaces the menu steps, the composer the card step.
-export const THREAD_RADII = { document: 8, control: 6, surface: 10, thread: 12 } as const;
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -64,11 +69,11 @@ export function currentPaletteId(value: unknown): unknown {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(RETIRED_PALETTE_IDS, value) ? RETIRED_PALETTE_IDS[value] : value;
 }
 
-/** What a mode's palette selection can point at: one registered palette, or the operator's own. */
-export type PaletteRef = BuiltInPaletteId | 'custom';
+/** What a mode's palette selection can point at: one registered theme (built-in or external), or the operator's own. */
+export type PaletteRef = BuiltInPaletteId | 'custom' | (string & {});
 
-/** The identity a resolved palette is known by, including the two synthetic custom ids. */
-export type ResolvedPaletteId = BuiltInPaletteId | 'omc-custom-dark' | 'omc-custom-light';
+/** The identity a resolved palette is known by, including external themes and the two synthetic custom ids. */
+export type ResolvedPaletteId = BuiltInPaletteId | 'omc-custom-dark' | 'omc-custom-light' | (string & {});
 
 /**
  * The nine authored tokens. Everything a user can edit is in here, and nothing else.
@@ -116,6 +121,13 @@ export interface ThemePalette extends ThemeCore {
   rowHover: string;
   selected: string;
   hoverInset: string;
+  /** Raised thumb inside a field well (`Segmented`, `ToggleGroup`, phone `StatTiles`). */
+  thumbBg: string;
+  /** Filled primary action surface (`<Button variant="primary">`, Composer send, checked box). */
+  primary: string;
+  primaryHover: string;
+  primaryActive: string;
+  primaryOn: string;
   accentHover: string;
   accentActive: string;
   accentOn: string;
@@ -134,6 +146,12 @@ export interface ThemePalette extends ThemeCore {
   heatmapZeroUnrecorded: string;
   heatmapZeroRecorded: string;
   heatmapTipLink: string;
+  /** Shares of the foreground, in percent, solved so each edge ring stands `EDGE_STEPS` off the page. */
+  edgeShare: number;
+  liftShare: number;
+  fineShare: number;
+  /** The ink drop shadows are cast in: the palette's own hue, near black. */
+  shade: string;
   /** Categorical identities for multi-series charts, in legend order. */
   series: readonly string[];
   seriesTrack: string;
@@ -177,6 +195,58 @@ function standOff(ground: string, color: string, toward: string, floor: number):
   return withLightness(color, Math.min(1, Math.max(0, groundLightness + direction * floor)));
 }
 
+function standOffAbove(color: string, floorLightness: number, step: number): string {
+  const target = Math.min(1, floorLightness + step);
+  return oklchLightness(color) >= target ? color : withLightness(color, target);
+}
+
+/**
+ * Computes `--thumb-bg` so a `Segmented` or `ToggleGroup` thumb stands off its `bg-field` well
+ * (`5%` of `--fg` over the container surface) on every substrate (`bg`, `surface`, `elevated`),
+ * while preserving WCAG AA normal-text contrast (`>= 4.5:1`) for `--fg` on the thumb.
+ */
+function deriveThumbBg(mode: ThemeMode, core: ThemeCore): string {
+  const wells = [core.bg, core.surface, core.elevated].map((ground) => mixSrgb(ground, core.fg, 0.05));
+  const maxWellL = Math.max(...wells.map(oklchLightness));
+  if (mode === 'light') {
+    const minLightL = Math.min(1, maxWellL + 0.03);
+    return oklchLightness(core.elevated) >= minLightL ? core.elevated : withLightness(core.elevated, minLightL);
+  }
+  const textFloor = CONTRAST_FLOORS.text ?? 4.5;
+  const targetL = Math.min(1, maxWellL + 0.08);
+  for (let l = targetL; l >= maxWellL + 0.03; l -= LADDER_STEP) {
+    const stepped = withLightness(core.elevated, l);
+    if (contrastRatio(core.fg, stepped) >= textFloor) return stepped;
+  }
+  // If an unusually light dark-mode elevated surface leaves no lighter step that clears 4.5:1,
+  // step below maxWellL to preserve both separation from the well and text contrast.
+  const downTargetL = Math.max(0, maxWellL - 0.08);
+  let best = { color: core.elevated, ratio: contrastRatio(core.fg, core.elevated) };
+  for (let l = downTargetL; l >= 0; l -= LADDER_STEP) {
+    const stepped = withLightness(core.elevated, l);
+    const ratio = contrastRatio(core.fg, stepped);
+    if (ratio >= textFloor) return stepped;
+    if (ratio > best.ratio) best = { color: stepped, ratio };
+  }
+  return best.color;
+}
+
+function deriveDarkSelected(rawSelected: string, core: ThemeCore, maxSurfaceL: number): string {
+  const textFloor = CONTRAST_FLOORS.text ?? 4.5;
+  const minStep = 0.055;
+  const raised = standOffAbove(rawSelected, maxSurfaceL, minStep);
+  if (contrastRatio(core.fg, raised) >= textFloor) return raised;
+  for (let l = Math.min(1, maxSurfaceL + minStep); l >= maxSurfaceL + 0.045; l -= LADDER_STEP) {
+    const stepped = withLightness(rawSelected, l);
+    if (contrastRatio(core.fg, stepped) >= textFloor) return stepped;
+  }
+  for (let l = Math.max(0, maxSurfaceL - minStep); l >= 0; l -= LADDER_STEP) {
+    const stepped = withLightness(rawSelected, l);
+    if (contrastRatio(core.fg, stepped) >= textFloor) return stepped;
+  }
+  return contrastRatio(core.fg, rawSelected) >= textFloor ? rawSelected : raised;
+}
+
 /**
  * How far the canvas recedes behind the content panel. A light canvas is a faint step toward the
  * foreground - the panel reads as the sheet of paper on the desk - while a dark canvas sinks
@@ -186,6 +256,51 @@ const CANVAS_BLEND: Record<ThemeMode, { toward: 'fg' | 'black'; share: number }>
   dark: { toward: 'black', share: 0.24 },
   light: { toward: 'fg', share: 0.04 },
 };
+
+/**
+ * How far each edge stands off the ground it is drawn on, in OKLCH lightness.
+ *
+ * An edge is a one-pixel ring of the foreground ink laid over the ground, and a fixed share of
+ * ink is not a fixed step: 8% of the ink moved OMC Dark's page by 0.078 but a light page by under
+ * 0.04, about half the step its own authored border takes, and cards on Fog and Sandstone could not
+ * be told from the page at a glance. So the share is solved per palette for the step, and every
+ * palette - an operator's own included - draws its edges at the same perceptual weight.
+ *
+ *   edge  a surface resting on the page: cards, tables, settings groups, the composer
+ *   lift  the same surface under the pointer, and a layer floating over the page
+ *   fine  the faint ring a control stands in and a field or a track is set into
+ *
+ * The modes split the work of an edge differently. A dark page has little for a shadow to darken,
+ * so its ring carries the edge - sitting between the derived soft rule (0.06) and the authored
+ * borders (0.09-0.15) - with a lit top line above it. A light page shows a soft shadow well, and
+ * a ring at the dark step reads there as a drawn outline: the box looks traced rather than
+ * resting. So a light ring stands a lighter step off and the layered drop under it - a tight
+ * contact shadow plus a wide, faint ambient one - says the surface is raised. A control's faint
+ * ring is the same in both: it is what tells a white button from the white card it stands on.
+ */
+export const EDGE_STEPS: Record<ThemeMode, { edge: number; lift: number; fine: number }> = {
+  dark: { edge: 0.08, lift: 0.11, fine: 0.05 },
+  light: { edge: 0.055, lift: 0.075, fine: 0.05 },
+};
+
+/** The least share of `ink`, in half percents, that moves `ground` by `step` of OKLCH lightness. */
+function inkShareFor(ground: string, ink: string, step: number): number {
+  const groundLightness = oklchLightness(ground);
+  for (let share = 0.5; share < 100; share += 0.5) {
+    if (Math.abs(oklchLightness(mixSrgb(ground, ink, share / 100)) - groundLightness) >= step) return share;
+  }
+  return 100;
+}
+
+/**
+ * The ink a palette's drop shadows are cast in: its own hue, near black. A neutral black shadow
+ * on a warm or a cool page reads as a grey smudge on it; a shadow carrying the page's hue reads as
+ * the same material in less light. A light palette's foreground is already a deep ink of its hue;
+ * a dark page's own colour is taken most of the way to black.
+ */
+function shadeInk(mode: ThemeMode, core: ThemeCore): string {
+  return mode === 'light' ? mixOklch(core.fg, '#000000', 0.3) : mixOklch(core.bg, '#000000', 0.8);
+}
 
 /**
  * The accent ladder's steps, as a fraction of the accent's own OKLCH lightness.
@@ -272,7 +387,7 @@ const MODE_SEMANTICS: Record<ThemeMode, { success: string; warn: string; danger:
     warn: '#f59e0b',
     danger: '#ef4444',
     timingOrange: '#fb923c',
-    series: ['#3b82f6', '#10b981', '#8b5cf6', '#f43f5e', '#f59e0b', '#06b6d4'],
+    series: ['#6588f5', '#10b981', '#9b7bf7', '#f43f5e', '#f59e0b', '#14b8a6'],
     // Categorical identities for multi-series charts: the familiar dashboard set of blue, emerald,
     // violet, rose, amber and cyan, stepped lighter on dark and deeper on light.
     effort: ['#94bfce', '#4eccd3', '#91b7fe', '#bda7fe', '#f08dee', '#ff8cc1'],
@@ -282,7 +397,7 @@ const MODE_SEMANTICS: Record<ThemeMode, { success: string; warn: string; danger:
     warn: '#b45309',
     danger: '#dc2626',
     timingOrange: '#c2410c',
-    series: ['#2563eb', '#059669', '#7c3aed', '#e11d48', '#b45309', '#0891b2'],
+    series: ['#3d63cf', '#059669', '#6d47d9', '#e11d48', '#b45309', '#0d8a7e'],
     effort: ['#39626e', '#00686c', '#3057a3', '#6343a4', '#8a2b8a', '#9b2065'],
   },
 };
@@ -512,19 +627,114 @@ function accentLadder(mode: ThemeMode, accent: string): { hover: string; active:
   return { hover: withLightness(accent, end), active: withLightness(accent, end), ink: best.ink };
 }
 
+/** How far a pressed ink surface travels back toward the page, so hover and press read as give. */
+const INK_STEP = { hover: 0.1, active: 0.18 } as const;
+
+type PrimarySurface = { primary: string; primaryHover: string; primaryActive: string; primaryOn: string };
+
+/** Solves states and label for one fill hex, keeping the hex itself when it can hold a label. */
+function solvePrimaryFill(mode: ThemeMode, fill: string): PrimarySurface {
+  const solved = accentLadder(mode, fill);
+  const further = accentLadder(mode, solved.hover);
+  // If the supplied hex itself clears 4.6:1 with one ink alongside its stepped hover/active, keep it as the resting fill.
+  const directStep = oklchLightness(fill) > 0.5
+    ? { hover: withLightness(fill, Math.max(0, oklchLightness(fill) - 0.06)), active: withLightness(fill, Math.max(0, oklchLightness(fill) - 0.12)) }
+    : { hover: withLightness(fill, Math.min(1, oklchLightness(fill) + 0.06)), active: withLightness(fill, Math.min(1, oklchLightness(fill) + 0.12)) };
+  const directInk = bestInkAcross([fill, directStep.hover, directStep.active]);
+  if (directInk.ratio >= LABEL_CONTRAST_TARGET) {
+    return {
+      primary: fill,
+      primaryHover: directStep.hover,
+      primaryActive: directStep.active,
+      primaryOn: directInk.ink,
+    };
+  }
+  return {
+    primary: solved.hover,
+    primaryHover: solved.active,
+    primaryActive: further.active,
+    primaryOn: solved.ink,
+  };
+}
+
+function resolvePrimarySurface(
+  mode: ThemeMode,
+  core: ThemeCore,
+  override: string | ThemePrimaryOverride | undefined,
+): PrimarySurface {
+  if (!override) {
+    // The filled action is the palette's own ink with the page as its label: the accent stays a
+    // signal (links, focus, selection) instead of painting the one button that must carry weight.
+    const hover = mixOklch(core.fg, core.bg, INK_STEP.hover);
+    const active = mixOklch(core.fg, core.bg, INK_STEP.active);
+    if ([core.fg, hover, active].every((step) => contrastRatio(core.bg, step) >= LABEL_CONTRAST_TARGET)) {
+      return { primary: core.fg, primaryHover: hover, primaryActive: active, primaryOn: core.bg };
+    }
+    // An ink too faint to carry the page as its label on hover and press is solved as a fill.
+    return solvePrimaryFill(mode, core.fg);
+  }
+  if (typeof override === 'string') return solvePrimaryFill(mode, override);
+  const fillL = oklchLightness(override.fill);
+  const hover = override.hover ?? withLightness(override.fill, fillL > 0.5 ? Math.max(0, fillL - 0.06) : Math.min(1, fillL + 0.06));
+  const active = override.active ?? withLightness(override.fill, fillL > 0.5 ? Math.max(0, fillL - 0.12) : Math.min(1, fillL + 0.12));
+  if (
+    override.ink &&
+    contrastRatio(override.ink, override.fill) >= ACCENT_LABEL_CONTRAST_FLOOR &&
+    contrastRatio(override.ink, hover) >= ACCENT_LABEL_CONTRAST_FLOOR &&
+    contrastRatio(override.ink, active) >= ACCENT_LABEL_CONTRAST_FLOOR
+  ) {
+    return {
+      primary: override.fill,
+      primaryHover: hover,
+      primaryActive: active,
+      primaryOn: override.ink,
+    };
+  }
+  const solvedInk = bestInkAcross([override.fill, hover, active]);
+  if (solvedInk.ratio >= ACCENT_LABEL_CONTRAST_FLOOR) {
+    return {
+      primary: override.fill,
+      primaryHover: hover,
+      primaryActive: active,
+      primaryOn: solvedInk.ink,
+    };
+  }
+  const fallback = accentLadder(mode, override.fill);
+  return {
+    primary: fallback.hover,
+    primaryHover: fallback.active,
+    primaryActive: fallback.active,
+    primaryOn: fallback.ink,
+  };
+}
+
 /**
- * derivePalette computes the eighteen tokens a palette does not author.
+ * derivePalette computes all derived surface, contrast, primary, heatmap and telemetry tokens.
  *
- * Pure and total: the same nine tokens always produce the same palette, so the pre-hydration
- * fallback in `index.css`, the six built-ins and an operator's palette are one code path.
+ * Pure and total: the same nine tokens (plus optional semantic overrides) always produce the same
+ * palette, so the pre-hydration fallback in `index.css`, the six built-ins, operator custom
+ * palettes and third-party open themes share one code path.
  */
-export function derivePalette(mode: ThemeMode, core: ThemeCore): ThemePalette {
+export function derivePalette(
+  mode: ThemeMode,
+  core: ThemeCore,
+  overrides?: ThemeSemanticOverrides,
+): ThemePalette {
   const blend = NEUTRAL_BLEND[mode];
   const semantics = MODE_SEMANTICS[mode];
   const hover = mixOklch(core.bg, core.fg, blend.hover);
-  const selected = mixOklch(hover, core.accent, blend.selected);
+  const rawSelected = mixOklch(hover, core.accent, blend.selected);
+  const elevatedL = oklchLightness(core.elevated);
+  const maxSurfaceL = Math.max(oklchLightness(core.bg), oklchLightness(core.surface), elevatedL);
+  const selected = mode === 'dark'
+    ? deriveDarkSelected(rawSelected, core, maxSurfaceL)
+    : Math.abs(oklchLightness(rawSelected) - elevatedL) >= 0.045
+      ? rawSelected
+      : withLightness(rawSelected, Math.max(0, elevatedL - 0.055));
+  const thumbBg = deriveThumbBg(mode, core);
   const borderSoft = standOff(core.bg, mixOklch(core.bg, core.border, blend.borderSoft), core.fg, BORDER_SOFT_FLOOR);
   const ladder = accentLadder(mode, core.accent);
+  const primarySurface = resolvePrimarySurface(mode, core, overrides?.primary);
   const canvasBlend = CANVAS_BLEND[mode];
   const reference = getBuiltInPalette(SIGNAL_REFERENCE[mode]).core;
   const referenceHover = mixOklch(reference.bg, reference.fg, blend.hover);
@@ -532,49 +742,45 @@ export function derivePalette(mode: ThemeMode, core: ThemeCore): ThemePalette {
   // An effort badge also sits on a hovered row, so the hover fill is one of its grounds.
   const holdBadge = (color: string) =>
     holdSignal(color, [core.bg, core.surface, hover], [reference.bg, reference.surface, referenceHover], SIGNAL_CONTRAST_CEILING.badge);
-  const success = hold(semantics.success);
-  const warn = hold(semantics.warn);
-  // The request duration ramp. Two stops, mixed in OKLCH by the browser, so the reading at
-  // 0 s is green and the one at a minute is orange with every wait in between on the way.
-  // Timing values are small text on rows and drawers, including hover and selection fills,
-  // and a mix of two legible stops is not automatically legible - an eight-bit midpoint
-  // can lose two or three tenths of a ratio point. So the stops are solved as a *pair*,
-  // each against the ramp the two of them produce, while red stays reserved for failure.
+  const baseSuccess = overrides?.success ?? semantics.success;
+  const baseWarn = overrides?.warn ?? semantics.warn;
+  const baseDanger = overrides?.danger ?? semantics.danger;
+  const baseSeries = overrides?.series ?? semantics.series;
+  const success = hold(baseSuccess);
+  const warn = hold(baseWarn);
   const timingGrounds = [core.bg, core.surface, core.elevated, hover, selected];
-  const timingRamp = durationRampStops(semantics.success, semantics.timingOrange, timingGrounds);
+  const timingRamp = durationRampStops(baseSuccess, semantics.timingOrange, timingGrounds);
   return {
     ...core,
     canvas: mixOklch(core.bg, canvasBlend.toward === 'fg' ? core.fg : '#000000', canvasBlend.share),
     borderSoft,
     hover,
-    // The two hover fills are one value by construction: a row under the pointer and a
-    // button under the pointer are the same lift off the page.
     rowHover: hover,
-    // Dark mode's inset step is the page itself - a control on a panel has nowhere further
-    // to go - while a light page has room for a step darker than the panel.
     hoverInset: blend.hoverInset === 0 ? core.bg : mixOklch(core.bg, core.fg, blend.hoverInset),
     selected,
+    thumbBg,
+    ...primarySurface,
     accentHover: ladder.hover,
     accentActive: ladder.active,
     accentOn: ladder.ink,
     success,
     warn,
-    danger: hold(semantics.danger),
+    danger: hold(baseDanger),
     timingGreen: timingRamp.green,
     timingOrange: timingRamp.orange,
     cacheRateYellow: warn,
     cacheRateGreen: success,
-    // A dark tooltip sits on the surface it floats over; a light page's tooltip is the
-    // inverse block, which is its own foreground step.
     tooltipBg: mode === 'light' ? core.fg : core.surface,
     heatmapQuiet: borderSoft,
     heatmapBusy: core.accent,
     heatmapZeroUnrecorded: borderSoft,
-    // The measured-but-empty day and the ring's empty track are the border step: both are
-    // "there is a slot here and nothing in it".
     heatmapZeroRecorded: core.border,
     heatmapTipLink: core.accent,
-    series: semantics.series.map(hold),
+    edgeShare: inkShareFor(core.bg, core.fg, EDGE_STEPS[mode].edge),
+    liftShare: inkShareFor(core.bg, core.fg, EDGE_STEPS[mode].lift),
+    fineShare: inkShareFor(core.bg, core.fg, EDGE_STEPS[mode].fine),
+    shade: shadeInk(mode, core),
+    series: baseSeries.map(hold),
     seriesTrack: core.border,
     effort: semantics.effort.map(holdBadge),
   };
@@ -587,14 +793,21 @@ export interface BuiltInPalette {
   nameKey: MessageKey;
   descriptionKey: MessageKey;
   core: ThemeCore;
+  overrides?: ThemeSemanticOverrides;
 }
 
 /**
  * The built-in palettes, three per mode.
  *
- * Grouped by mode rather than listed flat, because a palette belongs to a mode: its nine
- * authored values are chosen for that mode's surfaces, and offering a dark palette while
- * the console is light would be offering a palette whose text ladder points the wrong way.
+ * OMC Dark and OMC Light are neutral graphite and neutral paper (OKLCH chroma under 0.006), which is
+ * what sets them apart from Pewter's blue slate and Fog's blue mist. The two modes treat contrast
+ * differently. A dark page dilates the eye and a bright stroke blooms into the dark around it, so the
+ * dark foreground stops near 14:1, inside the -90 perceptual contrast ceiling for dark text. A light
+ * page keeps conventional reading contrast (foreground near 15.5:1), but its ground is off-white
+ * (L 0.977) rather than white, so the shadows have something to fall on and the near-white raised
+ * layer - menus, a segment's thumb, a selected row - stands out from it. Every step clears its floor
+ * (`CONTRAST_FLOORS`). Pewter, Fog, Forest and Sandstone each hold composed, contrast-safe primary
+ * surfaces tailored to their own substrate.
  */
 export const BUILT_IN_PALETTES: readonly BuiltInPalette[] = [
   {
@@ -603,14 +816,14 @@ export const BUILT_IN_PALETTES: readonly BuiltInPalette[] = [
     nameKey: 'theme.omc_dark',
     descriptionKey: 'theme.omc_dark_desc',
     core: {
-      bg: '#121214',
-      surface: '#1c1c1f',
-      elevated: '#222226',
-      fg: '#f4f4f6',
-      fg2: '#a1a1aa',
-      muted: '#71717a',
-      meta: '#52525b',
-      border: '#2c2c30',
+      bg: '#131314',
+      surface: '#1b1b1c',
+      elevated: '#212123',
+      fg: '#e3e3e4',
+      fg2: '#a7a7ab',
+      muted: '#7b7b7f',
+      meta: '#56565a',
+      border: '#2b2b2d',
       accent: '#00a2fb',
     },
   },
@@ -620,59 +833,49 @@ export const BUILT_IN_PALETTES: readonly BuiltInPalette[] = [
     nameKey: 'theme.omc_light',
     descriptionKey: 'theme.omc_light_desc',
     core: {
-      bg: '#ffffff',
-      surface: '#f1f1f3',
-      elevated: '#ffffff',
-      fg: '#1c1c1e',
-      fg2: '#505055',
-      muted: '#787880',
-      meta: '#98989f',
-      border: '#dcdce1',
-      accent: '#005d8f',
+      bg: '#f7f7f8',
+      surface: '#f0f0f2',
+      elevated: '#fefefe',
+      fg: '#1e1e20',
+      fg2: '#525255',
+      muted: '#78787c',
+      meta: '#9b9b9e',
+      border: '#dcdcde',
+      accent: '#1c6ba3',
     },
   },
   {
-    // A dimmed slate. Every neutral shares one steel-blue hue (OKLCH 255) at a low chroma, so the
-    // page, the cards, the rules and the text ladder read as one material rather than as OMC Dark
-    // with its lightness raised. The page sits at L 0.255, where a bright glyph no longer halates, and
-    // the foreground eases off white for the same reason. The accent is an iris blue (hue 262) whose
-    // chroma is held low enough to sit on slate without glowing.
     id: 'pewter',
     mode: 'dark',
     nameKey: 'theme.pewter',
     descriptionKey: 'theme.pewter_desc',
     core: {
-      bg: '#1f2329',
-      surface: '#272c32',
-      elevated: '#2e3339',
-      fg: '#e7eaed',
-      fg2: '#b9bec6',
-      muted: '#8a919b',
-      meta: '#676e77',
-      border: '#383e46',
-      accent: '#86b1ff',
+      bg: '#1c2127',
+      surface: '#242a32',
+      elevated: '#2b323b',
+      fg: '#e8ecf2',
+      fg2: '#b8c0cc',
+      muted: '#8992a0',
+      meta: '#666f7d',
+      border: '#363d49',
+      accent: '#6ea3f0',
     },
   },
   {
-    // A cool mist. The page is a near-white (L 0.978) carrying the same faint blue-grey hue (OKLCH
-    // 248) as its rules and its ink, so the derived canvas behind it reads as a tinted sidebar and the
-    // console keeps a light theme's clarity; a mid-grey page would only lower every contrast at once.
-    // The ink is a cool near-black rather than pure black, and the accent is a saturated cobalt
-    // (hue 260) that carries a link at 5.8:1.
     id: 'fog',
     mode: 'light',
     nameKey: 'theme.fog',
     descriptionKey: 'theme.fog_desc',
     core: {
-      bg: '#f5f8fb',
-      surface: '#edf1f5',
-      elevated: '#fcfeff',
-      fg: '#1a2026',
-      fg2: '#495158',
-      muted: '#6c767f',
-      meta: '#9199a2',
-      border: '#d5dce2',
-      accent: '#225ebf',
+      bg: '#f4f7fa',
+      surface: '#ebf0f5',
+      elevated: '#fcfdff',
+      fg: '#192028',
+      fg2: '#47505a',
+      muted: '#6a7480',
+      meta: '#88929e',
+      border: '#d3dbe3',
+      accent: '#245399',
     },
   },
   {
@@ -687,9 +890,9 @@ export const BUILT_IN_PALETTES: readonly BuiltInPalette[] = [
       fg: '#edf5ef',
       fg2: '#a8b8ad',
       muted: '#74887b',
-      meta: '#4d5f53',
+      meta: '#526558',
       border: '#293a2f',
-      accent: '#6ee7a8',
+      accent: '#7bd4a4',
     },
   },
   {
@@ -699,14 +902,14 @@ export const BUILT_IN_PALETTES: readonly BuiltInPalette[] = [
     descriptionKey: 'theme.sandstone_desc',
     core: {
       bg: '#f8f3e8',
-      surface: '#fffaf0',
-      elevated: '#fffaf0',
+      surface: '#efe8d8',
+      elevated: '#fffcf5',
       fg: '#2f2a22',
       fg2: '#5f574b',
-      muted: '#7c7263',
-      meta: '#a79b89',
+      muted: '#786e5f',
+      meta: '#9b8f7d',
       border: '#ded3c0',
-      accent: '#0f766e',
+      accent: '#0f6d66',
     },
   },
 ];
@@ -720,22 +923,152 @@ export function isBuiltInPaletteId(value: unknown): value is BuiltInPaletteId {
   return typeof value === 'string' && (BUILT_IN_PALETTE_IDS as readonly string[]).includes(value);
 }
 
+const BUILT_IN_ID_SET: ReadonlySet<string> = new Set(BUILT_IN_PALETTE_IDS);
+const EXTERNAL_THEMES = new Map<string, OMCThemeManifest>();
+const RESOLVED_EXTERNAL = new Map<string, ResolvedPalette>();
+const REGISTRY_LISTENERS = new Set<() => void>();
+let registryRevision = 0;
+
+function notifyThemeRegistry() {
+  registryRevision += 1;
+  for (const listener of REGISTRY_LISTENERS) listener();
+}
+
+export function subscribeThemeRegistry(listener: () => void): () => void {
+  REGISTRY_LISTENERS.add(listener);
+  return () => {
+    REGISTRY_LISTENERS.delete(listener);
+  };
+}
+
+export function getThemeRegistryRevision(): number {
+  return registryRevision;
+}
+
+/**
+ * Registers an external or plugin-contributed theme manifest into the active runtime registry.
+ * Returns an `unregister` disposer. Throws with validation details if the manifest is malformed.
+ */
+export function registerTheme(manifestInput: OMCThemeManifest | unknown): () => void {
+  const result = validateThemeManifest(manifestInput, BUILT_IN_ID_SET);
+  if (!result.ok) {
+    throw new Error(`Invalid OMCThemeManifest: ${result.errors.join('; ')}`);
+  }
+  const { manifest } = result;
+  EXTERNAL_THEMES.set(manifest.id, manifest);
+  RESOLVED_EXTERNAL.set(manifest.id, {
+    id: manifest.id,
+    mode: manifest.mode,
+    palette: derivePalette(manifest.mode, manifest.core, manifest.overrides),
+    isCustom: false,
+    nameKey: manifest.mode === 'light' ? 'theme.omc_light' : 'theme.omc_dark',
+    label: manifest.label,
+    description: manifest.description,
+  });
+  notifyThemeRegistry();
+  return () => {
+    unregisterTheme(manifest.id);
+  };
+}
+
+export function unregisterTheme(id: string): boolean {
+  if (BUILT_IN_ID_SET.has(id) || !EXTERNAL_THEMES.has(id)) return false;
+  EXTERNAL_THEMES.delete(id);
+  RESOLVED_EXTERNAL.delete(id);
+  notifyThemeRegistry();
+  return true;
+}
+
+export function getRegisteredTheme(id: string): RegisteredTheme | undefined {
+  if (isBuiltInPaletteId(id)) {
+    const b = getBuiltInPalette(id);
+    return {
+      id: b.id,
+      mode: b.mode,
+      builtIn: true,
+      nameKey: b.nameKey,
+      descriptionKey: b.descriptionKey,
+      core: b.core,
+      overrides: b.overrides,
+    };
+  }
+  const ext = EXTERNAL_THEMES.get(id);
+  if (!ext) return undefined;
+  return {
+    id: ext.id,
+    mode: ext.mode,
+    builtIn: false,
+    label: ext.label,
+    description: ext.description,
+    author: ext.author,
+    version: ext.version,
+    core: ext.core,
+    overrides: ext.overrides,
+  };
+}
+
+export function listRegisteredThemes(mode?: ThemeMode): readonly RegisteredTheme[] {
+  const builtIns: RegisteredTheme[] = BUILT_IN_PALETTES
+    .filter((b) => !mode || b.mode === mode)
+    .map((b) => ({
+      id: b.id,
+      mode: b.mode,
+      builtIn: true,
+      nameKey: b.nameKey,
+      descriptionKey: b.descriptionKey,
+      core: b.core,
+      overrides: b.overrides,
+    }));
+  const externals: RegisteredTheme[] = [...EXTERNAL_THEMES.values()]
+    .filter((ext) => !mode || ext.mode === mode)
+    .map((ext) => ({
+      id: ext.id,
+      mode: ext.mode,
+      builtIn: false,
+      label: ext.label,
+      description: ext.description,
+      author: ext.author,
+      version: ext.version,
+      core: ext.core,
+      overrides: ext.overrides,
+    }));
+  return [...builtIns, ...externals];
+}
+
+export function exportThemeManifest(
+  source: { mode: ThemeMode; core: ThemeCore; overrides?: ThemeSemanticOverrides },
+  metadata: { id: string; label: LocalizedThemeText; description?: LocalizedThemeText; author?: string; version?: string },
+): OMCThemeManifest {
+  return {
+    schemaVersion: 1,
+    id: metadata.id,
+    mode: source.mode,
+    label: metadata.label,
+    ...(metadata.description ? { description: metadata.description } : {}),
+    ...(metadata.author ? { author: metadata.author } : {}),
+    ...(metadata.version ? { version: metadata.version } : {}),
+    core: { ...source.core },
+    ...(source.overrides ? { overrides: source.overrides } : {}),
+  };
+}
+
 export function isPaletteRef(value: unknown): value is PaletteRef {
-  return value === 'custom' || isBuiltInPaletteId(value);
+  return value === 'custom' || isBuiltInPaletteId(value) || isValidExternalThemeId(value, BUILT_IN_ID_SET);
 }
 
 /**
  * Whether a reference may be used *by this mode*.
  *
- * `isPaletteRef` answers "is this a palette id at all"; this answers the question the resolver
- * actually depends on. A palette is authored for one mode's surfaces with its text ladder pointing one
- * way, so `palettes.dark = 'omc-light'` is a document that claims dark mode and paints a light console
- * - a state the UI cannot produce and a stored document must not be able to either, since the value
- * arrives from `localStorage` and from a preference endpoint that accepts any JSON.
+ * Built-in palettes are strictly bound to their own mode (`palettes.dark = 'omc-light'` is
+ * rejected). Syntactically valid external theme ids are accepted if either not yet loaded (so async
+ * plugin themes survive preference boot) or registered for the matching mode.
  */
 export function isPaletteRefForMode(mode: ThemeMode, value: unknown): value is PaletteRef {
   if (value === 'custom') return true;
-  return isBuiltInPaletteId(value) && getBuiltInPalette(value).mode === mode;
+  if (isBuiltInPaletteId(value)) return getBuiltInPalette(value).mode === mode;
+  if (!isValidExternalThemeId(value, BUILT_IN_ID_SET)) return false;
+  const registered = EXTERNAL_THEMES.get(value);
+  return !registered || registered.mode === mode;
 }
 
 export function getBuiltInPalette(id: BuiltInPaletteId): BuiltInPalette {
@@ -767,14 +1100,9 @@ export interface ResolvedPalette {
   mode: ThemeMode;
   palette: ThemePalette;
   isCustom: boolean;
-  /**
-   * The i18n key naming the palette.
-   *
-   * Every palette has one, an operator's own included: `omc.palette_custom` is what a custom palette
-   * is called in each catalogue, which is what keeps the header's tooltip and the card's label
-   * readable in whichever language the console is set to.
-   */
   nameKey: string;
+  label?: LocalizedThemeText;
+  description?: LocalizedThemeText;
 }
 
 export function customPaletteId(mode: ThemeMode): ResolvedPaletteId {
@@ -798,18 +1126,16 @@ export function resolvePalette(mode: ThemeMode, ref: PaletteRef, custom: CustomP
       nameKey: 'omc.palette_custom',
     };
   }
-  if (ref !== 'custom') return resolvedBuiltInPalette(ref);
+  if (isBuiltInPaletteId(ref) && getBuiltInPalette(ref).mode === mode) {
+    return resolvedBuiltInPalette(ref);
+  }
+  if (ref !== 'custom') {
+    const ext = RESOLVED_EXTERNAL.get(ref);
+    if (ext && ext.mode === mode) return ext;
+  }
   return resolvedBuiltInPalette(builtInPalettesForMode(mode)[0].id);
 }
 
-/**
- * The derived palette of each registered palette, computed once.
- *
- * The derivation is a search - the accent ladder deepens a fill until its label clears 4.5:1 - so
- * resolving all six on every settings render would run that search twelve times to draw six previews
- * that cannot have changed. A registered palette's nine tokens are constants, so its derivation is
- * one too, and this is where that is remembered.
- */
 const RESOLVED_BUILT_IN = new Map<BuiltInPaletteId, ResolvedPalette>();
 
 export function resolvedBuiltInPalette(id: BuiltInPaletteId): ResolvedPalette {
@@ -819,7 +1145,7 @@ export function resolvedBuiltInPalette(id: BuiltInPaletteId): ResolvedPalette {
   const resolved: ResolvedPalette = {
     id,
     mode: definition.mode,
-    palette: derivePalette(definition.mode, definition.core),
+    palette: derivePalette(definition.mode, definition.core, definition.overrides),
     isCustom: false,
     nameKey: definition.nameKey,
   };
@@ -827,9 +1153,14 @@ export function resolvedBuiltInPalette(id: BuiltInPaletteId): ResolvedPalette {
   return resolved;
 }
 
+export function resolvedRegisteredTheme(id: string): ResolvedPalette | undefined {
+  if (isBuiltInPaletteId(id)) return resolvedBuiltInPalette(id);
+  return RESOLVED_EXTERNAL.get(id);
+}
+
 /** The reference a freshly opened editor starts from, given the mode's current selection. */
 function defaultCustomBase(mode: ThemeMode, ref: PaletteRef): BuiltInPaletteId {
-  if (isPaletteRefForMode(mode, ref) && ref !== 'custom') return ref;
+  if (isBuiltInPaletteId(ref) && getBuiltInPalette(ref).mode === mode) return ref;
   return builtInPalettesForMode(mode)[0].id;
 }
 

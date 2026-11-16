@@ -9,13 +9,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.request-filters > .ant-select {
+.request-filters > :is([data-slot='select-trigger'], [data-slot='combobox-trigger']) {
   flex: 1 1 130px;
   min-width: 130px;
   max-width: 240px;
 }
 .request-filters .request-search {
-  flex: 2 1 240px;
+  flex: 2 1 200px;
   width: auto;
 }
 /* The multi-select facets hold several tags, so they get more room than a
@@ -26,8 +26,8 @@
    "More filters" fit on one line, and the three fields take whatever the row has left above that. */
 .request-filters > .req-facet-select,
 .request-filters > .req-time-button {
-  flex: 1 1 180px;
-  min-width: 160px;
+  flex: 1 1 160px;
+  min-width: 140px;
   max-width: 280px;
 }
 .request-filters > .req-result-segmented {
@@ -43,15 +43,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--surface);
-  font-size: var(--text-2xs);
-  font-weight: 600;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-on);
+  font-size: var(--text-xs);
+  font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -70,13 +70,12 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-.request-toolbar-bottom .ant-select {
+.request-toolbar-bottom [data-slot='select-trigger'] {
   min-width: 140px;
 }
 /* ── phone ───────────────────────────────────────────────────────────────────
-   Two rows. The search box and the way into the full filter panel hold the first; the second is
-   one strip of single-tap choices that swipes inside itself, because five wrapped rows of
-   controls left less than half the screen to the records they filter. */
+   Three rows that each fill the width and none that scrolls sideways: the search with the way into
+   the filter panel, the window with the verdict, and the grouping with the model view. */
 .request-toolbar.is-phone {
   gap: 8px;
 }
@@ -87,31 +86,23 @@
   flex: 1 1 0;
   min-width: 0;
 }
-.request-filter-strip {
+
+.request-phone-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* Bled to the page's own edge, so a control cut off by it reads as "more this way". */
-  margin-inline: -12px;
-  padding-inline: 12px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-}
-.request-filter-strip::-webkit-scrollbar {
-  display: none;
-}
-.request-filter-strip > * {
-  flex: none;
-}
-.request-filter-strip > .req-time-button {
-  width: auto;
   min-width: 0;
+}
+.request-phone-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.request-phone-row > .req-time-button {
   max-width: none;
 }
-.request-filter-strip > .ant-select {
-  width: 132px;
+.request-phone-row > :is([data-slot='segmented'], .req-result-segmented, .req-model-view-toggle) {
+  flex: 0 0 auto;
 }
-.request-filter-strip > .req-facet-select {
-  width: 148px;
+.request-toolbar.is-phone .req-reset-filters {
+  flex: none;
 }

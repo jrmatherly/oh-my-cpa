@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -706,6 +707,13 @@ func TestFillDashboardBucketsFoldsEdgeBuckets(t *testing.T) {
 	if costNanos != 5_000_000_000 {
 		t.Fatalf("cost lost on fold: got %d, want 5000000000", costNanos)
 	}
+
+	// A calendar day whose midnight sits a quarter past a grid line, read minutes after
+	// midnight, reaches no grid line yet: its traffic still needs a point to plot.
+	early := fillDashboardBuckets(bucket*20+bucket/4, bucket*20+bucket/2, bucket, buckets[1:], costs[1:])
+	if len(early) != 1 || early[0].TimeMS != bucket*20+bucket/4 || early[0].Requests != 5 || early[0].CostNanos != 3_000_000_000 {
+		t.Fatalf("a window before its first grid line lost its traffic: %+v", early)
+	}
 }
 
 // TestDashboardSeriesCarriesPerBucketCacheAndCost pins the properties the four
@@ -844,5 +852,208 @@ func TestDashboardRealtimePresetIsFifteenMinutes(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || tail.Live.BucketMS != body.Window.BucketMS {
 		t.Fatalf("tail pacing disagrees with the window: %d vs %d", tail.Live.BucketMS, body.Window.BucketMS)
+	}
+}
+
+// A calendar preset is a unit of the deployment's calendar: "yesterday" is the
+// closed day before today's local midnight, and "today" runs from that midnight to
+// now. Closed units keep the full-unit grid, while running units size their buckets
+// from the elapsed stretch so minutes after midnight do not collapse into a single
+// 30-minute point, and compare against the same elapsed stretch of the previous unit.
+func TestDashboardCalendarPresetsFollowTheCivilDay(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recent := time.Now().In(shanghai).AddDate(0, 0, -2)
+	midnight := time.Date(recent.Year(), recent.Month(), recent.Day(), 0, 0, 0, 0, shanghai)
+	currentNow := midnight.Add(5 * time.Minute).UTC()
+	client, baseURL, repo := startDashboardTestServer(t, nil, func(handler *Handler) {
+		handler.nowFn = func() time.Time { return currentNow }
+	})
+	repo.Timezone().Apply(shanghai)
+	seedEvents(t, repo, currentNow, []repository.UsageDecoded{
+		// Unpriced yesterday event within the 00:00–00:05 same-stretch window.
+		{Event: eventFor("cal-yesterday-early-unpriced", midnight.Add(-24*time.Hour+2*time.Minute), usage.TokenStats{TotalTokens: 15}, false)},
+		// Yesterday afternoon: counts toward "yesterday" total, excluded from today's 00:00–00:05 pace comparison.
+		{Event: eventFor("cal-yesterday-late", midnight.Add(-12*time.Hour), usage.TokenStats{TotalTokens: 50}, false)},
+		// Unpriced today event at 00:03.
+		{Event: eventFor("cal-today-unpriced", midnight.Add(3*time.Minute), usage.TokenStats{TotalTokens: 7}, false)},
+		// Day before yesterday: counts toward yesterday's comparison window.
+		{Event: eventFor("cal-older", midnight.Add(-36*time.Hour), usage.TokenStats{TotalTokens: 9}, false)},
+	})
+	// Seed one priced request in yesterday's 00:00–00:05 stretch and one priced request in today's
+	// 00:00–00:05 stretch so both windows hold a mix of priced and unpriced rows.
+	insertPriced := func(id string, at time.Time, tokens, costNanos int64) {
+		t.Helper()
+		ts := at.UnixMilli()
+		if _, errExec := repo.SQL().ExecContext(context.Background(),
+			`INSERT INTO usage_events
+			 (instance_id, event_key, request_id, api_group_key, model, auth_index, timestamp_ms,
+			  created_at_ms, input_tokens, total_tokens, cost_nanos, pricing_status)
+			 VALUES ('default', ?, ?, 'group-cal', 'gpt-5', 'auth-1', ?, ?, ?, ?, ?, 'priced')`,
+			id, id, ts, ts, tokens, tokens, costNanos); errExec != nil {
+			t.Fatal(errExec)
+		}
+	}
+	insertPriced("cal-yesterday-early-priced", midnight.Add(-24*time.Hour+1*time.Minute), 20, 250_000_000)
+	insertPriced("cal-today-priced", midnight.Add(2*time.Minute), 13, 400_000_000)
+
+	readRaw := func(path string) []byte {
+		t.Helper()
+		response, payload := getJSON(t, client, baseURL+path)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s status = %d body %s", path, response.StatusCode, payload)
+		}
+		return payload
+	}
+	read := func(preset string) dashboardResponse {
+		t.Helper()
+		payload := readRaw("/omc/api/v1/management/dashboard?preset=" + preset)
+		var body dashboardResponse
+		if err := json.Unmarshal(payload, &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	assertWireCostFields := func(label string, payload []byte, wantCmpRequests, wantCmpTokens int64) {
+		t.Helper()
+		var wire struct {
+			Window struct {
+				FromMS int64 `json:"from"`
+				ToMS   int64 `json:"to"`
+			} `json:"window"`
+			Metrics struct {
+				CostNanos      *int64 `json:"cost_nanos"`
+				CostedRequests *int64 `json:"costed_requests"`
+			} `json:"metrics"`
+			Comparison *struct {
+				FromMS                 int64    `json:"from"`
+				ToMS                   int64    `json:"to"`
+				Requests               int64    `json:"requests"`
+				Tokens                 int64    `json:"tokens"`
+				CostNanos              *int64   `json:"cost_nanos"`
+				CostedRequests         *int64   `json:"costed_requests"`
+				BaselineRequests       *float64 `json:"baseline_requests"`
+				BaselineTokens         *float64 `json:"baseline_tokens"`
+				BaselineCostNanos      *float64 `json:"baseline_cost_nanos"`
+				BaselineCostedRequests *float64 `json:"baseline_costed_requests"`
+			} `json:"comparison"`
+		}
+		if err := json.Unmarshal(payload, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if wire.Metrics.CostNanos == nil || *wire.Metrics.CostNanos != 400_000_000 || wire.Metrics.CostedRequests == nil || *wire.Metrics.CostedRequests != 1 {
+			t.Fatalf("%s metrics wire cost fields wrong: %+v", label, wire.Metrics)
+		}
+		if wire.Comparison == nil || wire.Comparison.Requests != wantCmpRequests || wire.Comparison.Tokens != wantCmpTokens || wire.Comparison.CostNanos == nil || *wire.Comparison.CostNanos != 250_000_000 || wire.Comparison.CostedRequests == nil || *wire.Comparison.CostedRequests != 1 {
+			t.Fatalf("%s comparison wire cost fields wrong: %+v", label, wire.Comparison)
+		}
+		scale := float64(wire.Window.ToMS-wire.Window.FromMS+1) / float64(wire.Comparison.ToMS-wire.Comparison.FromMS+1)
+		wantBaselineReqs := float64(wantCmpRequests) * scale
+		wantBaselineTokens := float64(wantCmpTokens) * scale
+		wantBaselineCostNanos := float64(250_000_000) * scale
+		wantBaselineCosted := float64(1) * scale
+		if wire.Comparison.BaselineRequests == nil || math.Abs(*wire.Comparison.BaselineRequests-wantBaselineReqs) > 1e-6 ||
+			wire.Comparison.BaselineTokens == nil || math.Abs(*wire.Comparison.BaselineTokens-wantBaselineTokens) > 1e-4 ||
+			wire.Comparison.BaselineCostNanos == nil || math.Abs(*wire.Comparison.BaselineCostNanos-wantBaselineCostNanos) > 1e-2 ||
+			wire.Comparison.BaselineCostedRequests == nil || math.Abs(*wire.Comparison.BaselineCostedRequests-wantBaselineCosted) > 1e-6 {
+			t.Fatalf("%s comparison baseline wire values wrong (scale=%v): %+v", label, scale, wire.Comparison)
+		}
+	}
+
+	yesterday := read("yesterday")
+	if yesterday.Window.Preset != "yesterday" || yesterday.Window.FromMS != midnight.Add(-24*time.Hour).UnixMilli() || yesterday.Window.ToMS != midnight.UnixMilli()-1 {
+		t.Fatalf("yesterday window wrong: %+v", yesterday.Window)
+	}
+	if yesterday.Window.BucketMS != (30 * time.Minute).Milliseconds() {
+		t.Fatalf("closed yesterday must keep 30m buckets, got %d", yesterday.Window.BucketMS)
+	}
+	if yesterday.Requests.Total != 3 {
+		t.Fatalf("yesterday must hold all three of its records: %+v", yesterday.Requests)
+	}
+	if yesterday.Comparison == nil || yesterday.Comparison.SameStretch || yesterday.Comparison.Requests != 1 || yesterday.Comparison.Tokens != 9 {
+		t.Fatalf("yesterday comparison must cover the full day before yesterday: %+v", yesterday.Comparison)
+	}
+
+	todayPayload := readRaw("/omc/api/v1/management/dashboard?preset=today")
+	// Full yesterday holds all 3 records (15 + 20 + 50 = 85 tokens); baseline scales by 5m / 24h.
+	assertWireCostFields("today full", todayPayload, 3, 85)
+	var today dashboardResponse
+	if err := json.Unmarshal(todayPayload, &today); err != nil {
+		t.Fatal(err)
+	}
+	if today.Window.FromMS != midnight.UnixMilli() || !today.Window.OpenEnd || today.Requests.Total != 2 {
+		t.Fatalf("today window wrong: %+v requests %+v", today.Window, today.Requests)
+	}
+	if today.Window.BucketMS != time.Minute.Milliseconds() || len(today.Requests.Series) != 6 {
+		t.Fatalf("today at 00:05 must use 1m buckets (6 points), got bucket=%d len=%d", today.Window.BucketMS, len(today.Requests.Series))
+	}
+	if today.Comparison == nil || today.Comparison.SameStretch || today.Comparison.Requests != 3 || today.Comparison.Tokens != 85 {
+		t.Fatalf("today at 00:05 must draw comparison from full yesterday: %+v", today.Comparison)
+	}
+	expectedScale := float64(today.Window.ToMS-today.Window.FromMS+1) / float64(today.Comparison.ToMS-today.Comparison.FromMS+1)
+	if math.Abs(today.Comparison.BaselineTokens-85*expectedScale) > 1e-6 {
+		t.Fatalf("today baseline tokens = %v, want %v", today.Comparison.BaselineTokens, 85*expectedScale)
+	}
+
+	// Tail endpoint carries the same adaptive bucket width, full-period baseline and wire cost fields.
+	tailPayload := readRaw("/omc/api/v1/management/dashboard/tail?preset=today")
+	assertWireCostFields("today tail", tailPayload, 3, 85)
+	var tailBody dashboardTailResponse
+	if err := json.Unmarshal(tailPayload, &tailBody); err != nil {
+		t.Fatal(err)
+	}
+	if tailBody.Live.BucketMS != today.Window.BucketMS || tailBody.Comparison == nil || tailBody.Comparison.Tokens != 85 {
+		t.Fatalf("today tail disagreed with full response: live=%+v cmp=%+v", tailBody.Live, tailBody.Comparison)
+	}
+
+	// Exact local midnight (00:00:00.000) stays valid instead of failing with a zero-length window,
+	// and Monday 00:00:00 / 1st-of-month 00:05 resolve fine-grained buckets rather than 6h/24h singletons.
+	currentNow = midnight.UTC()
+	atMidnight := read("today")
+	if atMidnight.Window.BucketMS != time.Minute.Milliseconds() || len(atMidnight.Requests.Series) != 1 {
+		t.Fatalf("exact midnight must succeed with 1m bucket: %+v len=%d", atMidnight.Window, len(atMidnight.Requests.Series))
+	}
+
+	sinceMonday := (int(recent.Weekday()) + 6) % 7
+	mondayMorning := time.Date(recent.Year(), recent.Month(), recent.Day()-sinceMonday, 0, 5, 0, 0, shanghai)
+	currentNow = mondayMorning.UTC()
+	thisWeek := read("this_week")
+	if thisWeek.Window.BucketMS != time.Minute.Milliseconds() || len(thisWeek.Requests.Series) != 6 {
+		t.Fatalf("this_week at Monday 00:05 must use 1m buckets, got bucket=%d len=%d", thisWeek.Window.BucketMS, len(thisWeek.Requests.Series))
+	}
+
+	firstOfMonth := time.Date(recent.Year(), recent.Month(), 1, 0, 5, 0, 0, shanghai)
+	currentNow = firstOfMonth.UTC()
+	thisMonth := read("this_month")
+	if thisMonth.Window.BucketMS != time.Minute.Milliseconds() || len(thisMonth.Requests.Series) != 6 {
+		t.Fatalf("this_month at 00:05 on day 1 must use 1m buckets, got bucket=%d len=%d", thisMonth.Window.BucketMS, len(thisMonth.Requests.Series))
+	}
+
+	// Late in the day (> 12h elapsed), "today" converges to the same 30m grid as "yesterday".
+	currentNow = midnight.Add(18 * time.Hour).UTC()
+	lateToday := read("today")
+	if lateToday.Window.BucketMS != (30 * time.Minute).Milliseconds() {
+		t.Fatalf("late today must converge to 30m buckets, got %d", lateToday.Window.BucketMS)
+	}
+
+	// March 31 this_month compares against the full month of February rather than a partial stretch.
+	marchEnd := time.Date(2026, time.March, 31, 9, 0, 0, 0, shanghai)
+	marchFrom, marchTo, marchSameStretch, marchOK := dashboardComparisonBounds(dashboardWindow{
+		Preset: "this_month",
+		FromMS: time.Date(2026, time.March, 1, 0, 0, 0, 0, shanghai).UnixMilli(),
+		ToMS:   marchEnd.UnixMilli(),
+	}, shanghai)
+	febStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, shanghai).UnixMilli()
+	febFullEnd := time.Date(2026, time.March, 1, 0, 0, 0, 0, shanghai).UnixMilli() - 1
+	if !marchOK || marchSameStretch || marchFrom != febStart || marchTo != febFullEnd {
+		t.Fatalf("March 31 this_month comparison must cover full February: from=%d to=%d sameStretch=%v", marchFrom, marchTo, marchSameStretch)
+	}
+
+	// All-time starts at the first recorded request, so no preceding comparison window exists.
+	allTime := read("all")
+	if allTime.Comparison != nil {
+		t.Fatalf("all-time must omit comparison, got %+v", allTime.Comparison)
 	}
 }

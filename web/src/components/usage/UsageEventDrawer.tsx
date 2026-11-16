@@ -1,10 +1,11 @@
 import { StructuredUsageView } from './StructuredUsageView';
 import { formatCurrency } from '../../types/currencyDisplay';
 import { useDisplayCurrency } from '../../types/CurrencyDisplayContext';
-import { TokenAccountingNote } from './TokenAccountingNote';
+import { TokenAccountingNote, tokenAccountingMessage } from './TokenAccountingNote';
 import { useTimeZone } from '../../utils/TimeZoneProvider';
 import React from 'react';
-import { Button, Tabs } from 'antd';
+import { Tabs } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import { FactList } from '../common/FactList';
 import { ParagraphPlaceholder } from '../common/ContentPlaceholder';
 import {
@@ -23,7 +24,6 @@ import { api, ApiError } from '../../api/client';
 import { displayEffortName } from '../../theme/effortScale';
 import { durationScaleMix } from '../../theme/durationScale';
 import { useT } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
 import { maskKeyText } from '../../utils/maskKey';
 import { useTokenDisplayStyle } from '../../types/tokenDisplayContext';
 import { ModelMark } from '../ModelMark';
@@ -35,6 +35,7 @@ import {
   resolveProviderInfo,
   type CredentialIndex,
   type ProviderLookupEntry,
+  type ProviderResolutionArchive,
 } from '../../types/usageEventIdentity';
 import type { PluginOAuthLogos } from '../../types/pluginOAuthProviders';
 import { RequestOverview } from './RequestOverview';
@@ -59,7 +60,6 @@ import { CopyButton } from '../common/CopyButton';
 import './UsageEventDrawer.css';
 import './requestMarks.css';
 import { Tooltip } from '../common/Tooltip';
-import { TAB_OVERFLOW } from '../common/tabOverflow';
 import { AppModal } from '../common/AppModal';
 
 export interface UsageEventDrawerProps {
@@ -75,6 +75,7 @@ export interface UsageEventDrawerProps {
   multiPortalKeys?: ReadonlySet<string>;
   pluginTitles?: ReadonlyMap<string, string>;
   isProviderCatalogUnknown?: boolean;
+  archive?: ProviderResolutionArchive;
 }
 
 export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
@@ -89,11 +90,11 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
   multiPortalKeys,
   pluginTitles,
   isProviderCatalogUnknown,
+  archive,
 }) => {
   useTimeZone();
   const { currency } = useDisplayCurrency();
   const t = useT();
-  const isDemo = isDemoMode();
   // The drawer's token cards follow the console's unit style; the values are
   // exact counts, so the full form is what this surface prints.
   const { style: tokenStyle, modelView, tpsMode } = useTokenDisplayStyle();
@@ -154,7 +155,7 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
     />
   );
   const providerInfo = event
-    ? resolveProviderInfo(event, credentials, providerIcons, configuredProviders, pluginLogos, isProviderCatalogUnknown, pluginTitles, multiPortalKeys)
+    ? resolveProviderInfo(event, credentials, providerIcons, configuredProviders, pluginLogos, isProviderCatalogUnknown, pluginTitles, multiPortalKeys, archive)
     : undefined;
   // The overview names the credential the way the list's provider cell does: an OAuth account,
   // else the provider key that answered, else whatever identifies the credential at all.
@@ -242,21 +243,21 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
             })}
           </span>
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            variant="ghost"
             icon={<UpOutlined />}
             disabled={!hasPrev}
             onClick={handlePrev}
-            title={`${t('events.prev_item')} ([)`}
+            data-tip={`${t('events.prev_item')} ([)`}
             aria-label={t('events.prev_item')}
           />
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            variant="ghost"
             icon={<DownOutlined />}
             disabled={!hasNext}
             onClick={handleNext}
-            title={`${t('events.next_item')} (])`}
+            data-tip={`${t('events.next_item')} (])`}
             aria-label={t('events.next_item')}
           />
         </div>
@@ -358,24 +359,24 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
                 <dt>{t('events.col_tokens')}</dt>
                 {/* The headline is compact to match every other token readout; the exact count is the
                     accessible name, so the rounding never becomes the only number available. */}
-                <dd title={formatTokensFull(event.tokens.total)}>{formatTokens(event.tokens.total, tokenStyle)}</dd>
+                <dd data-tip={formatTokensFull(event.tokens.total)}>{formatTokens(event.tokens.total, tokenStyle)}</dd>
               </div>
               <div>
                 <dt>{t('events.col_cost')}</dt>
                 {event.cost_usd != null ? (
                   <dd>{formatCurrency(event.cost_usd, currency)}</dd>
                 ) : (
-                  <Tooltip title={t('events.cost_unpriced')}>
+                  // Incomplete token counts are why such a request has no cost, and pricing cannot add one.
+                  <Tooltip title={event.token_accounting && event.token_accounting.status !== 'complete' ? tokenAccountingMessage(t, event.token_accounting) : t('events.cost_unpriced')}>
                     <dd tabIndex={0} className="terminal-muted">{t('events.cost_unpriced_short')}</dd>
                   </Tooltip>
                 )}
               </div>
             </dl>
           </header>
-          <Tabs more={TAB_OVERFLOW}
+          <Tabs
             activeKey={tab}
             onChange={setTab}
-            animated={false}
             items={[
               {
                 key: 'overview',
@@ -526,10 +527,7 @@ export const UsageEventDrawer: React.FC<UsageEventDrawerProps> = ({
                         <Button
                           aria-label={t('events.download_log')}
                           icon={<DownloadOutlined />}
-                          // A request log quotes the request itself, so the demonstration
-                          // keeps it out of reach; the server refuses the download as well.
-                          disabled={!event.has_request_log || !event.request_id || isDemo}
-                          title={isDemo ? t('demo.blocked') : undefined}
+                          disabled={!event.has_request_log || !event.request_id}
                           onClick={() => setDownloadModalOpen(true)}
                         >
                           {t('events.download_log')}

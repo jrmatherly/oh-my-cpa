@@ -1,4 +1,5 @@
-import type { MessageKey } from '../i18n/catalog';
+import { CALENDAR_PRESETS, isCalendarPreset, isClosedCalendarPreset, type CalendarPreset } from './calendarPresets';
+import { compareMetric, emptyMeasures, metricValue, type Measures, type MetricComparison } from './insightsCube';
 /** Response shapes for the dashboard, which reads permanent usage facts. */
 
 export interface DashboardWindow {
@@ -57,33 +58,70 @@ export interface DashboardMetrics {
   tpm: number | null;
   cache_rate: number | null;
   cost: number;
+  cost_nanos?: number;
+  costed_requests?: number;
   cost_source: string;
   cost_note: string;
   avg_latency_ms: number | null;
   avg_ttft_ms: number | null;
 }
 
+export interface DashboardComparison {
+  from: number;
+  to: number;
+  same_stretch: boolean;
+  requests: number;
+  tokens: number;
+  cost_nanos: number;
+  costed_requests: number;
+  baseline_requests?: number;
+  baseline_tokens?: number;
+  baseline_cost_nanos?: number;
+  baseline_costed_requests?: number;
+}
+
+export type CostCaptionState =
+  | { kind: 'per_request'; perRequestUsd: number }
+  | { kind: 'partial'; pricedRequests: number | null; totalRequests: number; showUnpricedLink: boolean }
+  | { kind: 'placeholder'; showUnpricedLink: boolean };
+
 /**
- * costNoteKey names the caption the cost tile shows for a window.
+ * resolveCostCaption derives the one-line supporting caption under the cost tile.
  *
- * The server reports three states and they are not interchangeable: a window with no
- * request at all, a window whose requests were partly unpriced, and a window whose
- * requests all locked a price. Only the first two are caveats. Reading the last one as
- * a caveat - which is what a two-branch check does, because "estimated" is not
- * "partial" - labels a complete total as if no price were configured.
- *
- * Returns undefined when the total is complete and needs no caption.
+ * When every request in the window has a price ('estimated'), the tile shows the
+ * per-request average so the card keeps the same supporting-figure rhythm and baseline
+ * as RPM, TPM and Cache rate. Partial and unpriced windows keep concise labels inline
+ * while reserving the full caveat sentence for the tooltip.
  */
-export function costNoteKey(costSource: string): MessageKey | undefined {
-  switch (costSource) {
-    case 'partial':
-      return 'dash.cost_partial_note';
-    case 'estimated':
-      return undefined;
-    default:
-      // 'placeholder' and 'none' both mean nothing in this window was priced.
-      return 'dash.cost_placeholder_note';
+export function resolveCostCaption(data: DashboardResponse, unpricedModels: number): CostCaptionState {
+  const source = data.metrics.cost_source;
+  const totalRequests = data.requests.total;
+  const hasUnpricedModels = unpricedModels > 0;
+  if (source === 'estimated') {
+    if (totalRequests > 0) {
+      const costUsd = data.metrics.cost_nanos != null
+        ? data.metrics.cost_nanos / 1_000_000_000
+        : data.metrics.cost;
+      return { kind: 'per_request', perRequestUsd: costUsd / totalRequests };
+    }
+    return { kind: 'placeholder', showUnpricedLink: false };
   }
+  if (source === 'partial') {
+    const pricedRequests = data.metrics.costed_requests ?? null;
+    if (pricedRequests === 0) {
+      return { kind: 'placeholder', showUnpricedLink: hasUnpricedModels };
+    }
+    return {
+      kind: 'partial',
+      pricedRequests: pricedRequests !== null && pricedRequests > 0 && pricedRequests < totalRequests
+        ? pricedRequests
+        : null,
+      totalRequests,
+      showUnpricedLink: hasUnpricedModels,
+    };
+  }
+  // 'placeholder', 'none', or an unknown state never reads as priced.
+  return { kind: 'placeholder', showUnpricedLink: hasUnpricedModels };
 }
 
 export interface DashboardCoverage {
@@ -99,18 +137,104 @@ export interface DashboardResponse {
   requests: DashboardRequests;
   tokens: DashboardTokens;
   metrics: DashboardMetrics;
+  comparison?: DashboardComparison;
   coverage: DashboardCoverage;
   partial_errors: string[];
 }
 
+export type DashboardComparableMetric = 'requests' | 'tokens' | 'cost';
+
+export interface DashboardMetricDelta {
+  comparison: MetricComparison;
+  previousValue: number | null;
+  window: { from: number; to: number };
+  isSameStretch: boolean;
+}
+
+function currentMeasuresOf(data: DashboardResponse): Measures {
+  const measures = emptyMeasures();
+  measures.requests = data.requests.total;
+  measures.failures = data.requests.failed;
+  measures.totalTokens = data.tokens.total;
+  measures.costNanos = data.metrics.cost_nanos ?? Math.round(data.metrics.cost * 1_000_000_000);
+  measures.costedRequests = data.metrics.costed_requests
+    ?? (data.metrics.cost_source === 'estimated' || data.metrics.cost_source === 'partial' ? data.requests.total : 0);
+  return measures;
+}
+
+function previousMeasuresOf(comparison: DashboardComparison): Measures {
+  const measures = emptyMeasures();
+  measures.requests = comparison.requests;
+  measures.totalTokens = comparison.tokens;
+  measures.costNanos = comparison.cost_nanos;
+  measures.costedRequests = comparison.costed_requests;
+  return measures;
+}
+
+function baselineMeasuresOf(comparison: DashboardComparison): Measures {
+  const measures = emptyMeasures();
+  measures.requests = comparison.baseline_requests ?? comparison.requests;
+  measures.totalTokens = comparison.baseline_tokens ?? comparison.tokens;
+  measures.costNanos = comparison.baseline_cost_nanos ?? comparison.cost_nanos;
+  measures.costedRequests = comparison.baseline_costed_requests ?? comparison.costed_requests;
+  return measures;
+}
+
 /**
- * Range presets offered by the dashboard picker, shortest first. "15m" is the
- * one the picker labels Live.
+ * Evaluates a KPI tile's change against the server's robust previous-period baseline
+ * using the same Poisson noise-floor rules as Insights. Returns null when neither window
+ * carried traffic so an idle deployment is not littered with empty deltas.
+ */
+export function dashboardMetricComparison(
+  data: DashboardResponse,
+  metric: DashboardComparableMetric,
+): DashboardMetricDelta | null {
+  const previousBlock = data.comparison;
+  if (!previousBlock) return null;
+  if (data.requests.total === 0 && previousBlock.requests === 0) return null;
+  const current = currentMeasuresOf(data);
+  const previousRaw = previousMeasuresOf(previousBlock);
+  const baseline = baselineMeasuresOf(previousBlock);
+  if (metric === 'cost' && current.costedRequests === 0 && previousRaw.costedRequests === 0) return null;
+  // Before the first request of an open calendar unit arrives, '-100%' only restates that
+  // the period just started; keep the previous baseline figure without a percentage alarm.
+  const isUnstartedOpenUnit = data.requests.total === 0 && isOpenCalendarPreset(data.window.preset);
+  return {
+    comparison: isUnstartedOpenUnit ? { kind: 'none' } : compareMetric(current, baseline, metric, previousRaw),
+    previousValue: metricValue(baseline, metric),
+    window: { from: previousBlock.from, to: previousBlock.to },
+    isSameStretch: false,
+  };
+}
+
+/** Whether a preset is an open calendar unit still accumulating ('today', 'this_week', 'this_month'). */
+export function isOpenCalendarPreset(preset: string | undefined): preset is 'today' | 'this_week' | 'this_month' {
+  return isCalendarPreset(preset) && !isClosedCalendarPreset(preset);
+}
+
+/** Maps an open calendar unit to its closed predecessor for one-click fallback when the new period is quiet. */
+export function previousCalendarPreset(preset: string | undefined): CalendarPreset | undefined {
+  switch (preset) {
+    case 'today':
+      return 'yesterday';
+    case 'this_week':
+      return 'last_week';
+    case 'this_month':
+      return 'last_month';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Spans back from now offered by the dashboard picker, shortest first. The picker
+ * lists the calendar units ahead of them.
  *
  * "all" has no length of its own: the server starts it at the deployment's first
  * usage record, which is why no table here maps a preset to a span.
  */
-export const DASHBOARD_PRESETS = ['15m', '1h', '6h', '24h', '7d', '30d', '90d', 'all'] as const;
+export const DASHBOARD_SPAN_PRESETS = ['1h', '6h', '24h', '7d', '30d', '90d', 'all'] as const;
+export const DASHBOARD_PRESETS = [...CALENDAR_PRESETS, ...DASHBOARD_SPAN_PRESETS] as const;
 export type DashboardPreset = (typeof DASHBOARD_PRESETS)[number];
 
 /**
@@ -127,6 +251,31 @@ export function requestListPreset(preset: DashboardPreset): string {
   return preset === 'all' ? REQUEST_LIST_LONGEST_PRESET : preset;
 }
 
+/**
+ * The request-list query a dashboard drill-down opens.
+ *
+ * A span carries over by name. A calendar unit has no name the request list knows, so it
+ * carries over as the bounds the server resolved it to; the current unit stays open so the
+ * list keeps following the clock the way the dashboard did.
+ */
+export function requestListWindowParams(range: DashboardRange, window: DashboardWindow | undefined): URLSearchParams {
+  const search = new URLSearchParams();
+  if (isCalendarPreset(range.preset)) {
+    if (!window) {
+      search.set('preset', '24h');
+      return search;
+    }
+    search.set('from', String(window.from));
+    if (isClosedCalendarPreset(range.preset)) search.set('to', String(window.to));
+  } else if (range.preset) {
+    search.set('preset', requestListPreset(range.preset));
+  } else if (range.from !== undefined) {
+    search.set('from', String(range.from));
+    if (typeof range.to === 'number') search.set('to', String(range.to));
+  }
+  return search;
+}
+
 export interface DashboardRange {
   preset?: DashboardPreset;
   /** Custom window start in epoch milliseconds. */
@@ -141,8 +290,14 @@ export interface DashboardRange {
 
 /** The stored preference key holding the dashboard's current range. */
 export const DASHBOARD_RANGE_PREFERENCE = 'dashboard_range';
+export const DASHBOARD_COMPARISON_PREFERENCE = 'omc_dashboard_comparison';
+export const DEFAULT_DASHBOARD_COMPARISON = true;
 
-export const DEFAULT_DASHBOARD_RANGE: DashboardRange = { preset: '24h' };
+export function parseDashboardComparisonPreference(raw: unknown): boolean | undefined {
+  return typeof raw === 'boolean' ? raw : undefined;
+}
+
+export const DEFAULT_DASHBOARD_RANGE: DashboardRange = { preset: 'today' };
 
 export function dashboardRangeParams(range: DashboardRange): string {
   const search = new URLSearchParams();
@@ -158,11 +313,12 @@ export function dashboardRangeParams(range: DashboardRange): string {
 }
 
 /**
- * A relative preset and an open-ended custom range both move with the clock, so
- * both are worth polling. A closed custom range is frozen.
+ * A relative preset, the current calendar unit and an open-ended custom range all
+ * move with the clock, so they are worth polling. A closed custom range and a
+ * previous calendar unit are frozen.
  */
 export function isSlidingRange(range: DashboardRange): boolean {
-  if (range.preset !== undefined) return true;
+  if (range.preset !== undefined) return !isClosedCalendarPreset(range.preset);
   return range.from !== undefined && range.to === null;
 }
 
@@ -265,21 +421,25 @@ export function applyTail(base: DashboardResponse, patch?: DashboardTailResponse
   if (!patch || !patch.live?.bucket_ms || !patch.live.tail_from_ms) {
     return { data: base, broken: false };
   }
-  // A poll answers for the window it was asked about. If a full fetch finished
-  // after this tail was computed — or the two disagree about which window or
-  // which grid they describe — the tail is simply older, not wrong, and the
-  // fresher full response wins.
-  if (
-    patch.live.as_of_ms < base.window.to
-    || patch.window.preset !== base.window.preset
-    || patch.live.bucket_ms !== base.window.bucket_ms
-  ) {
+  // A poll from an older instant or an abandoned preset was overtaken in flight;
+  // discard it without triggering a heal.
+  if (patch.live.as_of_ms < base.window.to || patch.window.preset !== base.window.preset) {
     return { data: base, broken: false };
+  }
+  // A newer poll on the same preset whose bucket width stepped up (e.g. 'today'
+  // crossing from 1m to 2m buckets) cannot splice onto the old grid; mark broken
+  // so the page refetches the full series on the new resolution.
+  if (patch.live.bucket_ms !== base.window.bucket_ms) {
+    return { data: base, broken: true };
   }
   const { live } = patch;
   const requests = spliceTail(base.requests.series, patch.requests.series, live);
   const tokens = spliceTail(base.tokens.series, patch.tokens.series, live);
   if (requests.broken || tokens.broken) return { data: base, broken: true };
+  // Collector warnings come only from the full response, while comparison degradation
+  // is re-evaluated on every tail poll.
+  const collectorErrors = base.partial_errors.filter((entry) => entry !== 'comparison unavailable');
+  const mergedErrors = Array.from(new Set([...collectorErrors, ...patch.partial_errors]));
   return {
     broken: false,
     data: {
@@ -288,6 +448,8 @@ export function applyTail(base: DashboardResponse, patch?: DashboardTailResponse
       requests: { ...base.requests, ...patch.requests, series: requests.series },
       tokens: { ...base.tokens, ...patch.tokens, series: tokens.series },
       metrics: patch.metrics,
+      comparison: patch.comparison,
+      partial_errors: mergedErrors,
     },
   };
 }

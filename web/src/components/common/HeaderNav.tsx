@@ -1,18 +1,26 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Button } from 'antd';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
 import { api } from '../../api/client';
-import { GithubOutlined, LogoutOutlined, ReloadOutlined, Star } from '../icons';
+import { BookOpenOutlined, GithubOutlined, LogoutOutlined, ReloadOutlined, RollbackOutlined, Star } from '../icons';
 import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { useI18n, LANGUAGES } from '../../i18n';
 import { useTheme } from '../../theme/ThemeContext';
 import { ActionMenu } from './ActionMenu';
+import { ConfirmAction } from './ConfirmAction';
 import { HeaderAction } from './HeaderAction';
 import { PreferenceMenus } from './PreferenceMenus';
 import { useT } from '../../i18n';
+import { getAppConfig, resolveApiDocsUrl } from '../../types/config';
 import { isDemoMode } from '../../types/demoMode';
 import { formatStarCount } from '../../utils/format';
 import { Tooltip } from './Tooltip';
+import { useConfirmModal, useToast } from '../feedback';
+import {
+  getDemoSandboxSnapshot,
+  resetDemoSandbox,
+  subscribeDemoSandbox,
+} from '../../demo/sandbox';
 
 const REPOSITORY_URL = 'https://github.com/WizisCool/oh-my-cpa';
 /** The server reads the count at most hourly, so asking more often learns nothing. */
@@ -66,10 +74,36 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   isLoggingOut = false,
 }) => {
   const t = useT();
+  const toast = useToast();
+  const { confirm } = useConfirmModal();
+  const queryClient = useQueryClient();
   const isDemo = isDemoMode();
+  const apiDocsUrl = resolveApiDocsUrl(getAppConfig().basePath);
   const isPhone = useIsPhoneViewport();
   const { lang, setLang } = useI18n();
   const { modePreference, setModePreference } = useTheme();
+  const demoChangeCount = React.useSyncExternalStore(
+    (listener) => (isDemo ? subscribeDemoSandbox(listener) : () => {}),
+    () => (isDemo ? getDemoSandboxSnapshot().changeCount : 0),
+    () => 0,
+  );
+  const handleResetDemoSandbox = React.useCallback(async () => {
+    resetDemoSandbox();
+    await queryClient.resetQueries();
+    toast.success(t('demo.reset_sandbox_done'));
+  }, [queryClient, t, toast]);
+  const handlePhoneResetDemoSandbox = React.useCallback(() => {
+    confirm({
+      title: t('demo.reset_sandbox'),
+      content: t('demo.reset_sandbox_confirm'),
+      okText: t('demo.reset_sandbox'),
+      danger: true,
+      onOk: handleResetDemoSandbox,
+    });
+  }, [confirm, handleResetDemoSandbox, t]);
+  const demoBadgeLabel = demoChangeCount > 0
+    ? t('demo.badge_dirty', { count: demoChangeCount })
+    : t('demo.badge');
   // A failed read is not retried or reported: the count is decoration on a link that
   // works without it.
   const { data: repository } = useQuery({
@@ -89,26 +123,40 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   if (isPhone) {
     return (
       <div className="app-header-actions">
-        {isDemo && <span className="demo-chip" role="note" title={t('demo.badge_tooltip')}>{t('demo.badge')}</span>}
-        <Button type="text" icon={<ReloadOutlined />} loading={isDiscovering} onClick={onDiscover} aria-label={t('header.refresh_all')} />
+        {isDemo && (
+          <Tooltip title={t('demo.badge_tooltip')}>
+            <span className="demo-chip" role="note" data-testid="demo-sandbox-badge">{demoBadgeLabel}</span>
+          </Tooltip>
+        )}
+        <Button variant="ghost" icon={<ReloadOutlined />} loading={isDiscovering} onClick={onDiscover} aria-label={t('header.refresh_all')} />
         <ActionMenu label={t('header.tools')}>
+          {isDemo && demoChangeCount > 0 && (
+            <Button variant="ghost" icon={<RollbackOutlined />} onClick={handlePhoneResetDemoSandbox}>
+              {t('demo.reset_sandbox')}
+            </Button>
+          )}
           <span className="action-menu-label">{t('header.theme')}</span>
           {(['light', 'dark', 'system'] as const).map((mode) => (
-            <Button key={mode} type="text" aria-pressed={modePreference === mode} onClick={() => setModePreference(mode)}>
+            <Button key={mode} variant="ghost" aria-pressed={modePreference === mode} onClick={() => setModePreference(mode)}>
               {t(`omc.theme_mode_${mode}`)}
             </Button>
           ))}
           <span className="action-menu-label">{t('header.language')}</span>
           {LANGUAGES.map((language) => (
-            <Button key={language.id} type="text" aria-pressed={lang === language.id} onClick={() => setLang(language.id)}>
+            <Button key={language.id} variant="ghost" aria-pressed={lang === language.id} onClick={() => setLang(language.id)}>
               {language.name}
             </Button>
           ))}
-          <Button type="text" icon={<GithubOutlined />} href={REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
+          {isDemo && (
+            <Button variant="ghost" icon={<BookOpenOutlined />} href={apiDocsUrl} target="_blank" rel="noopener noreferrer" data-testid="demo-api-docs-link">
+              {t('header.open_api_docs')}
+            </Button>
+          )}
+          <Button variant="ghost" icon={<GithubOutlined />} href={REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
             {t('header.open_repository')}
             {stars === null ? null : <span className="header-star-count">{stars}</span>}
           </Button>
-          {!isDemo && <Button type="text" icon={<LogoutOutlined />} loading={isLoggingOut} onClick={onLogout}>{t('header.logout')}</Button>}
+          {!isDemo && <Button variant="ghost" icon={<LogoutOutlined />} loading={isLoggingOut} onClick={onLogout}>{t('header.logout')}</Button>}
         </ActionMenu>
       </div>
     );
@@ -117,11 +165,39 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   return (
     <div className="app-header-actions">
       {isDemo && (
-        <Tooltip title={t('demo.badge_tooltip')}>
-          <span className="demo-chip" role="note">
-            {t('demo.badge')}
-          </span>
-        </Tooltip>
+        <>
+          <Tooltip title={t('demo.badge_tooltip')}>
+            <span className="demo-chip" role="note" data-testid="demo-sandbox-badge">
+              {demoBadgeLabel}
+            </span>
+          </Tooltip>
+          {demoChangeCount > 0 && (
+            <ConfirmAction
+              title={t('demo.reset_sandbox')}
+              description={t('demo.reset_sandbox_confirm')}
+              confirmLabel={t('demo.reset_sandbox')}
+              tooltip={t('demo.reset_sandbox')}
+              onConfirm={handleResetDemoSandbox}
+            >
+              <HeaderAction
+                label={t('demo.reset_sandbox')}
+                tooltip={false}
+                icon={<RollbackOutlined />}
+                data-testid="demo-sandbox-reset"
+              />
+            </ConfirmAction>
+          )}
+        </>
+      )}
+      {isDemo && (
+        <HeaderAction
+          label={t('header.open_api_docs')}
+          icon={<BookOpenOutlined />}
+          href={apiDocsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="demo-api-docs-link"
+        />
       )}
       <HeaderAction
         label={t('header.open_repository')}

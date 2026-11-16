@@ -1,8 +1,12 @@
 import { useTimeZone } from '../../utils/TimeZoneProvider';
+import { MetaLine } from '../common/MetaLine';
 import { formatGatewayTimestamp } from '../../utils/time';
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Checkbox, Segmented, Tabs, Typography } from 'antd';
+import { Tabs } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Segmented } from '@/components/ui/segmented';
 import {
   ClearOutlined,
   DownloadOutlined,
@@ -17,12 +21,12 @@ import {
 } from '../icons';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from '../../utils/time';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType } from '@/components/ui/table';
 import { api, apiErrorCode, ApiError, describeError } from '../../api/client';
 import { useT } from '../../i18n';
-import { isDemoMode } from '../../types/demoMode';
 import { useLogTail } from '../../hooks/useLogTail';
 import { usePreference } from '../../hooks/usePreference';
+import { useIsPhoneViewport } from '../../hooks/useIsPhoneViewport';
 import { RefreshButton } from '../common/RefreshButton';
 import { ResponsiveList } from '../common/ResponsiveList';
 import { saveBlob } from '../../utils/download';
@@ -61,15 +65,13 @@ import { Toolbar } from '../common/Toolbar';
 import { Count } from '../common/Count';
 import './logs.css';
 import { Tooltip } from '../common/Tooltip';
-import { TAB_OVERFLOW } from '../common/tabOverflow';
 
-const { Text } = Typography;
 
 // Status classes are shown as the numeric class, not as invented English words:
 // the log line itself says 400, and a localized UI must not caption it SUCCESS
 // under a different reading language.
 /** Anything of antd's that Escape should close before it closes the fullscreen viewer. */
-const OPEN_OVERLAY_SELECTOR = '.ant-select-open, .ant-popover:not(.ant-popover-hidden), .ant-modal-wrap:not([style*="display: none"]), .ant-drawer-open';
+const OPEN_OVERLAY_SELECTOR = '[data-slot="select-content"], [data-slot="combobox-content"], [data-slot="popover-content"], [data-slot="dialog-popup"], [data-slot="sheet-content"]';
 
 const STATUS_CLASS_LABELS: Record<LogStatusClass, string> = {
   all: '',
@@ -103,7 +105,7 @@ const CpaLogLine: React.FC<{
           <button
             type="button"
             className="log-req is-link"
-            title={t('logs.view_request', { id: requestId })}
+            data-tip={t('logs.view_request', { id: requestId })}
             aria-label={t('logs.view_request', { id: requestId })}
             onClick={(event) => {
               event.stopPropagation();
@@ -131,7 +133,6 @@ const CpaLogLine: React.FC<{
 const ErrorLogFiles: React.FC<{ onView: (file: ErrorLogFile) => void }> = ({ onView }) => {
   useTimeZone();
   const t = useT();
-  const isDemo = isDemoMode();
   const toast = useToast();
   const query = useQuery({
     queryKey: ['request-error-logs'],
@@ -176,23 +177,18 @@ const ErrorLogFiles: React.FC<{ onView: (file: ErrorLogFile) => void }> = ({ onV
       render: (_value, file) => (
         <span className={styles['file-actions']}>
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            variant="ghost"
             icon={<EyeOutlined />}
             aria-label={`${t('logs.view_file')} ${file.name}`}
-            disabled={isDemo}
-            title={isDemo ? t('demo.blocked') : t('logs.view_file')}
+            data-tip={t('logs.view_file')}
             onClick={() => onView(file)}
           />
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            variant="ghost"
             icon={<DownloadOutlined />}
             aria-label={`${t('logs.download')} ${file.name}`}
-            // An error log quotes request content, so the demonstration does not hand
-            // one back at all; the server refuses the download too.
-            disabled={isDemo}
-            title={isDemo ? t('demo.blocked') : undefined}
             onClick={async () => {
               try {
                 saveBlob(await api.downloadRequestErrorLog(file.name), file.name);
@@ -225,7 +221,6 @@ const ErrorLogFiles: React.FC<{ onView: (file: ErrorLogFile) => void }> = ({ onV
 export const CpaLogPanel: React.FC = () => {
   useTimeZone();
   const t = useT();
-  const isDemo = isDemoMode();
   const toast = useToast();
   const { value: filters, ready: filtersReady, set: setFilters } = usePreference<LogFilters>(
     LOG_FILTERS_PREFERENCE,
@@ -235,11 +230,9 @@ export const CpaLogPanel: React.FC = () => {
   const [search, setSearch] = React.useState('');
   const [tab, setTab] = React.useState<'tail' | 'errors'>('tail');
   const [viewerTarget, setViewerTarget] = React.useState<LogViewerTarget | null>(null);
-  // A request log quotes request content, so the demonstration offers no way to open one;
-  // the server refuses the read too.
-  const viewRequest = React.useMemo(
-    () => (isDemo ? undefined : (requestId: string) => setViewerTarget({ kind: 'request', requestId })),
-    [isDemo],
+  const viewRequest = React.useCallback(
+    (requestId: string) => setViewerTarget({ kind: 'request', requestId }),
+    [],
   );
 
   const status = useQuery({
@@ -254,6 +247,10 @@ export const CpaLogPanel: React.FC = () => {
   const tail = useLogTail(tab === 'tail' && filtersReady && status.isSuccess && !loggingDisabled);
 
   const patchFilters = React.useCallback((next: Partial<LogFilters>) => setFilters({ ...filters, ...next }), [filters, setFilters]);
+  // On a phone an unwrapped line shows its time and half a path, so the tail wraps there until the
+  // operator chooses otherwise; a choice made on either screen is kept on both.
+  const isPhone = useIsPhoneViewport();
+  const isWrapped = filters.wrapLines ?? isPhone;
 
   const parsed = React.useMemo(() => tail.lines.map((line) => parseLogLine(line)), [tail.lines]);
 
@@ -339,7 +336,7 @@ export const CpaLogPanel: React.FC = () => {
         title={t('logs.disabled_title')}
         action={(
           <Button
-            size="small"
+            size="sm"
             icon={<ReloadOutlined />}
             onClick={() => {
               void status.refetch();
@@ -400,61 +397,64 @@ export const CpaLogPanel: React.FC = () => {
                   className={styles['filter-toggle']}
                   aria-expanded={isFiltersOpen}
                   aria-controls="log-request-filters"
-                  type={isFiltersOpen || activeFilterCount > 0 ? 'primary' : 'default'}
+                  variant={isFiltersOpen || activeFilterCount > 0 ? 'active' : 'secondary'}
                   onClick={() => setIsFiltersOpen((isOpen) => !isOpen)}
                 >
-                  {activeFilterCount > 0 ? t('logs.filters_active', { n: activeFilterCount }) : t('events.more_filters')}
+                  {activeFilterCount > 0 ? <>{t('logs.filters_active')}<Count size="small">{activeFilterCount}</Count></> : t('events.more_filters')}
                 </Button>
-                <Text className="logs-counts">
-                  {t('logs.counts', { shown: rows.length, total: parsed.length })}
-                  {tail.dropped > 0 ? ` · ${t('logs.dropped', { n: tail.dropped })}` : ''}
-                </Text>
               </>
             )}
-            <div className={styles['toolbar-actions']}>
+            <div className={styles['toolbar-summary']}>
               {isTail && (
-                <Tooltip title={tail.paused ? t('logs.resume') : t('logs.pause')}>
+                <MetaLine className="logs-counts">
+                  <b>{t('logs.counts', { shown: rows.length, total: parsed.length })}</b>
+                  {tail.dropped > 0 ? <span className="text-warn">{t('logs.dropped', { n: tail.dropped })}</span> : ''}
+                </MetaLine>
+              )}
+              <div className={styles['toolbar-actions']}>
+                {isTail && (
+                  <Tooltip title={tail.paused ? t('logs.resume') : t('logs.pause')}>
+                    <Button
+                      icon={tail.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                      disabled={isBlocked}
+                      onClick={() => tail.setPaused(!tail.paused)}
+                      aria-label={tail.paused ? t('logs.resume') : t('logs.pause')}
+                    />
+                  </Tooltip>
+                )}
+                {isTail && (
+                  <Tooltip title={t('logs.wrap')}>
+                    <Button
+                      icon={<WrapTextOutlined />}
+                      variant={isWrapped ? 'active' : 'secondary'}
+                      aria-pressed={isWrapped}
+                      aria-label={t('logs.wrap')}
+                      onClick={() => patchFilters({ wrapLines: !isWrapped })}
+                    />
+                  </Tooltip>
+                )}
+                <Tooltip title={isFullscreen ? t('logs.fullscreen_exit') : t('logs.fullscreen')}>
                   <Button
-                    icon={tail.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-                    disabled={isBlocked}
-                    onClick={() => tail.setPaused(!tail.paused)}
-                    aria-label={tail.paused ? t('logs.resume') : t('logs.pause')}
+                    icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                    aria-pressed={isFullscreen}
+                    aria-label={isFullscreen ? t('logs.fullscreen_exit') : t('logs.fullscreen')}
+                    onClick={() => setIsFullscreen(!isFullscreen)}
                   />
                 </Tooltip>
-              )}
-              {isTail && (
-                <Tooltip title={t('logs.wrap')}>
-                  <Button
-                    icon={<WrapTextOutlined />}
-                    type={filters.wrapLines ? 'primary' : 'default'}
-                    aria-pressed={filters.wrapLines}
-                    aria-label={t('logs.wrap')}
-                    onClick={() => patchFilters({ wrapLines: !filters.wrapLines })}
-                  />
-                </Tooltip>
-              )}
-              <Tooltip title={isFullscreen ? t('logs.fullscreen_exit') : t('logs.fullscreen')}>
-                <Button
-                  icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                  aria-pressed={isFullscreen}
-                  aria-label={isFullscreen ? t('logs.fullscreen_exit') : t('logs.fullscreen')}
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                />
-              </Tooltip>
-              <RefreshButton label={t('logs.reload')} onRefresh={tail.reload} disabled={!isTail} />
-              {/* Truncating the file is irreversible, so it asks first - in the same popover every
-                  other destructive action in the console uses. */}
-              <ConfirmAction
-                title={t('logs.clear_hint')}
-                confirmLabel={t('logs.clear_confirm')}
-                isDanger
-                isConfirming={truncate.isPending}
-                onConfirm={() => truncate.mutate()}
-                disabled={isDemo}
-                tooltip={isDemo ? t('demo.blocked') : t('logs.clear')}
-              >
-                <Button icon={<ClearOutlined />} disabled={isDemo} aria-label={t('logs.clear')} />
-              </ConfirmAction>
+                <RefreshButton label={t('logs.reload')} onRefresh={tail.reload} disabled={!isTail} />
+                {/* Truncating the file is irreversible, so it asks first - in the same popover every
+                    other destructive action in the console uses. */}
+                <ConfirmAction
+                  title={t('logs.clear_hint')}
+                  confirmLabel={t('logs.clear_confirm')}
+                  isDanger
+                  isConfirming={truncate.isPending}
+                  onConfirm={() => truncate.mutate()}
+                  tooltip={t('logs.clear')}
+                >
+                  <Button icon={<ClearOutlined />} aria-label={t('logs.clear')} />
+                </ConfirmAction>
+              </div>
             </div>
           </Toolbar>
 
@@ -463,7 +463,7 @@ export const CpaLogPanel: React.FC = () => {
               <div className={styles['filter-field']}>
                 <span className={styles['filter-label']}>{t('logs.status_filter')}</span>
                 <Segmented
-                  size="small"
+                  size="sm"
                   value={filters.statusClass}
                   options={LOG_STATUS_CLASSES.map((value) => ({
                     value,
@@ -525,14 +525,14 @@ export const CpaLogPanel: React.FC = () => {
               <Checkbox
                 className={styles['filter-check']}
                 checked={filters.hideManagement}
-                onChange={(event) => patchFilters({ hideManagement: event.target.checked })}
+                onCheckedChange={(checked) => patchFilters({ hideManagement: checked })}
               >
                 {t('logs.hide_management')}
               </Checkbox>
               {activeFilterCount > 0 && (
                 <Button
-                  type="link"
-                  size="small"
+                  variant="link"
+                  size="sm"
                   className={styles['filter-clear']}
                   onClick={() => patchFilters({ statusClass: 'all', methods: [], paths: [] })}
                 >
@@ -542,7 +542,7 @@ export const CpaLogPanel: React.FC = () => {
             </div>
           )}
 
-          <Tabs more={TAB_OVERFLOW}
+          <Tabs
             size="small"
             activeKey={tab}
             onChange={(key) => setTab(key as 'tail' | 'errors')}
@@ -558,7 +558,7 @@ export const CpaLogPanel: React.FC = () => {
                         items={rows}
                         itemKey={(parts, index) => `${parts.raw}-${index}`}
                         isLoading={isLoading}
-                        isWrapped={filters.wrapLines}
+                        isWrapped={isWrapped}
                         emptyText={parsed.length > 0 ? t('logs.filter_empty') : t('logs.tail_empty')}
                         renderItem={(parts, isOpen) => <CpaLogLine parts={parts} isOpen={isOpen} onViewRequest={viewRequest} />}
                       />

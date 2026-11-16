@@ -1,5 +1,5 @@
 /* StatTiles.module.css — a strip of counted tiles, each one a filter over the list below it.
-   Flat: a 1px frame per tile, a background shift for the selected one, no shadow. */
+   Each tile is a card on the page; the pointer raises it and the selected one is picked up and lit. */
 
 .stat-tiles {
   display: grid;
@@ -8,29 +8,36 @@
 }
 
 .stat-tile {
+  border: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
   padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
   background: var(--bg);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+  transition: var(--select-transition);
+}
+
+.stat-tile:active {
+  transform: scale(var(--press-scale));
 }
 
 .stat-tile:hover {
-  border-color: var(--muted);
+  background: var(--hover-inset);
+  box-shadow: var(--shadow-raised);
 }
 
-.stat-tile-active {
-  border-color: var(--accent);
-  background: var(--hover-inset);
+.stat-tile-active,
+.stat-tile-active:hover {
+  box-shadow: var(--shadow-selected);
+  background: var(--select-surface);
 }
 
 .stat-tile:focus-visible {
@@ -63,18 +70,23 @@
   color: var(--warn);
 }
 
-/* On a phone the strip becomes a segmented filter: one framed row, each segment its label and its
-   count on one line, the selected one filled. Four boxed tiles stood taller than the records they
-   filter and repeated the header's own summary; one line states the same four numbers and reads at
-   once as the control it is. */
+/* The phone's thumb belongs to the segmented layout below; the desktop tiles mark their own. */
+.stat-tiles::before { display: none; }
+
+/* On a phone the strip becomes a segmented filter: one well, each segment its label and its count
+   on one line, the selected one lifted on a thumb that glides between segments - the same control
+   as every other segmented switch. Four boxed tiles stood taller than the records they filter and
+   repeated the header's own summary; one line states the same four numbers and reads at once as the
+   control it is. */
 @media (max-width: 640px) {
   .stat-tiles {
     gap: 2px;
     padding: 2px;
-    border: 1px solid var(--border);
+    box-shadow: var(--shadow-well);
     border-radius: var(--radius-md);
-    background: var(--bg);
+    background: var(--thread-field);
   }
+  .stat-tiles::before { display: block; }
   /* A label and a count too long to share a segment wrap the count under the label, and a label
      too long for the segment breaks between words, instead of either being cut short. */
   .stat-tile {
@@ -86,17 +98,24 @@
     gap: 0 6px;
     min-height: 32px;
     padding: 0 4px;
-    border: 0;
-    border-radius: calc(var(--radius-md) - 2px);
+    border-radius: var(--radius-sm);
     background: transparent;
+    box-shadow: none;
+    transition: background-color var(--motion-fast) var(--ease-standard);
   }
   .stat-tile:hover {
-    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
   }
-  /* An ink wash rather than the hover inset, which is too faint on the dark ground to mark the
-     segment that is on. */
-  .stat-tile-active {
-    background: color-mix(in srgb, var(--fg) 10%, transparent);
+  .stat-tile-active,
+  .stat-tile-active:hover {
+    background: var(--thumb-bg);
+    box-shadow: var(--shadow-control);
+  }
+  .stat-tiles[data-thumb] .stat-tile-active,
+  .stat-tiles[data-thumb] .stat-tile-active:hover {
+    background: transparent;
+    box-shadow: none;
   }
   .stat-tile-label {
     min-width: 0;
@@ -114,5 +133,11 @@
   .stat-tile-value {
     flex: none;
     font-size: var(--text-sm);
+  }
+  /* Four segments in one row wrapped each label to its own number of lines, so the strip read
+     ragged. Two rows of two give every segment room for one line at the same height (enlarged text
+     still wraps); the thumb glides in both directions. */
+  .stat-tiles:has(> :nth-child(4)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

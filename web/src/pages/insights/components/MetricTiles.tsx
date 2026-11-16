@@ -1,46 +1,25 @@
-import { currencyReadout, type DisplayCurrency } from '../../../types/currencyDisplay';
-import { useDisplayCurrency } from '../../../types/CurrencyDisplayContext';
 import { type InsightsCompareWindow } from '../../../types/insights';
 import { useInsightsFormat } from '../useInsightsFormat';
-import { useCompareWindowLabel } from '../useCompareWindowLabel';
+import { useComparisonTip } from '../../../hooks/useCompareWindowLabel';
+import { tipCard } from '../../../components/common/tipCard';
 import React from 'react';
 import clsx from 'clsx';
-import { RollingNumber } from '../../../components/dashboard/RollingNumber';
 import { ArrowDownOutlined, ArrowUpOutlined } from '../../../components/icons';
 import { useT } from '../../../i18n';
-import { resolveCountFlowReadout, resolveTokenFlowReadout, type TokenNumberStyle } from '../../../types/tokenDisplay';
-import type { RollingReadout } from '../../../types/rollingNumber';
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
-import { compareMetric, INSIGHTS_METRICS, metricValue, type InsightsMetric, type Measures } from '../insightsCube';
-import { changeTrend, formatChange } from '../insightsFormat';
+import { compareMetric, INSIGHTS_METRICS, metricValue, type InsightsMetric, type Measures } from '../../../types/insightsCube';
+import { changeTrend, formatChange } from '../../../types/insightsFormat';
 import styles from '../insights.module.css';
 
 interface MetricTilesProps {
   current: Measures;
   /**
-   * The window the tiles are measured against and its sums; null when the page is not comparing.
-   * The two travel together because the tile's label depends on the window: a running unit is
-   * measured against the same elapsed stretch of the period before it, not against all of it.
+   * The window the tiles are measured against, its robust progress-scaled baseline (`measures`),
+   * and its unscaled raw totals (`raw`) for sample-size confidence; null when not comparing.
    */
-  baseline: { measures: Measures; window: InsightsCompareWindow; isSameStretch: boolean } | null;
+  baseline: { measures: Measures; raw: Measures; window: InsightsCompareWindow } | null;
   metric: InsightsMetric;
   onMetricChange: (metric: InsightsMetric) => void;
-}
-
-function readoutOf(metric: InsightsMetric, value: number | null, style: TokenNumberStyle, currency: DisplayCurrency): RollingReadout | undefined {
-  if (value === null) return undefined;
-  switch (metric) {
-    case 'cost':
-      return currencyReadout(value, currency);
-    case 'tokens':
-      return resolveTokenFlowReadout(value, style);
-    case 'requests':
-      return resolveCountFlowReadout(value);
-    case 'latency':
-      return value >= 1000
-        ? { number: value / 1000, suffix: 's', format: { minimumFractionDigits: 2, maximumFractionDigits: 2 } }
-        : { number: Math.round(value), suffix: 'ms', format: { maximumFractionDigits: 0 } };
-  }
 }
 
 /**
@@ -49,29 +28,21 @@ function readoutOf(metric: InsightsMetric, value: number | null, style: TokenNum
  * The change against the comparison window carries an arrow and a muted red for a rise or green for
  * a fall, unless it is within chance. The tones are mixed well toward the ink: they say which way a figure moved, and stay
  * clear of the saturated state colours that mark a failure.
- *
- * A unit still running is measured against the same elapsed stretch of the period before it, so the
- * figure under the change is labelled for that stretch rather than left to read as the previous
- * period's total; the window itself is the title.
  */
 export const MetricTiles: React.FC<MetricTilesProps> = ({ current, baseline, metric, onMetricChange }) => {
   const t = useT();
-  const { currency } = useDisplayCurrency();
   const { style } = useTokenDisplayStyle();
   const { formatMetric, formatMetricExact } = useInsightsFormat();
-  const formatCompareWindow = useCompareWindowLabel();
+  const comparisonTip = useComparisonTip();
 
   return (
     <div className={styles['tiles']} role="tablist" aria-label={t('insights.metric_switch')} data-testid="insights-tiles">
       {INSIGHTS_METRICS.map((item) => {
         const value = metricValue(current, item);
         const before = baseline ? metricValue(baseline.measures, item) : null;
-        const comparison = baseline ? compareMetric(current, baseline.measures, item) : null;
+        const comparison = baseline ? compareMetric(current, baseline.measures, item, baseline.raw) : null;
         const changeText = comparison?.kind === 'change' ? formatChange(comparison.change) : null;
-        const changeTitle = [
-          comparison?.kind === 'change' && comparison.isNoise ? t('insights.change_noise') : null,
-          baseline ? formatCompareWindow(baseline.window) : null,
-        ].filter(Boolean).join(' · ');
+        const changeCard = comparison && baseline ? comparisonTip({ comparison, compare: baseline.window }) : null;
         const isActive = item === metric;
         return (
           <button
@@ -84,13 +55,16 @@ export const MetricTiles: React.FC<MetricTilesProps> = ({ current, baseline, met
             data-testid={`insights-tile-${item}`}
           >
             <span className={styles['tile-label']}>{t(`insights.metric.${item}`)}</span>
-            <span className={styles['tile-value']} title={formatMetricExact(item, value)}>
-              <RollingNumber readout={readoutOf(item, value, style, currency)} />
+            <span className={styles['tile-value']} data-tip={formatMetricExact(item, value)}>
+              {/* Printed, not rolled: here the four figures change together on every filter, and a
+                  rolling readout measures its glyphs with a forced layout on each change - the
+                  dominant cost of a click on this page. The dashboard keeps its rolling figures. */}
+              {formatMetric(item, value, style)}
             </span>
             <span
               className={styles['tile-change']}
               data-trend={comparison ? changeTrend(comparison) : undefined}
-              title={changeTitle || undefined}
+              {...tipCard(changeCard)}
             >
               {comparison === null ? null : comparison.kind !== 'change' || changeText === null ? (
                 <span className={styles['tile-change-none']}>
@@ -107,7 +81,7 @@ export const MetricTiles: React.FC<MetricTilesProps> = ({ current, baseline, met
               )}
               {baseline !== null && (
                 <span className={styles['tile-change-was']}>
-                  {t(baseline.isSameStretch ? 'insights.change_was_same_stretch' : 'insights.change_was', { value: formatMetric(item, before, style) })}
+                  {t('insights.change_was', { value: formatMetric(item, before, style) })}
                 </span>
               )}
             </span>

@@ -22,14 +22,18 @@ import { canonicalDisplayProviderKey } from '../../src/types/credentialIdentity.
 import { pluginOAuthProviderChoices, type OAuthProviderChoice } from '../../src/pages/oauthProviderLogic.ts';
 import { pluginMultiPortalKeys, pluginOAuthProviderTitles } from '../../src/types/pluginOAuthProviders.ts';
 import { providerDisplayName } from '../../src/types/providerMetadata.ts';
-import { orderQuotaWindows, quotaWindowGroupKey, quotaWindowKindOf } from '../../src/pages/quota/quotaWindowSelection.ts';
+import { orderQuotaWindows, quotaWindowFullName, quotaWindowGroupKey, quotaWindowKindOf, quotaWindowParts } from '../../src/pages/quota/quotaWindowSelection.ts';
 import { applyKeyOrder, moveKey, parseGroupedOrder, parseRankOrder, rankedKeys, ranksOf } from '../../src/types/displayOrder.ts';
-import { credentialStatusOf, compareSections, quotaCellsOf, quotaLinesOf, packQuotaLines, sortByQuotaColumn, isListQuotaFamilyExcluded, buildCredentialSections, orderBySection, providersInSectionOrder } from '../../src/pages/oauthManagement/credentialSections.ts';
+import { credentialStatusOf, compareSections, quotaCellsOf, quotaLinesOf, quotaReadingName, packQuotaLines, sortByQuotaColumn, isListQuotaFamilyExcluded, buildCredentialSections, orderBySection, providersInSectionOrder } from '../../src/pages/oauthManagement/credentialSections.ts';
 import type { QuotaWindow } from '../../src/types/quota.ts';
-import { formatShortDateTime, quotaResetCountdown, quotaResetText, resetAccuracyMarker } from '../../src/pages/quota/quotaFormat.ts';
+import { formatShortDateTime, isUnusedFullCodexFiveHourWindow, quotaResetCountdown, quotaResetText, resetAccuracyMarker } from '../../src/pages/quota/quotaFormat.ts';
 import { matchesStatusFilter } from '../../src/components/authFiles/authFileLogic.ts';
+import { healthBucketOf, healthCounts, matchesHealthLens, parseHealthLens, providerSummaries } from '../../src/pages/oauthManagement/fleetPresentation.ts';
 import { siwcBadgeState } from '../../src/components/authFiles/siwcBadge.ts';
-import type { TFunc } from '../../src/i18n/index.tsx';
+import { makeT, type TFunc } from '../../src/i18n/index.tsx';
+import { CATALOGS } from '../../src/i18n/resources.ts';
+import { formatMessage } from '../../src/i18n/format.ts';
+import { languageLocale } from '../../src/i18n/language.ts';
 
 /** Stands in for the dictionary: the countdown assertions only need the arguments back. */
 const echoT: TFunc = (key, vars) => (vars ? `${key}:${Object.values(vars).join('/')}` : key);
@@ -219,9 +223,9 @@ test('quota conditions: capability is independent from observed health and authe
   );
   const record = projection.records[0];
   assert.equal(record.isQuotaUnsupported, true);
-  assert.equal(record.isQuotaAttention, true);
+  assert.equal(record.isQuotaAttention, false, 'a low but usable reading is not a credential that needs a look');
   assert.equal(matchesQuotaFilter(record, 'unsupported'), true);
-  assert.equal(matchesQuotaFilter(record, 'attention'), true);
+  assert.equal(matchesQuotaFilter(record, 'attention'), false);
   assert.equal(matchesQuotaFilter(record, 'warning'), true);
 });
 
@@ -452,7 +456,7 @@ test('a countdown marks an instant the provider did not state exactly', () => {
   );
   assert.equal(
     quotaResetText({ reset_at_ms: inTwoHours, reset_accuracy: 'derived' }, now, echoT),
-    `~${formatShortDateTime(inTwoHours)} · quota.in_hours:2`,
+    `~quota.time_with_countdown:${formatShortDateTime(inTwoHours)}/quota.in_hours:2`,
     'the tooltip keeps the marker too, so the two readings cannot disagree',
   );
 });
@@ -465,6 +469,14 @@ test('a window without a kind is named from the period it covers', () => {
   assert.equal(quotaWindowKindOf(groupWindow(720)), 'monthly');
   assert.equal(quotaWindowKindOf(groupWindow(2)), undefined, 'an unknown period stays unnamed rather than being forced into a bucket');
   assert.equal(quotaWindowKindOf({ ...groupWindow(2), kind: 'custom' }), 'custom', 'an explicit kind always wins');
+});
+
+test('a stored group label is read once and shown as its two parts', () => {
+  const window = { label: 'Gift plans \u00b7 ZCODE WEEKEND BUILD \u00b7 glm-5.3-flash', scope: 'group' as const };
+  // Only the first dot is the group's: a plugin's own window name may carry the same glyph.
+  assert.deepEqual(quotaWindowParts(window), { group: 'Gift plans', name: 'ZCODE WEEKEND BUILD \u00b7 glm-5.3-flash' });
+  assert.equal(quotaWindowFullName(window), 'Gift plans ZCODE WEEKEND BUILD \u00b7 glm-5.3-flash');
+  assert.deepEqual(quotaWindowParts({ label: '5h', scope: 'standard' }), { group: null, name: '5h' });
 });
 
 const creditInfo = (available: number, applicable: number): QuotaItem['reset_credits'] => ({
@@ -677,6 +689,73 @@ test('quota lines: a family per line, five-hour then weekly, a lone limit across
   }
 });
 
+// Synthetic windows reproduce the standard plugin quota shape without account data or reset times.
+test('Factory list keeps all six group windows and names monthly extras in the console language', async () => {
+  const windows: QuotaWindow[] = ['Standard', 'Core'].flatMap((group) => [
+    { id: `${group}_5h`, label: `${group} · 5小时限制 (5-Hour)`, scope: 'group', period_hours: 5 },
+    { id: `${group}_7d`, label: `${group} · 每周限制 (Weekly)`, scope: 'group', period_hours: 168 },
+    { id: `${group}_30d`, label: `${group} · 每月限制 (Monthly)`, scope: 'group', period_hours: 720 },
+  ]);
+  const placed = packQuotaLines(quotaLinesOf(quotaRecord('factory', windows, 'factory')));
+  assert.deepEqual(placed.map(({ cell }) => cell.window.id), [
+    'Standard_5h', 'Standard_7d', 'Standard_30d', 'Core_5h', 'Core_7d', 'Core_30d',
+  ]);
+  const expected = {
+    zh: ['5 小时 Standard', '每周 Standard', '每月 Standard', '5 小时 Core', '每周 Core', '每月 Core'],
+    en: ['5 hours Standard', 'Weekly Standard', 'Monthly Standard', '5 hours Core', 'Weekly Core', 'Monthly Core'],
+    'zh-Hant': ['5 小時 Standard', '每週 Standard', '每月 Standard', '5 小時 Core', '每週 Core', '每月 Core'],
+    ms: ['Standard 5 jam', 'Standard Mingguan', 'Standard Bulanan', 'Core 5 jam', 'Core Mingguan', 'Core Bulanan'],
+  };
+  for (const lang of ['zh', 'en', 'zh-Hant', 'ms'] as const) {
+    const entry = CATALOGS[lang];
+    const catalog = typeof entry === 'function' ? await entry() : entry;
+    const t: TFunc = (key, vars) => formatMessage(catalog[key], vars, languageLocale(lang));
+    assert.deepEqual(placed.map(({ line, cell }) => quotaReadingName(line, cell, t)), expected[lang], lang);
+  }
+});
+
+test('quota reading names preserve model scope and provider text for unknown group periods', () => {
+  const windows: QuotaWindow[] = [
+    { id: 'model_5h', label: 'Sonnet 5小时用量', scope: 'model', model: 'claude-sonnet', period_hours: 5 },
+    { id: 'model_7d', label: 'Sonnet 每周用量', scope: 'model', model: 'claude-sonnet', period_hours: 168 },
+    { id: 'model_30d', label: 'Sonnet 每月用量', scope: 'model', model: 'claude-sonnet', period_hours: 720 },
+    { id: 'group_7d', label: 'Standard · 每周限制 (Weekly)', scope: 'group', period_hours: 168 },
+    { id: 'group_custom', label: 'Standard · Custom allowance', scope: 'group', period_hours: 48 },
+    { id: 'group_unknown', label: 'Standard · Burst allowance', scope: 'group' },
+  ];
+  const placed = packQuotaLines(quotaLinesOf(quotaRecord('custom', windows, 'factory')));
+  assert.deepEqual(placed.map(({ cell }) => [cell.window.id, cell.window.scope, cell.window.model]), [
+    ['model_5h', 'model', 'claude-sonnet'], ['model_7d', 'model', 'claude-sonnet'], ['model_30d', 'model', 'claude-sonnet'],
+    ['group_7d', 'group', undefined], ['group_custom', 'group', undefined], ['group_unknown', 'group', undefined],
+  ]);
+  for (const lang of ['zh', 'en'] as const) {
+    assert.deepEqual(placed.map(({ line, cell }) => quotaReadingName(line, cell, makeT(lang))), lang === 'zh' ? [
+      '5 小时 Sonnet', '每周 Sonnet', '每月 Sonnet', '每周 Standard', 'Standard（Custom allowance）', 'Standard（Burst allowance）',
+    ] : [
+      '5 hours Sonnet', 'Weekly Sonnet', 'Monthly Sonnet', 'Weekly Standard', 'Standard (Custom allowance)', 'Standard (Burst allowance)',
+    ]);
+  }
+});
+
+test('group allowance names survive unknown periods and duplicate known periods in any source order', () => {
+  const burst: QuotaWindow = { id: 'burst', label: 'Standard · Burst allowance', scope: 'group', period_hours: 48 };
+  const general: QuotaWindow = { id: 'general', label: 'Standard · General allowance', scope: 'group', period_hours: 168 };
+  const partner: QuotaWindow = { id: 'partner', label: 'Standard · Partner allowance', scope: 'group', period_hours: 168 };
+  for (const windows of [[burst], [general, burst], [burst, general], [general, partner], [partner, general]]) {
+    const placed = packQuotaLines(quotaLinesOf(quotaRecord('allowances', windows, 'factory')));
+    const names = Object.fromEntries(placed.map(({ line, cell }) => [cell.window.id, quotaReadingName(line, cell, makeT('en'))]));
+    assert.equal(placed.length, windows.length);
+    if (windows.includes(burst)) assert.equal(names.burst, 'Standard (Burst allowance)');
+    if (windows.includes(general) && windows.includes(partner)) {
+      assert.equal(names.general, 'Weekly Standard (General allowance)');
+      assert.equal(names.partner, 'Weekly Standard (Partner allowance)');
+      const zhNames = Object.fromEntries(placed.map(({ line, cell }) => [cell.window.id, quotaReadingName(line, cell, makeT('zh'))]));
+      assert.equal(zhNames.general, '每周 Standard（General allowance）');
+      assert.equal(zhNames.partner, '每周 Standard（Partner allowance）');
+    }
+  }
+});
+
 test('a row pairs further single limits two to a line and draws a leftover one across both columns', () => {
   const plan = (id: string, hours: number, label = id): QuotaWindow => ({ id, label, scope: 'standard', period_hours: hours });
   const model = (name: string): QuotaWindow => ({ id: `seven_day_${name}`, label: `${name} 每周用量`, scope: 'model', model: name, period_hours: 168 });
@@ -688,6 +767,49 @@ test('a row pairs further single limits two to a line and draws a leftover one a
   );
   // The first line keeps its columns even when it has one limit: it is what the headers describe.
   assert.deepEqual(placement([plan('seven_day', 168), model('Sonnet'), model('Opus')]), ['seven_day:span', 'seven_day_Sonnet:short', 'seven_day_Opus:long']);
+});
+
+test('every credential lands in one health bucket, most demanding first', () => {
+  const projection = buildOAuthWorkspaceProjection([
+    file({ name: 'ok', auth_index: 'ok' }),
+    file({ name: 'off', auth_index: 'off', disabled: true }),
+    file({ name: 'broken', auth_index: 'broken', status: 'error' }),
+    file({ name: 'cooling', auth_index: 'cooling' }),
+    file({ name: 'old', auth_index: 'old' }),
+    file({ name: 'off-cooling', auth_index: 'off-cooling', disabled: true }),
+    file({ name: 'key', auth_index: 'key', runtime_only: true }),
+  ], [
+    quota({ auth_index: 'ok', name: 'ok' }),
+    quota({ auth_index: 'cooling', name: 'cooling', status: 'cooldown' }),
+    quota({ auth_index: 'old', name: 'old', status: 'stale' }),
+    quota({ auth_index: 'off-cooling', name: 'off-cooling', status: 'cooldown' }),
+  ], choices);
+  const buckets = Object.fromEntries(projection.records.map((record) => [record.fileName, healthBucketOf(record)]));
+  assert.deepEqual(buckets, { ok: 'healthy', off: 'disabled', broken: 'attention', cooling: 'attention', old: 'stale', 'off-cooling': 'disabled', key: 'disabled' });
+  const counts = healthCounts(projection.records);
+  assert.deepEqual(counts, { attention: 2, stale: 1, healthy: 1, disabled: 3 });
+  assert.equal(projection.records.filter((record) => matchesHealthLens(record, 'attention')).length, counts.attention);
+  assert.equal(parseHealthLens('stale'), 'stale');
+  assert.equal(parseHealthLens('bogus'), 'all');
+});
+
+test('the provider column lists providers with credentials in the arranged order, with their exceptions', () => {
+  const projection = buildOAuthWorkspaceProjection([
+    file({ name: 'a', auth_index: 'a', type: 'codex', provider: 'codex' }),
+    file({ name: 'b', auth_index: 'b', type: 'codex', provider: 'codex', status: 'error' }),
+    file({ name: 'c', auth_index: 'c', type: 'claude', provider: 'claude', disabled: true }),
+  ], [], choices);
+  assert.deepEqual(providerSummaries(projection.records, ['gemini', 'codex', 'claude']), [
+    { provider: 'codex', total: 2, attention: 1, disabled: 0 },
+    { provider: 'claude', total: 1, attention: 0, disabled: 1 },
+  ]);
+});
+
+test('the workspace query keeps its layout, health lens and quota orders', () => {
+  const query = parseOAuthWorkspaceQuery(new URLSearchParams('layout=cards&health=attention&sort=quota-desc'));
+  assert.deepEqual([query.layout, query.health, query.sort], ['cards', 'attention', 'quota-desc']);
+  const fallback = parseOAuthWorkspaceQuery(new URLSearchParams('layout=grid&health=everything'));
+  assert.deepEqual([fallback.layout, fallback.health], ['list', 'all']);
 });
 
 test('section columns: a repeated window id is one reading', () => {
@@ -848,4 +970,74 @@ test('antigravity list excludes Claude and GPT while drawer preserves all window
   assert.equal(drawerWindows.length, 5);
   const drawerLabels = drawerWindows.map((w) => w.label);
   assert.equal(drawerLabels.some((l) => l.includes('Claude and GPT')), true);
+});
+
+test('isUnusedFullCodexFiveHourWindow distinguishes unstarted windows from started zero-percent cycles', () => {
+  const observedAt = 1_794_583_624_338;
+  const fiveHours = 5 * 3_600_000;
+  const base: QuotaWindow = {
+    id: 'five_hour',
+    label: '5小时用量上限 (5-Hour)',
+    kind: 'five_hour',
+    scope: 'standard',
+    used_percent: 0,
+    remaining_percent: 100,
+    reset_accuracy: 'exact',
+  };
+
+  // Unstarted: reset is ~5h out from observation (even with slight jitter or 5m elapsed on the page)
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', { ...base, reset_at_ms: observedAt + fiveHours + 676 }, observedAt, observedAt + 5 * 60_000),
+    true,
+  );
+  // Unstarted: reset_at_ms slightly below 5h due to whole-second truncation upstream
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', { ...base, reset_at_ms: observedAt + fiveHours - 271 }, observedAt, observedAt),
+    true,
+  );
+  // Unstarted: no reset timestamp reported at all
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', base, observedAt, observedAt),
+    true,
+  );
+
+  // Active cycle that started ~2h ago (e.g. warmup / small requests rounding to 0% used)
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', { ...base, reset_at_ms: observedAt + 3 * 3_600_000 + 4 * 60_000 }, observedAt, observedAt),
+    false,
+  );
+  // Active cycle observed 30s after starting with no local requests, evaluated 2h later
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow(
+      'codex',
+      { ...base, reset_at_ms: observedAt + fiveHours - 30_000 },
+      observedAt,
+      observedAt + 2 * 3_600_000,
+    ),
+    false,
+  );
+  // Active cycle 2 minutes after warmup
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', { ...base, reset_at_ms: observedAt + fiveHours - 124_000 }, observedAt, observedAt),
+    false,
+  );
+  // Active cycle with recorded usage even inside the first minute
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', {
+      ...base,
+      reset_at_ms: observedAt + fiveHours - 5_000,
+      usage: { from_ms: observedAt - 5_000, to_ms: observedAt, requests: 1, priced_requests: 1, tokens: 100, cost_nanos: 100 },
+    }, observedAt, observedAt),
+    false,
+  );
+  // Stale reading past its recorded reset
+  assert.equal(
+    isUnusedFullCodexFiveHourWindow('codex', { ...base, reset_at_ms: observedAt + fiveHours }, observedAt, observedAt + fiveHours + 1_000),
+    false,
+  );
+  // Positive usage, non-Codex provider, weekly or model-scoped windows
+  assert.equal(isUnusedFullCodexFiveHourWindow('codex', { ...base, used_percent: 0.2, remaining_percent: 99.8 }, observedAt, observedAt), false);
+  assert.equal(isUnusedFullCodexFiveHourWindow('claude', base, observedAt, observedAt), false);
+  assert.equal(isUnusedFullCodexFiveHourWindow('codex', { ...base, id: 'weekly', kind: 'weekly' }, observedAt, observedAt), false);
+  assert.equal(isUnusedFullCodexFiveHourWindow('codex', { ...base, scope: 'model', model: 'gpt-5' }, observedAt, observedAt), false);
 });

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -123,10 +124,12 @@ func demoExportCases() []demoExportCase {
 		{Name: "system-updater", Path: "/api/v1/management/system/updater"},
 		{Name: "system-maintenance", Path: "/api/v1/management/system/maintenance"},
 		{Name: "system-data-retention", Path: "/api/v1/management/system/data-retention"},
+		{Name: "outbound-proxy", Path: "/api/v1/management/outbound-proxy"},
 		{Name: "config", Path: "/api/v1/management/config"},
 		{Name: "config-source", Path: "/api/v1/management/config/source"},
 		{Name: "config-backups", Path: "/api/v1/management/config/backups"},
 		{Name: "providers", Path: "/api/v1/management/providers"},
+		{Name: "identity-directory", Path: "/api/v1/management/identity-directory"},
 		{Name: "providers-with-keys", Path: "/api/v1/management/providers?include_keys=true"},
 		{Name: "routing", Path: "/api/v1/management/routing"},
 		{Name: "routing-models", Path: "/api/v1/management/routing/models"},
@@ -179,6 +182,20 @@ func demoExportCases() []demoExportCase {
 		{Name: "quota", Path: "/api/v1/management/quota"},
 		// One credential's quota detail, for the page the quota list links into.
 		{Name: "quota-codex", Path: "/api/v1/management/quota/auth-codex-01"},
+		// Consumption details for observable windows. Every
+		// sibling window of each demo credential is exported so switching periods inside
+		// the consumption dialog works on the static demo Worker too.
+		{Name: "quota-capacity-auth-codex-01-five_hour", Path: "/api/v1/management/quota/auth-codex-01/capacity?window=five_hour", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-codex-01-weekly", Path: "/api/v1/management/quota/auth-codex-01/capacity?window=weekly", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-codex-02-five_hour", Path: "/api/v1/management/quota/auth-codex-02/capacity?window=five_hour", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-codex-02-weekly", Path: "/api/v1/management/quota/auth-codex-02/capacity?window=weekly", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-claude-01-five_hour", Path: "/api/v1/management/quota/auth-claude-01/capacity?window=five_hour", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-claude-01-seven_day", Path: "/api/v1/management/quota/auth-claude-01/capacity?window=seven_day", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-antigravity-01-ag_Gemini Models_gemini-shared-5h", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Gemini+Models_gemini-shared-5h", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-antigravity-01-ag_Gemini Models_gemini-shared-week", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Gemini+Models_gemini-shared-week", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-antigravity-01-ag_Claude and GPT models_aerolith-5h", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Claude+and+GPT+models_aerolith-5h", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-antigravity-01-ag_Claude and GPT models_aerolith-week", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Claude+and+GPT+models_aerolith-week", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		{Name: "quota-capacity-auth-antigravity-01-ag_Gemini 4 Argon_gemini-4-argon-week", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Gemini+4+Argon_gemini-4-argon-week", Route: "/api/v1/management/quota/{authIndex}/capacity"},
 		{Name: "logs", Path: "/api/v1/management/logs?limit=200"},
 		{Name: "logs-status", Path: "/api/v1/management/logs/status"},
 		{Name: "service-logs", Path: "/api/v1/management/service-logs"},
@@ -190,7 +207,7 @@ func demoExportCases() []demoExportCase {
 		// without it the server resolves its default against the wall clock, which is
 		// not where the seeded history sits, and the list comes back empty.
 		{Name: "usage-facets", Path: "/api/v1/usage/facets?" + demoExportWindow("24h")},
-		{Name: "usage-events", Path: "/api/v1/usage/events?" + demoExportWindow("24h") + "&limit=100&result=all"},
+		{Name: "usage-events", Path: "/api/v1/usage/events?" + demoExportWindow("7d") + "&limit=300&result=all"},
 		// The record drawer asks for one event by id, and that id has to come from the list
 		// above rather than be written here. A literal id was correct until the history was
 		// reseeded, at which point it named nothing and the export captured the 404 as the
@@ -236,6 +253,11 @@ func demoExportCases() []demoExportCase {
 	// Same for the update stream: the demonstration answers 204 rather than opening a stream, and
 	// its console keeps the polling interval.
 	cases = append(cases, demoExportCase{Name: "system-live", Path: "/api/v1/management/system/live"})
+	cases = append(cases,
+		demoExportCase{Name: "events-live", Path: "/api/events"},
+		demoExportCase{Name: "v1-events-live", Path: "/api/v1/events"},
+		demoExportCase{Name: "management-state", Path: "/api/v1/management/state"},
+	)
 	// The all-time window has no span to turn into bounds: the server starts it at the
 	// first usage record. It is still reproducible, because the export pins the
 	// handler's clock to the reference instant. The key table does not offer it.
@@ -336,20 +358,48 @@ func demoExportWindow(preset string) string {
 		"&to=" + strconv.FormatInt(to.UnixMilli(), 10)
 }
 
-// committedDemoDataset is the dataset the public demonstration serves.
-const committedDemoDataset = "../../deploy/cloudflare/data/responses.json"
-
-// TestExportDemoDataset regenerates the dataset the public demo is served from. It
-// writes it when an output directory is given and otherwise requires the committed
-// copy to be byte-identical: the comparison is the freshness gate, so no list of
-// source files has to predict which edits can move a response.
+// TestExportDemoDataset generates the dataset the public demo is served from. It
+// writes responses.json when OMCPA_DEMO_EXPORT_DIR is set (in CI or Cloudflare Workers
+// Builds) and otherwise validates the in-memory export invariants without requiring a
+// committed copy on disk.
 func TestExportDemoDataset(t *testing.T) {
 	outDir := strings.TrimSpace(os.Getenv("OMCPA_DEMO_EXPORT_DIR"))
 	if outDir == "" && testing.Short() {
-		// Seeding a year of history takes about fifteen seconds; CI runs the comparison.
-		t.Skip("the dataset comparison runs without -short")
+		// Seeding a year of history takes about fifteen seconds; CI runs the full export.
+		t.Skip("the dataset export validation runs without -short")
 	}
-	// Day grids fold on the deployment's zone; a comparison on a non-UTC machine would
+	exported, encoded := cachedDemoDatasetWithBytes(t)
+	if len(exported.Responses) == 0 || len(encoded) == 0 {
+		t.Fatal("exported dataset is empty")
+	}
+	if outDir == "" {
+		return
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("create export directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "responses.json"), encoded, 0o644); err != nil {
+		t.Fatalf("write dataset: %v", err)
+	}
+}
+
+var (
+	demoExportCacheOnce    sync.Once
+	demoExportCachedResult demoExportResponses
+	demoExportCachedBytes  []byte
+)
+
+func cachedDemoDatasetWithBytes(t *testing.T) (demoExportResponses, []byte) {
+	t.Helper()
+	demoExportCacheOnce.Do(func() {
+		demoExportCachedResult, demoExportCachedBytes = buildDemoExportDataset(t)
+	})
+	return demoExportCachedResult, demoExportCachedBytes
+}
+
+func buildDemoExportDataset(t *testing.T) (demoExportResponses, []byte) {
+	t.Helper()
+	// Day grids fold on the deployment's zone; a run on a non-UTC machine would
 	// otherwise report drift that is only the clock's.
 	testkit.PinUTC(t)
 
@@ -399,19 +449,6 @@ func TestExportDemoDataset(t *testing.T) {
 	}
 	demoExportRunWindow.endMS = time.Now().UnixMilli()
 
-	// Runtime-stamped fields move onto the reference instant. Seeded quota
-	// observations already use the injected reference clock and remain unchanged.
-	// One table across every response, so the same generated id becomes the same
-	// stand-in wherever it appears, and one delta for the whole dataset, so every
-	// interval inside it survives the move and the panels that have to agree still do.
-	//
-	// The delta is rounded to whole seconds, and that is what makes the export
-	// reproducible rather than nearly reproducible. Serving seventy-nine responses takes
-	// a couple of seconds, so the raw difference between the reference and the moment the
-	// requests were made is a few milliseconds different every run - and every instant in
-	// the dataset inherits that difference, which is a diff that looks like drift in
-	// fifty-four responses. Rounding discards only precision no panel draws: the finest
-	// bucket the console renders is a minute wide.
 	deltaMS := (seededAt.Sub(exportedAt).Milliseconds() / 1000) * 1000
 	requestIDs := make(map[string]int)
 	normalised := make(map[string]demoExportResponse, len(responses))
@@ -441,7 +478,7 @@ func TestExportDemoDataset(t *testing.T) {
 		normalised[name] = response
 	}
 
-	assertDemoQuotaCapacityExamples(t, normalised, seededAt.UnixMilli())
+	assertDemoQuotaEvidenceExamples(t, normalised, seededAt.UnixMilli())
 	var notices SystemUpdatesDTO
 	var store struct {
 		Plugins []StorePluginItemDTO `json:"plugins"`
@@ -460,29 +497,15 @@ func TestExportDemoDataset(t *testing.T) {
 		t.Fatal("the demo's plugin update reminder must agree with the installed store updates")
 	}
 
-	encoded, err := encodeDemoExport(demoExportResponses{
+	exported := demoExportResponses{
 		ReferenceMS: seededAt.UnixMilli(),
 		Responses:   normalised,
-	})
+	}
+	encoded, err := encodeDemoExport(exported)
 	if err != nil {
 		t.Fatalf("encode dataset: %v", err)
 	}
-	if outDir == "" {
-		committed, err := os.ReadFile(committedDemoDataset)
-		if err != nil {
-			t.Fatalf("read committed dataset: %v", err)
-		}
-		if string(committed) != string(encoded) {
-			t.Fatal("the committed demonstration dataset is stale; run pnpm demo:generate and review the diff")
-		}
-		return
-	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		t.Fatalf("create export directory: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "responses.json"), encoded, 0o644); err != nil {
-		t.Fatalf("write dataset: %v", err)
-	}
+	return exported, encoded
 }
 
 // demoExportResponse is one exported response, kept as the bytes the handler wrote
@@ -640,7 +663,7 @@ func demoExportRebase(value any, deltaMS int64, requestIDs map[string]int) any {
 	case map[string]any:
 		// Quota reads and their seeded history already use the fixed handler clock,
 		// including future reset bounds. Moving them again would expire valid cycles.
-		if typed["auth_index"] != nil && typed["observed_at_ms"] != nil && (typed["windows"] != nil || typed["windows_json"] != nil) {
+		if typed["auth_index"] != nil && typed["observed_at_ms"] != nil && (typed["windows"] != nil || typed["windows_json"] != nil) || typed["window_id"] != nil && (typed["current"] != nil || typed["capacity"] != nil) {
 			deltaMS = 0
 		}
 		// A warmup catalog account restates that same observation as instants - `snapshot_at`
@@ -1066,18 +1089,14 @@ func encodeDemoExport(payload demoExportResponses) ([]byte, error) {
 	return append(encoded, '\n'), nil
 }
 
-// readCommittedDemoDataset decodes the committed dataset, which TestExportDemoDataset
-// keeps identical to a fresh export.
+// readCommittedDemoDataset returns the cached in-memory demonstration export
+// so contract tests validate real handler output without requiring a committed file.
 func readCommittedDemoDataset(t *testing.T) demoExportResponses {
 	t.Helper()
-	raw, err := os.ReadFile(committedDemoDataset)
-	if err != nil {
-		t.Fatalf("read committed dataset: %v", err)
+	if testing.Short() {
+		t.Skip("the in-memory dataset contract checks run without -short")
 	}
-	var exported demoExportResponses
-	if err := json.Unmarshal(raw, &exported); err != nil {
-		t.Fatalf("decode committed dataset: %v", err)
-	}
+	exported, _ := cachedDemoDatasetWithBytes(t)
 	return exported
 }
 
@@ -1347,10 +1366,10 @@ func TestDemoExportCasesAllSucceed(t *testing.T) {
 	if len(failed) > 0 {
 		t.Fatalf("exported responses that are not successes:\n  %s", strings.Join(failed, "\n  "))
 	}
-	assertDemoQuotaCapacityExamples(t, exported.Responses, exported.ReferenceMS)
+	assertDemoQuotaEvidenceExamples(t, exported.Responses, exported.ReferenceMS)
 }
 
-func assertDemoQuotaCapacityExamples(t *testing.T, responses map[string]demoExportResponse, referenceMS int64) {
+func assertDemoQuotaEvidenceExamples(t *testing.T, responses map[string]demoExportResponse, referenceMS int64) {
 	t.Helper()
 	var quotas struct {
 		Quotas []quota.NormalizedQuota `json:"quotas"`
@@ -1358,28 +1377,27 @@ func assertDemoQuotaCapacityExamples(t *testing.T, responses map[string]demoExpo
 	if err := json.Unmarshal([]byte(responses["quota"].Body), &quotas); err != nil {
 		t.Fatal(err)
 	}
-	expected := map[string]string{
-		"auth-codex-01/five_hour":                               "current_cycle",
-		"auth-codex-02/five_hour":                               "blended",
-		"auth-claude-01/five_hour":                              "current_cycle",
-		"auth-claude-01/seven_day":                              "current_cycle",
-		"auth-antigravity-01/ag_Gemini Models_gemini-shared-5h": "current_cycle",
+	expected := map[string]bool{
+		"auth-codex-01/five_hour":                               true,
+		"auth-codex-02/five_hour":                               true,
+		"auth-claude-01/five_hour":                              true,
+		"auth-claude-01/seven_day":                              true,
+		"auth-antigravity-01/ag_Gemini Models_gemini-shared-5h": true,
 	}
 	for _, observation := range quotas.Quotas {
 		for _, window := range observation.Windows {
 			key := observation.AuthIndex + "/" + window.ID
-			basis, isExpected := expected[key]
-			if !isExpected {
+			if !expected[key] {
 				continue
 			}
-			if window.Capacity == nil || window.Capacity.Basis != basis || window.Capacity.Tokens <= 0 || window.Usage == nil || window.Usage.ToMS != observation.ObservedAtMS || window.ResetAtMS == nil || *window.ResetAtMS <= referenceMS {
-				t.Fatalf("invalid exported capacity example %s: %+v", key, window)
+			if window.Usage == nil || window.Usage.ToMS != observation.ObservedAtMS || window.ResetAtMS == nil || *window.ResetAtMS <= referenceMS {
+				t.Fatalf("invalid exported quota evidence %s: %+v", key, window)
 			}
-			if window.CapacityUnavailable != "" || window.Capacity.RemainingTokens == nil {
-				t.Fatalf("capacity result should include remaining capacity without a refusal: %+v", window)
+			if window.Capacity == nil && window.CapacityUnavailable == "" {
+				t.Fatalf("missing capacity evidence state: %+v", window)
 			}
-			if basis == "blended" && window.Capacity.ObservedAtMS != observation.ObservedAtMS {
-				t.Fatalf("blended estimate is not dated by the current reading: %+v", window)
+			if window.Capacity != nil && (window.Capacity.Requests <= 0 || window.Capacity.Tokens <= 0) {
+				t.Fatalf("invalid window capacity: %+v", window)
 			}
 			delete(expected, key)
 		}
@@ -1387,6 +1405,7 @@ func assertDemoQuotaCapacityExamples(t *testing.T, responses map[string]demoExpo
 	if len(expected) != 0 {
 		t.Fatalf("missing quota examples: %v", expected)
 	}
+
 }
 
 func demoExportPlaygroundModelsPath(captured map[string]demoExportResponse) (string, error) {
@@ -1538,7 +1557,7 @@ func TestDemoExportPreservesSeededQuotaCyclesAndUsageEnds(t *testing.T) {
 		"windows": []any{map[string]any{
 			"reset_at_ms": reference + 3600000,
 			"usage":       map[string]any{"from_ms": reference - 3600000, "to_ms": reference},
-			"capacity":    map[string]any{"basis": "previous_cycle", "from_ms": reference - 7200000, "observed_at_ms": reference - 3600000, "reset_at_ms": reference - 1800000},
+			"capacity":    map[string]any{"basis": "current_window", "requests": float64(100), "tokens": float64(100000)},
 		}},
 	}
 	output := demoExportRebase(input, -90*86400000, map[string]int{}).(map[string]any)
@@ -1553,10 +1572,16 @@ func TestDemoExportPreservesSeededQuotaCyclesAndUsageEnds(t *testing.T) {
 	if usage["to_ms"] != reference {
 		t.Fatalf("usage was treated as an incomplete calendar day: %+v", usage)
 	}
-	capacity := window["capacity"].(map[string]any)
-	if capacity["basis"] != "previous_cycle" || capacity["observed_at_ms"] != float64(reference-3600000) {
-		t.Fatalf("historical provenance shifted: %+v", capacity)
+	history := map[string]any{
+		"window_id": "five_hour", "current": map[string]any{"from_ms": reference - 3600000, "reset_at_ms": reference + 3600000},
+		"capacity": map[string]any{"basis": "current_window", "requests": float64(100), "tokens": float64(100000)},
 	}
+	rebased := demoExportRebase(history, -90*86400000, map[string]int{}).(map[string]any)
+	currentCycle := rebased["current"].(map[string]any)
+	if currentCycle["from_ms"] != reference-3600000 {
+		t.Fatalf("quota detail cycle was shifted twice: %+v", currentCycle)
+	}
+
 }
 
 func TestDemoExportPreservesSeededLatencyAndSourceSize(t *testing.T) {

@@ -21,6 +21,7 @@ const (
 	PreferenceProviderIcons       = "provider_icons"
 	PreferenceProviderNames       = "provider_names"
 	PreferenceProviderWebsites    = "provider_websites"
+	PreferenceProviderTestModels  = "provider_test_models"
 	PreferenceUsageEventsView     = "usage_events_view"
 	PreferenceUsageEventsColumns  = "usage_events_columns"
 	PreferenceOAuthManagementView = "oauth_management_view_v1"
@@ -47,6 +48,9 @@ const (
 	// the gateway's plugin loading order.
 	PreferencePluginOrder = "omc_plugin_order"
 
+	// PreferenceWarmupTaskOrder stores quota warmup task IDs in display order.
+	PreferenceWarmupTaskOrder = "omc_warmup_task_order"
+
 	// PreferenceRoutingCardOrder is the routing board's display order of the members inside each
 	// tier: a member key mapped to a rank, as a decimal string. Provider members are keyed by
 	// "provider:" and their positional id, so the document is re-keyed with the other provider
@@ -67,13 +71,14 @@ const (
 	// authored, and whether console animation is reduced. They
 	// are preferences rather than configuration because they describe how the operator reads
 	// the console, not how anything is served.
-	PreferenceDisplayCurrency    = "omc_display_currency"
-	PreferenceTokenStyle         = "omc_token_style"
-	PreferenceTpsCalculationMode = "omc_tps_calculation_mode"
-	PreferenceModelView          = "omc_models_view"
-	PreferenceRequestModelIcons  = "omc_request_model_icons"
-	PreferenceTheme              = "omc_theme"
-	PreferenceReducedMotion      = "omc_reduced_motion"
+	PreferenceDisplayCurrency     = "omc_display_currency"
+	PreferenceTokenStyle          = "omc_token_style"
+	PreferenceTpsCalculationMode  = "omc_tps_calculation_mode"
+	PreferenceModelView           = "omc_models_view"
+	PreferenceRequestModelIcons   = "omc_request_model_icons"
+	PreferenceDashboardComparison = "omc_dashboard_comparison"
+	PreferenceTheme               = "omc_theme"
+	PreferenceReducedMotion       = "omc_reduced_motion"
 
 	// PreferenceNavHidden is the console rail entries the operator has hidden, as an
 	// array of route keys. Storing the hidden set rather than the visible one is what

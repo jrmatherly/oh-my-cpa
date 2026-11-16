@@ -2,22 +2,27 @@ import assert from 'node:assert/strict';
 import {
   FOLDED_ID,
   attributeServingProviders,
+  baselineMeasures,
   buildFlow,
   buildMatrix,
   compareMetric,
+  comparisonScale,
   decodeInsightsCube,
   emptyMeasures,
   facetValues,
   filterRows,
+  groupBaselines,
   groupTotals,
   isOAuthRow,
   matrixCellKey,
   metricValue,
   rankGroups,
+  robustBucketSum,
   sumMeasures,
   trendSeries,
-} from '../../src/pages/insights/insightsCube.ts';
-import { comparesSameStretch, insightsRangeParams, parseInsightsRange } from '../../src/types/insights.ts';
+} from '../../src/types/insightsCube.ts';
+import { formatCountBaseline } from '../../src/types/insightsFormat.ts';
+import { insightsRangeParams, parseInsightsRange } from '../../src/types/insights.ts';
 import { canShowWeekView, peakHourSet, summarizeRhythm } from '../../src/pages/insights/insightsRhythm.ts';
 import {
   DEFAULT_INSIGHTS_VIEW,
@@ -27,7 +32,10 @@ import {
   writeInsightsView,
 } from '../../src/pages/insights/insightsViewState.ts';
 import type { InsightsCubeResponse } from '../../src/types/insights.ts';
+import { buildReceiptLedger, receiptCubeParams } from '../../src/components/dashboard/receipt/receiptModel.ts';
+import { isSlidingRange, requestListWindowParams } from '../../src/types/dashboard.ts';
 import { test } from 'vitest';
+import { buildSankeyLayout } from '../../src/pages/insights/charts/InsightsFlowChart.tsx';
 
 test('insights cube', () => {
   const COLUMNS = [
@@ -252,16 +260,49 @@ test('insights cube', () => {
   assert.equal(insightsRangeParams({ preset: 'today' }), 'preset=today');
   assert.equal(insightsRangeParams({ from: 1, to: null }, 'day'), 'from=1&bucket=day', 'an open range sends no end');
 
-  // A running calendar unit compares against the same stretch of the previous one; every other window
-  // compares against a whole period, so its figure is not a partial reading that needs saying.
-  const resolvedWindow = (preset: string, isOpen: boolean) => ({
-    preset, from: 0, to: 1, open_end: isOpen, bucket: 'hour' as const, timezone: 'UTC', widened: false,
+  // Robust baseline Winsorizes extreme single-bucket spikes while preserving normal skew and duty cycle,
+  // and scales the previous period's rate to the current window's elapsed duration.
+  assert.equal(robustBucketSum([]), 0);
+  assert.equal(robustBucketSum([0, 50, 0, 5000, 0, 10]), 5060, 'fewer than 4 active buckets keep raw sum');
+  assert.equal(robustBucketSum([1, 2, 5, 10, 20, 50, 100, 200]), 388, 'normal diurnal right-skew is untouched');
+  assert.ok(Math.abs(robustBucketSum([1, 1, 1, 1000]) - 5.5) < 1e-6, 'k=4 extreme spike is Winsorized');
+  assert.ok(Math.abs(robustBucketSum([20, 22, 18, 25, 20, 21, 19, 2000]) - 196.25) < 1e-6, 'extreme anomaly is Winsorized');
+
+  const bucketedCube = decodeInsightsCube({
+    ...response,
+    window: { preset: 'today', from: 0, to: 12 * 3_600_000 - 1, open_end: true, bucket: 'hour', timezone: 'UTC', widened: false },
+    compare_window: { from: -24 * 3_600_000, to: -1 },
+    previous_rows: [
+      row(0, 0, 0, 0, 0, 0, 10, 0, 1000, 1_000_000_000),
+      row(1, 0, 0, 0, 0, 0, 10, 0, 1000, 1_000_000_000),
+      row(2, 0, 0, 0, 0, 0, 10, 0, 1000, 1_000_000_000),
+      row(3, 0, 0, 0, 0, 0, 10, 0, 1000, 1_000_000_000),
+      // Extreme single-hour runaway spike in hour 4.
+      row(4, 0, 0, 0, 0, 0, 500, 0, 50_000, 50_000_000_000),
+    ],
   });
-  assert.equal(comparesSameStretch(resolvedWindow('today', true)), true);
-  assert.equal(comparesSameStretch(resolvedWindow('this_month', true)), true);
-  assert.equal(comparesSameStretch(resolvedWindow('yesterday', false)), false, 'a closed unit compares against a whole period');
-  assert.equal(comparesSameStretch(resolvedWindow('7d', true)), false, 'a relative window compares against a whole span');
-  assert.equal(comparesSameStretch(resolvedWindow('custom', true)), false, 'an open-ended range compares against the span before it');
+  const scale = comparisonScale(bucketedCube);
+  assert.equal(scale, 0.5);
+  const { baseline: prevBaseline, raw: prevRaw } = baselineMeasures(bucketedCube.previous, scale);
+  assert.equal(prevRaw.requests, 540);
+  // 4 buckets * 10 + 1 bucket capped at 2.5*10 = 65 -> * 0.5 = 32.5 requests.
+  assert.equal(prevBaseline.requests, 32.5);
+  assert.equal(prevBaseline.totalTokens, 3250);
+  const byKeyBase = groupBaselines(bucketedCube, bucketedCube.previous, 'key', scale);
+  assert.equal(byKeyBase.baseline.get('hmac:a')?.requests, 32.5);
+  assert.equal(byKeyBase.raw.get('hmac:a')?.requests, 540);
+  // Noise testing uses unscaled raw evidence counts rather than scaled baseline counts:
+  // with 100 current vs 100 raw previous (scaled to 1.0 baseline -> +9900% ratio), vs 1 raw previous.
+  const scaledWithFirmEvidence = compareMetric(usage(100, 10_000), usage(1, 5_000), 'tokens', usage(100, 100_000));
+  const scaledWithThinEvidence = compareMetric(usage(100, 10_000), usage(1, 5_000), 'tokens', usage(1, 5_000));
+  assert.deepEqual(scaledWithFirmEvidence, { kind: 'change', change: 1, isNoise: false });
+  assert.deepEqual(scaledWithThinEvidence, { kind: 'change', change: 1, isNoise: true });
+
+  // Fractional baseline counts format cleanly without dropping below visibility.
+  assert.equal(formatCountBaseline(1234.6), '1,235');
+  assert.equal(formatCountBaseline(32.5), '32.5');
+  assert.equal(formatCountBaseline(3.47), '3.47');
+  assert.equal(formatCountBaseline(0.004), '<0.01');
 
   // ── the view in the URL ───────────────────────────────────────────────────────
 
@@ -293,4 +334,271 @@ test('insights cube', () => {
   const DAY = 86_400_000;
   assert.equal(canShowWeekView({ from: 0, to: DAY - 1 }), false, 'a day cannot show a weekday pattern');
   assert.equal(canShowWeekView({ from: 0, to: 7 * DAY - 1 }), true, 'a whole week can');
+
+  // When no API-key credential maps to a configured provider, attributeServingProviders
+  // preserves the decoded cube identity without mutating dictionaries.
+  const unchanged = attributeServingProviders(cube, () => undefined);
+  assert.equal(unchanged, cube);
+
+  // Re-attributed dictionary entries that map two credentials onto the same provider
+  // merge cleanly across groupTotals, buildMatrix, and buildFlow.
+  const mergedAttr = attributeServingProviders(
+    decodeInsightsCube({
+      ...response,
+      dims: {
+        ...response.dims,
+        credentials: [
+          { auth_index: 'k1', auth_type: 'apikey' },
+          { auth_index: 'k2', auth_type: 'apikey' },
+        ],
+      },
+    }),
+    () => 'openai-compat-shared',
+  );
+  const providerTotals = groupTotals(mergedAttr, mergedAttr.rows, 'provider');
+  assert.deepEqual([...providerTotals.keys()], ['openai-compat-shared']);
+  assert.equal(providerTotals.get('openai-compat-shared')?.requests, 20);
+  const mergedMatrix = buildMatrix(mergedAttr, mergedAttr.rows, 'key', 'provider', 'requests', 5, 5);
+  assert.equal(mergedMatrix.cells.get(matrixCellKey('hmac:a', 'openai-compat-shared'))?.value, 15);
+  const mergedFlow = buildFlow(mergedAttr, mergedAttr.rows, ['key', 'model', 'provider'], 'requests', 5);
+  assert.equal(mergedFlow.links.filter((l) => l.target === '2:openai-compat-shared').reduce((s, l) => s + l.value, 0), 20);
+});
+
+test('dashboard receipt ledger and calendar windows', () => {
+  const columns = [
+    'bucket', 'key', 'call_point', 'model', 'provider', 'credential',
+    'requests', 'failures', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cached_tokens',
+    'cache_read_tokens', 'cache_creation_tokens', 'total_tokens', 'latency_sum_ms', 'ttft_sum_ms',
+    'ttft_count', 'cost_nanos', 'priced_requests', 'costed_requests',
+  ];
+  const cell = (bucket: number, key: number, model: number, requests: number, costNanos: number, costed = requests) =>
+    [bucket, key, 0, model, 0, 0, requests, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, costNanos, costed, costed];
+  const cube = decodeInsightsCube({
+    window: { preset: 'yesterday', from: 0, to: 86_399_999, open_end: false, bucket: 'hour', timezone: 'UTC', widened: false },
+    compare_window: { from: -86_400_000, to: -1 },
+    bucket_starts: [0, 3_600_000],
+    dims: {
+      keys: [{ id: 'hmac:a', is_client_key: true }, { id: 'hmac:b', is_client_key: true }, { id: 'hmac:c', is_client_key: true }],
+      call_points: ['x'],
+      models: ['m0', 'm1', 'm2'],
+      providers: ['p'],
+      credentials: [{ auth_index: 'c', auth_type: 'apikey' }],
+    },
+    columns,
+    rows: [
+      // Key a spreads one model over two buckets; the buckets must sum into one line.
+      cell(0, 0, 0, 2, 1_000_000_000),
+      cell(1, 0, 0, 3, 2_000_000_000),
+      cell(0, 0, 1, 1, 500_000_000),
+      cell(0, 0, 2, 9, 0, 0),
+      cell(0, 1, 0, 4, 5_000_000_000),
+      cell(0, 2, 1, 1, 100_000_000),
+    ],
+    previous_rows: [cell(-1, 0, 0, 5, 4_000_000_000).slice(1)],
+    coverage: { fact_requests: 20, detail_requests: 0 },
+  });
+
+  const ledger = buildReceiptLedger(cube, undefined, { keys: 2, models: 2 });
+  assert.deepEqual(ledger.keys.map((line) => line.key), ['hmac:b', 'hmac:a'], 'keys rank by spend');
+  const keyA = ledger.keys[1];
+  assert.deepEqual(keyA.models.map((line) => [line.model, line.requests, line.costNanos]), [['m0', 5, 3_000_000_000], ['m1', 1, 500_000_000]]);
+  assert.deepEqual(keyA.otherModels, { count: 1, requests: 9, costNanos: 0, costedRequests: 0 }, 'an unpriced tail folds without becoming free');
+  assert.deepEqual(ledger.otherKeys, { count: 1, requests: 1, costNanos: 100_000_000, costedRequests: 1 });
+  assert.equal(ledger.current.requests, 20);
+
+  const filtered = buildReceiptLedger(cube, 'hmac:a');
+  assert.deepEqual(filtered.keys.map((line) => line.key), ['hmac:a'], 'a key filter narrows the receipt to that key');
+  assert.equal(filtered.previous.requests, 5);
+  assert.equal(filtered.costChange.kind, 'change');
+
+  const window = { from: 1_000, to: 9_000, bucket_ms: 60_000, minutes: 0, complete: true, open_end: false };
+  assert.equal(receiptCubeParams({ preset: 'today' }, window), 'preset=today', 'a preset both pages know keeps its own comparison');
+  assert.equal(receiptCubeParams({ preset: '1h' }, window), 'from=1000', 'a dashboard-only span reads its bounds, open-ended');
+  assert.equal(receiptCubeParams({ from: 1_000, to: 9_000 }, window), 'from=1000&to=9000');
+
+  assert.equal(isSlidingRange({ preset: 'today' }), true);
+  assert.equal(isSlidingRange({ preset: 'last_week' }), false, 'a previous calendar unit is closed');
+  assert.equal(requestListWindowParams({ preset: 'yesterday' }, window).toString(), 'from=1000&to=9000', 'a calendar drill-down carries its resolved bounds');
+  assert.equal(requestListWindowParams({ preset: 'this_month' }, window).toString(), 'from=1000', 'the current unit stays open');
+  assert.equal(requestListWindowParams({ preset: 'all' }, window).toString(), 'preset=90d');
+
+  // Skewed 7-node Sankey column reserves minimum node heights within chart bounds.
+  const skewedWeights = [100_000, 1, 1, 1, 1, 1, 1];
+  const skewedNodes = [
+    ...skewedWeights.map((_, idx) => ({
+      id: `0:k${idx}`,
+      level: 0,
+      dimension: 'key' as const,
+      value: `k${idx}`,
+      folded: idx === skewedWeights.length - 1,
+      foldedCount: idx === skewedWeights.length - 1 ? 3 : 0,
+    })),
+    { id: '1:claude', level: 1, dimension: 'provider' as const, value: 'claude', folded: false, foldedCount: 0 },
+  ];
+  const skewedLinks = skewedWeights.map((weight, idx) => ({
+    source: `0:k${idx}`,
+    target: '1:claude',
+    value: weight,
+  }));
+  const chartHeight = 320;
+  const { layoutNodes } = buildSankeyLayout(
+    skewedNodes,
+    skewedLinks,
+    640,
+    chartHeight,
+    () => '#00a2fb',
+    (node) => node.value,
+  );
+  const col0 = layoutNodes.filter((item) => item.node.level === 0);
+  assert.equal(col0.length, 7);
+  assert.ok(col0.every((item) => item.h >= 4), 'every small node retains the 4px floor');
+  const col0Bottom = Math.max(...col0.map((item) => item.y + item.h));
+  assert.ok(col0Bottom <= chartHeight - 10 + 1e-6, `skewed column fits inside innerHeight (bottom=${col0Bottom})`);
+});
+
+test('a tooltip card travels as one fact per line plus its structure, and an empty card adds no hint', async () => {
+  const { readTipCard, tipCard } = await import('../../src/components/common/tipCard.ts');
+  const card = { heading: 'Versus the previous period', rows: [{ label: 'Change', value: '+230%', tone: 'up' as const }, { label: 'Previous average', value: '867' }], notes: [false, 'Scaled from the previous period'] };
+  const attributes = tipCard(card);
+  assert.equal(attributes['data-tip'], 'Versus the previous period\nChange: +230%\nPrevious average: 867\nScaled from the previous period');
+  assert.deepEqual(readTipCard(attributes['data-tip-card']), card);
+  assert.deepEqual(tipCard({ rows: [], notes: [null] }), {});
+  assert.equal(readTipCard('{not json'), null);
+});
+
+test('insights label resolver handles deleted OAuth credentials, deleted OpenAI-compatible providers, and live ambiguity', async () => {
+  const { createInsightsLabelResolver } = await import('../../src/hooks/useInsightsLabels.ts');
+  const { createServingProviderResolver, indexCredentialFiles } = await import('../../src/types/usageEventIdentity.ts');
+
+  const archivedCredentials = [
+    {
+      auth_index: 'aaaa1111bbbb2222',
+      kind: 'oauth' as const,
+      provider_key: 'codex',
+      provider_family: 'codex',
+      masked_account: 'op•••r@acme.test',
+      file_name: 'codex-op•••r@acme.test.json',
+    },
+    {
+      auth_index: 'idx-inception-1',
+      kind: 'apikey' as const,
+      provider_key: 'openai-compatible-inception',
+      provider_family: 'openai-compatibility',
+      provider_name: 'Inception',
+      upstream_name: 'inception',
+      key_mask: 'test-key••••••••1111',
+    },
+  ];
+  const archivedCredentialsByIndex = new Map(archivedCredentials.map((item) => [item.auth_index, item]));
+  const archivedProvidersByKey = new Map([
+    [
+      'openai-compatible-inception',
+      {
+        provider_key: 'openai-compatible-inception',
+        kind: 'ai_provider' as const,
+        name: 'Inception',
+        upstream_name: 'inception',
+        family: 'openai-compatibility',
+      },
+    ],
+  ]);
+
+  const rawCube: InsightsCubeResponse = {
+    window: { preset: '7d', from: 0, to: 86_400_000, open_end: true, bucket: 'day', timezone: 'UTC', widened: false },
+    compare_window: { from: -86_400_000, to: -1 },
+    bucket_starts: [0],
+    dims: {
+      keys: [{ id: 'hmac:a', alias: 'Team', is_client_key: true }],
+      call_points: ['gpt-5', 'mercury'],
+      models: ['gpt-5', 'mercury'],
+      providers: ['codex', 'openai-compatible-inception'],
+      credentials: [
+        { auth_index: 'aaaa1111bbbb2222', auth_type: 'oauth' },
+        { auth_index: 'idx-inception-1', auth_type: 'apikey' },
+        { auth_index: 'cccc3333dddd4444', auth_type: 'oauth' },
+      ],
+    },
+    columns: [
+      'bucket', 'key', 'call_point', 'model', 'provider', 'credential',
+      'requests', 'failures', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cached_tokens',
+      'cache_read_tokens', 'cache_creation_tokens', 'total_tokens', 'latency_sum_ms', 'ttft_sum_ms',
+      'ttft_count', 'cost_nanos', 'priced_requests', 'costed_requests',
+    ],
+    rows: [
+      [0, 0, 0, 0, 0, 0, 25, 0, 2500, 0, 0, 0, 0, 0, 2500, 2000, 0, 0, 1_000_000, 25, 25],
+      [0, 0, 1, 1, 1, 1, 15, 0, 1500, 0, 0, 0, 0, 0, 1500, 1200, 0, 0, 1_000_000, 15, 15],
+      [0, 0, 0, 0, 0, 2, 5, 0, 500, 0, 0, 0, 0, 0, 500, 400, 0, 0, 500_000, 5, 5],
+    ],
+    previous_rows: [],
+    coverage: { fact_requests: 45, detail_requests: 0 },
+  };
+
+  const serving = createServingProviderResolver([], archivedCredentialsByIndex);
+  const cube = attributeServingProviders(decodeInsightsCube(rawCube), serving);
+  const labels = createInsightsLabelResolver({
+    cube,
+    credentialFiles: indexCredentialFiles([], archivedCredentials),
+    configuredProviders: [],
+    archivedCredentialsByIndex,
+    archivedProvidersByKey,
+    t: (key) => key,
+  });
+
+  assert.equal(labels.label('credential', 'aaaa1111bbbb2222'), 'op•••r@acme.test');
+  assert.equal(labels.detail('credential', 'aaaa1111bbbb2222'), 'Codex');
+  assert.equal(labels.label('credential', 'cccc3333dddd4444'), 'Codex (#cccc3333)');
+  assert.equal(labels.label('provider', 'openai-compatible-inception'), 'Inception');
+  assert.equal(labels.label('credential', 'idx-inception-1'), 'Inception test-key••••••••1111');
+
+  // If two live configured providers share idx-inception-1, live ambiguity blocks archive fallback.
+  const conflictingLive = [
+    { id: 'openai-compat-0', name: 'Relay One', auth_indexes: ['idx-inception-1'] },
+    { id: 'openai-compat-1', name: 'Relay Two', auth_indexes: ['idx-inception-1'] },
+  ];
+  assert.equal(createServingProviderResolver(conflictingLive, archivedCredentialsByIndex)('idx-inception-1'), undefined);
+  const ambiguousLabels = createInsightsLabelResolver({
+    cube,
+    credentialFiles: indexCredentialFiles([], archivedCredentials),
+    configuredProviders: conflictingLive,
+    archivedCredentialsByIndex,
+    archivedProvidersByKey,
+    t: (key) => key,
+  });
+  assert.equal(ambiguousLabels.label('credential', 'idx-inception-1'), 'idx-inception-1');
+
+  // Comparison rows (previous_rows) also participate in provider claim attribution and conflict detection.
+  const compareConflictCube = decodeInsightsCube({
+    ...rawCube,
+    dims: {
+      ...rawCube.dims,
+      providers: ['codex', 'claude'],
+      credentials: [
+        ...rawCube.dims.credentials,
+        { auth_index: 'eeee5555ffff6666', auth_type: 'oauth' },
+      ],
+    },
+    rows: [
+      [0, 0, 0, 0, 0, 2, 5, 0, 500, 0, 0, 0, 0, 0, 500, 400, 0, 0, 500_000, 5, 5],
+    ],
+    previous_rows: [
+      [-1, 0, 0, 0, 1, 2, 3, 0, 300, 0, 0, 0, 0, 0, 300, 200, 0, 0, 300_000, 3, 3],
+      [-1, 0, 0, 0, 1, 3, 2, 0, 200, 0, 0, 0, 0, 0, 200, 100, 0, 0, 200_000, 2, 2],
+    ],
+  });
+  const compareLabels = createInsightsLabelResolver({
+    cube: compareConflictCube,
+    credentialFiles: new Map(),
+    configuredProviders: [],
+    t: (key) => key,
+  });
+  assert.equal(
+    compareLabels.label('credential', 'cccc3333dddd4444'),
+    '#cccc3333',
+    'conflicting providers across current and previous windows drop provider attribution',
+  );
+  assert.equal(
+    compareLabels.label('credential', 'eeee5555ffff6666'),
+    'Claude (#eeee5555)',
+    'credential present only in comparison window still resolves its unambiguous provider',
+  );
 });

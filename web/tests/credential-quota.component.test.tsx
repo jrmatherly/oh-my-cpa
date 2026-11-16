@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { I18nProvider, makeT } from '../src/i18n';
@@ -10,15 +10,23 @@ import {
 import { buildCredentialQuotaBoard, credentialQuotaRefreshTargets } from '../src/components/dashboard/credentialQuotaLogic';
 import { resolveCredentialMark } from '../src/types/brandMark';
 import { CredentialQuotaBody } from '../src/pages/quota/CredentialQuotaBody';
-import { App as AntdApp } from 'antd';
-import { CredentialSection, type CredentialRowActions } from '../src/pages/oauthManagement/CredentialSection';
+import { QuotaCapacityButton, QuotaCapacityScope } from '../src/pages/quota/QuotaCapacityButton';
+import QuotaCapacityDialog from '../src/pages/quota/QuotaCapacityDialog';
+import { CredentialList } from '../src/pages/oauthManagement/CredentialList';
+import { ProviderStrip } from '../src/pages/oauthManagement/ProviderStrip';
+import type { CredentialActions } from '../src/pages/oauthManagement/CredentialParts';
 import { OAuthManagementPage } from '../src/pages/oauthManagement/OAuthManagementPage';
 import { installOmcApi } from './support/omcApi';
 import { renderWithOmc } from './support/render';
 import { buildCredentialSections } from '../src/pages/oauthManagement/credentialSections';
 import { buildOAuthWorkspaceProjection } from '../src/pages/oauthManagement/oauthWorkspaceLogic';
 import type { ManagementAuthFile } from '../src/types/managementAuthFile';
-import type { QuotaItem, QuotaWindow } from '../src/types/quota';
+import type { QuotaItem, QuotaWindow, QuotaWindowCapacity } from '../src/types/quota';
+
+vi.mock('../src/components/dashboard/RollingNumber', () => ({
+  RollingNumber: ({ readout }: { readout?: { number: number; prefix?: string; suffix: string; format: Intl.NumberFormatOptions } }) =>
+    <>{readout ? `${readout.prefix ?? ''}${new Intl.NumberFormat('en', readout.format).format(readout.number)}${readout.suffix}` : '—'}</>,
+}));
 
 const NOW_MS = Date.parse('2026-10-10T08:00:00Z');
 const HOUR_MS = 3_600_000;
@@ -172,7 +180,7 @@ describe('credential quota body details', () => {
   const renderBody = (item: QuotaItem) => render(
     <MemoryRouter>
       <I18nProvider>
-        <CredentialQuotaBody item={item} nowMS={NOW_MS} isDemo={false} />
+        <CredentialQuotaBody item={item} credentialLabel={item.name} nowMS={NOW_MS} isDemo={false} />
       </I18nProvider>
     </MemoryRouter>,
   );
@@ -193,7 +201,7 @@ describe('credential quota body details', () => {
       },
     }));
     expect(screen.getByText('Weekly Reset')).toBeTruthy();
-    expect(screen.getByText(/1 of 2 left/)).toBeTruthy();
+    expect(document.querySelector('[data-quota-reset="grant"]')?.textContent).toMatch(/left\s*1\s*\/\s*2/);
     expect(screen.queryByText('Spent')).toBeNull();
     expect(screen.getByText('Cloud session credits')).toBeTruthy();
     expect(screen.getByText(/\$35\.00 left/)).toBeTruthy();
@@ -209,6 +217,7 @@ describe('credential quota body details', () => {
               recommendation: { status: 'needs_reauth', priority: 'critical', action: 'reauth', reason: 'reauthorize' },
               last_refresh: { attempted_at_ms: NOW_MS - 60_000, outcome: 'failed', error: 'HTTP 401: unauthorized' },
             })}
+            credentialLabel="codex-main"
             nowMS={NOW_MS}
             isDemo={false}
           />
@@ -220,41 +229,51 @@ describe('credential quota body details', () => {
     expect(screen.getAllByText(/HTTP 401: unauthorized/).length).toBeGreaterThan(0);
     expect(screen.getByText('100%')).toBeTruthy();
   });
+
 });
 
 function renderCredentialRow(
   item: QuotaItem,
   { onRefresh, onOpen = vi.fn(), onRename = vi.fn(async () => true), fileOverrides = {} }: {
     onRefresh?: () => void;
-    onOpen?: CredentialRowActions['onOpen'];
-    onRename?: CredentialRowActions['onRename'];
+    onOpen?: CredentialActions['onOpen'];
+    onRename?: CredentialActions['onRename'];
     fileOverrides?: Partial<ManagementAuthFile>;
   } = {},
 ) {
   const { records } = buildOAuthWorkspaceProjection([file(item.auth_index, fileOverrides)], [item], []);
   const [section] = buildCredentialSections(records, records);
-  const actions: CredentialRowActions = {
+  const actions: CredentialActions = {
     isBusy: () => false, isRefreshingQuota: () => false, siwcBadge: () => undefined,
-    onSelect: vi.fn(), onToggle: vi.fn(), onDownload: vi.fn(), onDelete: vi.fn(), onOpen, onRename,
-    onRefreshQuota: onRefresh ?? vi.fn(), onClearCooldown: vi.fn(), onReauthenticate: vi.fn(), onOpenSIWC: vi.fn(),
+    onSelect: vi.fn(), onPick: vi.fn(), onToggle: vi.fn(), onDownload: vi.fn(), onDelete: vi.fn(), onOpen, onRename,
+    onRefreshQuota: onRefresh ?? vi.fn(), onClearCooldown: vi.fn(), onRedeemCredit: vi.fn(), onReauthenticate: vi.fn(), onOpenSIWC: vi.fn(), onOpenModelRules: vi.fn(),
   };
   if (!onRefresh) section.records = section.records.map((record) => ({ ...record, canRefreshQuota: false }));
   return render(
     <MemoryRouter>
       <I18nProvider>
-        <AntdApp>
-          <CredentialSection section={section} selectedKeys={new Set()} nowMS={NOW_MS} actions={actions} onSort={vi.fn()} />
-        </AntdApp>
+        <CredentialList groups={[{ ...section, title: 'Codex' }]} selectedKeys={new Set()} isSelecting={false} nowMS={NOW_MS} actions={actions} />
       </I18nProvider>
     </MemoryRouter>,
   );
 }
 
-describe('credential section row', () => {
-  it('renders reset times, unused window duration, and derived estimate markers', () => {
+describe('credential list row', () => {
+  it('makes credential warnings reachable by keyboard', async () => {
+    renderCredentialRow(quota('warning', []), { fileOverrides: { status_message: 'Credential needs attention' } });
+    const warning = screen.getByTestId('oauth-credential-warning');
+    expect(warning.getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(document, { key: 'Tab' });
+    warning.focus();
+    expect(document.activeElement).toBe(warning);
+    await screen.findByRole('tooltip');
+    expect(screen.getByRole('tooltip').textContent).toContain('Credential needs attention');
+  });
+
+  it('shows the five-hour and weekly limits in place with reset times, unused window duration, and derived estimate markers', () => {
     const { container } = renderCredentialRow(quota('codex-full', [
-      { ...quotaWindow('five_hour', 100, 2), used_percent: 0 },
       { ...quotaWindow('weekly', 100, 48), reset_accuracy: 'derived' },
+      { ...quotaWindow('five_hour', 100, 5), used_percent: 0 },
     ]));
     const cells = container.querySelectorAll<HTMLElement>('[data-quota-window-label]');
     expect(within(cells[0]).getByText('100%')).toBeTruthy();
@@ -262,10 +281,77 @@ describe('credential section row', () => {
     expect(within(cells[1]).getByText('~2d left')).toBeTruthy();
   });
 
+  it('hides capacity trigger when a window has no capacity estimate and shows estimated full total when available', () => {
+    const { container } = renderCredentialRow(quota('codex-forecast-row', [
+      {
+        ...quotaWindow('five_hour', 80, 3),
+        capacity: {
+          basis: 'current_window', sample_requests: 10, sample_priced_requests: 10,
+          requests: 50, tokens: 500_000, cost_nanos: 12_340_000_000,
+        },
+      },
+      {
+        ...quotaWindow('weekly', 100, 48),
+        capacity_unavailable: 'low_usage',
+      },
+    ]));
+    const cells = container.querySelectorAll<HTMLElement>('[data-quota-window-label]');
+    expect(within(cells[0]).getByRole('button', { name: '≈ $12.34' })).toBeTruthy();
+    expect(within(cells[1]).queryByText('Usage details')).toBeNull();
+    expect(within(cells[1]).queryByRole('button')).toBeNull();
+  });
+
+  it('keeps an open row capacity dialog mounted if a refresh clears live capacity', async () => {
+    const api = installOmcApi();
+    api.on('GET', '/management/quota/codex-refresh/capacity', () => ({
+      window_id: 'five_hour',
+      current: null,
+      previous: null,
+      capacity_unavailable: 'no_traffic',
+    }));
+    const withForecast = quota('codex-refresh', [{
+      ...quotaWindow('five_hour', 80, 3),
+      capacity: {
+        basis: 'current_window', sample_requests: 10, sample_priced_requests: 10,
+        requests: 50, tokens: 500_000, cost_nanos: 12_340_000_000,
+      },
+    }]);
+    const withoutForecast = quota('codex-refresh', [{
+      ...quotaWindow('five_hour', 75, 3),
+      usage: { from_ms: NOW_MS - HOUR_MS, to_ms: NOW_MS, requests: 0, priced_requests: 0, tokens: 0, cost_nanos: 0 },
+      capacity_unavailable: 'no_traffic',
+    }]);
+    const actions: CredentialActions = {
+      isBusy: () => false, isRefreshingQuota: () => false, siwcBadge: () => undefined,
+      onSelect: vi.fn(), onPick: vi.fn(), onToggle: vi.fn(), onDownload: vi.fn(), onDelete: vi.fn(), onOpen: vi.fn(), onRename: vi.fn(async () => true),
+      onRefreshQuota: vi.fn(), onClearCooldown: vi.fn(), onRedeemCredit: vi.fn(), onReauthenticate: vi.fn(), onOpenSIWC: vi.fn(), onOpenModelRules: vi.fn(),
+    };
+    let setItem!: (item: QuotaItem) => void;
+    const Host = () => {
+      const [item, _setItem] = React.useState(withForecast);
+      setItem = _setItem;
+      const { records } = buildOAuthWorkspaceProjection([file(item.auth_index)], [item], []);
+      const [section] = buildCredentialSections(records, records);
+      return <CredentialList groups={[{ ...section, title: 'Codex' }]} selectedKeys={new Set()} isSelecting={false} nowMS={NOW_MS} actions={actions} />;
+    };
+
+    const view = renderWithOmc(<Host />, { route: '/oauth-management' });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: '≈ $12.34' }));
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+
+      act(() => setItem(withoutForecast));
+      await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('No requests recorded yet')).toBeTruthy());
+      expect(screen.queryByRole('button', { name: '≈ $12.34' })).toBeNull();
+    } finally {
+      view.unmount();
+    }
+  });
+
   it('triggers inline quota refresh, renewal badge navigation, and inline rename', async () => {
     const refresh = vi.fn();
     const onOpen = vi.fn();
-    const onRename = vi.fn<CredentialRowActions['onRename']>(async () => true);
+    const onRename = vi.fn<CredentialActions['onRename']>(async () => true);
     const { container } = renderCredentialRow(
       quota('codex-stale', [quotaWindow('five_hour', 40, 2)], {
         status: 'stale',
@@ -305,6 +391,23 @@ describe('credential section row', () => {
   });
 });
 
+describe('provider navigation', () => {
+  it('clears provider search when the provider list is closed and reopened', async () => {
+    const summaries = Array.from({ length: 8 }, (_, index) => ({ provider: `provider-${index}`, total: 1, attention: 0, disabled: 0 }));
+    renderWithOmc(<ProviderStrip summaries={summaries} total={8} attention={0} active="all" onChange={vi.fn()} onConnect={vi.fn()}
+      reorder={{ isEnabled: true, onMove: vi.fn(), onStep: vi.fn() }} />);
+    fireEvent.click(screen.getByTestId('oauth-provider-switcher'));
+    const search = await screen.findByRole('textbox', { name: 'Find a provider' });
+    fireEvent.change(search, { target: { value: 'provider-1' } });
+    expect(within(screen.getByRole('dialog')).queryByText('All accounts')).toBeNull();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByTestId('oauth-provider-switcher'));
+    expect((await screen.findByRole('textbox', { name: 'Find a provider' }) as HTMLInputElement).value).toBe('');
+    expect(within(screen.getByRole('dialog')).getByText('All accounts')).toBeTruthy();
+  });
+});
+
 describe('provider sections across pages', () => {
   it('moves a provider section above the one before it and saves the arrangement', async () => {
     const files = [
@@ -320,9 +423,8 @@ describe('provider sections across pages', () => {
     try {
       // The console's own order leads until the operator arranges the sections: Claude is pinned first.
       await waitFor(() => expect(drawnProviders()).toEqual(['claude', 'codex']));
-      // The band that names a provider is what a pointer grabs, and the grip on it steps by keyboard.
-      const codex = screen.getAllByTestId('oauth-credential-section').find(section => section.getAttribute('data-provider') === 'codex')!;
-      expect(codex.querySelector('header')?.getAttribute('data-draggable')).toBe('true');
+      // The provider list behind the tabs is the arrangement: its grip steps a provider by keyboard.
+      fireEvent.click(screen.getByTestId('oauth-provider-switcher'));
       fireEvent.keyDown(await screen.findByRole('button', { name: 'Drag to reorder: Codex' }), { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 });
       await waitFor(() => expect(sectionWrites()).toEqual([{ key: 'omc_oauth_section_order', value: { sections: ['codex', 'claude'] } }]));
       expect(drawnProviders()).toEqual(['codex', 'claude']);
@@ -343,12 +445,105 @@ describe('provider sections across pages', () => {
     const visibleIdentities = () => screen.getAllByTestId('oauth-credential-record').map(row => row.getAttribute('data-auth-index'));
     try {
       await waitFor(() => expect(visibleIdentities()).toHaveLength(12));
-      fireEvent.click(await screen.findByRole('button', { name: 'Quota' }));
+      fireEvent.click(await screen.findByRole('button', { name: /^Sort: / }));
+      fireEvent.click(await screen.findByText('Least quota left'));
       await waitFor(() => expect(visibleIdentities()[0]).toBe('account-13'));
       const firstRow = screen.getAllByTestId('oauth-credential-record')[0];
       expect(within(firstRow).getByRole('button', { name: /^SIWC settings:/ }).getAttribute('data-siwc-badge')).toBe('active');
     } finally {
       view.unmount();
     }
+  });
+
+  it('dismisses and blocks row capacity dialogs while a page overlay is active', async () => {
+    const api = installOmcApi();
+    api.on('GET', '/management/quota/acct-1/capacity', () => ({ current: null, previous: null }));
+    const windowItem: QuotaWindow = {
+      ...quotaWindow('five_hour', 70, 2),
+      capacity_unavailable: 'low_usage',
+    };
+    const owner = { authIndex: 'acct-1', credentialName: 'Primary' };
+    let setBlocked!: (blocked: boolean) => void;
+    const Host = () => {
+      const [blocked, _setBlocked] = React.useState(false);
+      setBlocked = _setBlocked;
+      return (
+        <QuotaCapacityScope isBlocked={blocked}>
+          <QuotaCapacityButton owner={owner} window={windowItem}>Usage details</QuotaCapacityButton>
+        </QuotaCapacityScope>
+      );
+    };
+    const view = renderWithOmc(<Host />);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Usage details' }));
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+
+      act(() => setBlocked(true));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      // Clicking while blocked does not reopen the row dialog.
+      fireEvent.click(screen.getByRole('button', { name: 'Usage details' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      view.unmount();
+    }
+  });
+});
+
+describe('quota consumption and window capacity dialog', () => {
+  it('switches periods and displays full-window capacity alongside previous-window fallback provenance', async () => {
+    const api = installOmcApi();
+    const cap = (basis: QuotaWindowCapacity['basis'], requests: number, costDollars: number): QuotaWindowCapacity => ({
+      basis, sample_requests: 90, sample_priced_requests: 90,
+      requests, tokens: requests * 20_000, cost_nanos: costDollars * 1_000_000_000, cache_rate: 80,
+    });
+    const fiveHour: QuotaWindow = {
+      ...quotaWindow('five_hour', 80, 3), period_hours: 5,
+      usage: { from_ms: NOW_MS - 2 * HOUR_MS, to_ms: NOW_MS, requests: 90, priced_requests: 90, tokens: 1_750_000, cache_rate: 78.5, cost_nanos: 10_000_000_000 },
+      capacity: cap('current_window', 450, 50),
+    };
+    const weekly: QuotaWindow = {
+      ...quotaWindow('weekly', 100, 100), id: 'seven_day', period_hours: 168,
+      capacity: cap('previous_window', 1000, 200),
+    };
+    api.on('GET', '/management/quota/gemini-seat/capacity', (req) => {
+      const active = req.query.get('window') === 'seven_day' ? weekly : fiveHour;
+      return {
+        window_id: active.id,
+        current: active.usage ? { from_ms: active.usage.from_ms, reset_at_ms: active.reset_at_ms, used_percent: 100 - active.remaining_percent!, usage: active.usage } : null,
+        previous: null,
+        capacity: active.capacity,
+      };
+    });
+    const view = renderWithOmc(<QuotaCapacityDialog open onClose={vi.fn()} owner={{ authIndex: 'gemini-seat', credentialName: 'Gemini Pro' }} window={fiveHour} windows={[fiveHour, weekly]} />);
+    try {
+      const dialog = await screen.findByRole('dialog');
+      const capacityCard = within(dialog).getByRole('region', { name: 'Estimated quota' });
+      await waitFor(() => expect(capacityCard.textContent).toContain('$50.00'));
+      expect(capacityCard.textContent).toContain('450');
+      expect(within(dialog).getByRole('region', { name: 'This window' }).textContent).toContain('$10.00');
+      fireEvent.click(within(dialog).getByRole('radio', { name: 'Weekly limit' }));
+      await waitFor(() => expect(capacityCard.textContent).toContain('$200.00'));
+      expect(capacityCard.textContent).toContain('1,000');
+      expect(capacityCard.textContent).toContain('From last window');
+    } finally { view.unmount(); }
+  });
+
+  it('clears a stale inline capacity when the fresh details report no recorded traffic', async () => {
+    const api = installOmcApi();
+    api.on('GET', '/management/quota/mixed-seat/capacity', () => ({ window_id: 'five_hour', current: null, previous: null, capacity_unavailable: 'no_traffic' }));
+    const windowItem: QuotaWindow = {
+      ...quotaWindow('five_hour', 80, 3),
+      capacity: { basis: 'current_window', sample_requests: 10, requests: 123, tokens: 12300 },
+    };
+    const view = renderWithOmc(<QuotaCapacityDialog open onClose={vi.fn()} owner={{ authIndex: 'mixed-seat', credentialName: 'Gemini Pro' }} window={windowItem} />);
+    try {
+      const dialog = await screen.findByRole('dialog');
+      const capacityCard = within(dialog).getByRole('region', { name: 'Estimated quota' });
+      await waitFor(() => {
+        expect(within(capacityCard).getByText('No requests recorded yet')).toBeTruthy();
+        expect(capacityCard.textContent).not.toContain('123');
+      });
+    } finally { view.unmount(); }
   });
 });

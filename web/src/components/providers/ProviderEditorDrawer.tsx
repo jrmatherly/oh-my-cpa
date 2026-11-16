@@ -1,15 +1,11 @@
 import { ConnectionPoolEditor } from './ConnectionPoolEditor';
 import { EMPTY_CONNECTION_POOL_DRAFT, buildConnectionPool } from './connectionPool';
-import {
-  AutoComplete,
-  Button,
-  Checkbox,
-  Col,
-  Form,
-  Input,
-  Row,
-  Select,
-} from 'antd';
+import { AutoComplete } from '@/components/ui/autocomplete';
+import { Field } from '@/components/ui/field';
+import { Select } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { NumberInput } from '../common/NumberInput';
 import { CheckSquareOutlined, CloseOutlined, DownOutlined, PlusOutlined, SyncOutlined } from '../icons';
 
@@ -18,7 +14,6 @@ import type { MessageKey } from '../../i18n/catalog';
 import { useCustomIcons } from '../../hooks/useCustomIcons';
 import { usePluginOAuthLogos } from '../../hooks/usePluginOAuthLogos';
 import { customIconID } from '../../types/customIcons';
-import { isDemoMode } from '../../types/demoMode';
 import { ProviderMark } from '../LobeIcon';
 import { getProviderDefaultIcon } from '../../types/providerIconIds';
 import { maskKeyText } from '../../utils/maskKey';
@@ -117,6 +112,8 @@ interface ProviderEditorDrawerProps extends Pick<
   | 'setThinkingLevels'
   | 'toggleKeyExpanded'
   | 'handleKeyAdd'
+  | 'testingKeyIds'
+  | 'isTestingAllKeys'
   | 'handleTestKey'
   | 'handleTestAllKeys'
   | 'handleCloseProviderDrawer'
@@ -148,9 +145,6 @@ export function ProviderEditorDrawer({
   ...editor
 }: ProviderEditorDrawerProps & { familyDisplayNames: Record<string, string> }) {
   const t = useT();
-  // Pulling models calls the provider's own endpoint with the credential. The
-  // demonstration refuses it, so the control says so rather than failing on click.
-  const isDemo = isDemoMode();
   const {
     createProviderMutation,
     updateProviderMutation,
@@ -220,6 +214,8 @@ export function ProviderEditorDrawer({
     setThinkingLevels,
     toggleKeyExpanded,
     handleKeyAdd,
+    testingKeyIds,
+    isTestingAllKeys,
     handleTestKey,
     handleTestAllKeys,
     handleCloseProviderDrawer,
@@ -270,10 +266,8 @@ export function ProviderEditorDrawer({
               {t('common.cancel')}
             </Button>
             <Button
-              type="primary"
+              variant="primary"
               loading={createProviderMutation.isPending || updateProviderMutation.isPending}
-              disabled={isDemo}
-              title={isDemo ? t('demo.blocked') : undefined}
               onClick={handleSaveProvider}
             >
               {t('common.save')}
@@ -281,7 +275,7 @@ export function ProviderEditorDrawer({
           </>
         }
       >
-        <Form layout="vertical">
+        <div>
           {/* Provider Icon Card */}
           <div className={styles['icon-card']}>
             <div
@@ -290,7 +284,7 @@ export function ProviderEditorDrawer({
                 setTargetProviderForIcon(null);
                 setIconPickerOpen(true);
               }}
-              title={t('pro.change_icon')}
+              data-tip={t('pro.change_icon')}
             >
               <ProviderMark provider={{ id: editingProvider?.id, family: formFamily, name: formName, upstream_name: editingProvider?.upstream_name, base_url: formBaseURL, icon_id: formIcon }} sources={{ pluginLogos }} size={30} />
             </div>
@@ -300,7 +294,7 @@ export function ProviderEditorDrawer({
             </div>
             <div className={styles['icon-actions']}>
               <Button
-                size="small"
+                size="sm"
                 onClick={() => {
                   setTargetProviderForIcon(null);
                   setIconPickerOpen(true);
@@ -310,8 +304,8 @@ export function ProviderEditorDrawer({
               </Button>
               {formIcon !== getProviderDefaultIcon(formFamily, formName, formBaseURL) && (
                 <Button
-                  size="small"
-                  type="link"
+                  size="sm"
+                  variant="link"
                   onClick={() => {
                     setFormIcon(getProviderDefaultIcon(formFamily, formName, formBaseURL));
                     setIconManuallySelected(false);
@@ -324,9 +318,9 @@ export function ProviderEditorDrawer({
           </div>
 
           {/* Driver & Name */}
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Field
                 label={t('pro.field_family')}
                 required
                 extra={editingProvider && formFamily !== editingProvider.family
@@ -351,10 +345,10 @@ export function ProviderEditorDrawer({
                   disabled={createProviderMutation.isPending || updateProviderMutation.isPending}
                   options={familyOptions}
                 />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label={t('pro.field_name')} required>
+              </Field>
+            </div>
+            <div>
+              <Field label={t('pro.field_name')} required>
                 <Input
                   value={formName}
                   onChange={(e) => {
@@ -366,21 +360,15 @@ export function ProviderEditorDrawer({
                 }}
                   placeholder={t('pro.field_name_ph')}
                 />
-              </Form.Item>
-            </Col>
-          </Row>
+              </Field>
+            </div>
+          </div>
 
           {/* Base URL */}
-          <Form.Item
+          <Field
             required={lookupProviderFamily(formFamily)?.requiresBaseURL ?? false}
-            label={
-              <span>
-                {t('pro.field_base_url')}{' '}
-                <span className={styles['label-hint']}>
-                  · {t('pro.field_base_url_desc')}
-                </span>
-              </span>
-            }
+            label={t('pro.field_base_url')}
+            extra={t('pro.field_base_url_desc')}
           >
             <Input
               value={formBaseURL}
@@ -396,7 +384,7 @@ export function ProviderEditorDrawer({
               }}
               placeholder={t('pro.field_base_url_ph')}
             />
-          </Form.Item>
+          </Field>
 
           {/* Guidance sits with the URL that makes the header necessary: the
               Custom Headers group is collapsed by default, and a requirement
@@ -411,7 +399,7 @@ export function ProviderEditorDrawer({
                 value: OPENCODE_SESSION_HEADER_VALUE,
               })}
               action={
-                <Button size="small" onClick={handleAddOpenCodeSessionHeader}>
+                <Button size="sm" onClick={handleAddOpenCodeSessionHeader}>
                   {t('pro.opencode_session_add', { header: OPENCODE_SESSION_HEADER })}
                 </Button>
               }
@@ -426,7 +414,7 @@ export function ProviderEditorDrawer({
               title={t('pro.opencode_session_conflict_title')}
               description={t('pro.opencode_session_conflict_desc', { header: OPENCODE_SESSION_HEADER })}
               action={
-                <Button size="small" onClick={() => setHeadersSectionOpen(true)}>
+                <Button size="sm" onClick={() => setHeadersSectionOpen(true)}>
                   {t('pro.opencode_session_review')}
                 </Button>
               }
@@ -434,57 +422,51 @@ export function ProviderEditorDrawer({
           )}
 
           {/* Website: console metadata, deliberately not a CPA field. */}
-          <Form.Item
-            label={
-              <span>
-                {t('pro.field_website')}{' '}
-                <span className={styles['label-hint']}>
-                  · {t('pro.field_website_desc')}
-                </span>
-              </span>
-            }
-            validateStatus={websiteInputState.status}
-            help={websiteInputState.help}
+          <Field
+            label={t('pro.field_website')}
+            error={websiteInputState.status === 'error' ? websiteInputState.help : undefined}
+            extra={t('pro.field_website_desc')}
           >
             <Input
               value={formWebsite}
               onChange={(e) => setFormWebsite(e.target.value)}
               placeholder="https://example.com"
               className="config-mono-input"
+              status={websiteInputState.status === 'error' ? 'error' : undefined}
               allowClear
             />
-          </Form.Item>
+          </Field>
 
           {/* Prefix & Priority */}
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item label={t('pro.field_prefix')}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Field label={t('pro.field_prefix')}>
                 <Input
                   value={formPrefix}
                   onChange={(e) => setFormPrefix(e.target.value)}
                   placeholder="e.g. prefix"
                 />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item label={t('pro.field_priority')}>
+              </Field>
+            </div>
+            <div>
+              <Field label={t('pro.field_priority')}>
                 <NumberInput
                   value={formPriority}
                   onChange={(val) => setFormPriority(val)}
                   placeholder="e.g. 1"
                   className={styles['full-width']}
                 />
-              </Form.Item>
-            </Col>
-          </Row>
+              </Field>
+            </div>
+          </div>
 
           {/* Test Model */}
-          <Form.Item label={t('pro.field_test_model')}>
+          <Field label={t('pro.field_test_model')}>
             <Select
               value={
-                formTestModel === 'auto' || formModels.some((m) => m.name === formTestModel)
+                formTestModel === '' || formModels.some((m) => m.name === formTestModel)
                   ? formTestModel
-                  : 'auto'
+                  : ''
               }
               onChange={setFormTestModel}
               options={[
@@ -492,7 +474,7 @@ export function ProviderEditorDrawer({
                   label: formModels[0]?.name
                     ? t('pro.test_auto', { model: formModels[0].name })
                     : t('pro.test_auto_default'),
-                  value: 'auto',
+                  value: '',
                 },
                 ...formModels
                   .filter((m) => !!m.name.trim())
@@ -502,14 +484,14 @@ export function ProviderEditorDrawer({
                   })),
               ]}
             />
-          </Form.Item>
+          </Field>
 
           {/* Flag: Disabled */}
           <div className={styles['flag-list']}>
             <div className={styles['flag']}>
               <Checkbox
                 checked={formDisabled}
-                onChange={(e) => setFormDisabled(e.target.checked)}
+                onCheckedChange={(checked) => setFormDisabled(checked)}
               >
                 <span className={styles['flag-label']}>{t('pro.field_disabled')}</span>
               </Checkbox>
@@ -529,13 +511,17 @@ export function ProviderEditorDrawer({
                 {/* Top Action Row */}
                 <div className={styles['section-actions']}>
                   <Button
-                    type="dashed"
+                    variant="dashed"
                     icon={<PlusOutlined />}
                     onClick={handleKeyAdd}
                   >
                     {t('pro.add_key_entry')}
                   </Button>
-                  <Button onClick={handleTestAllKeys}>
+                  <Button
+                    loading={isTestingAllKeys}
+                    disabled={isTestingAllKeys}
+                    onClick={handleTestAllKeys}
+                  >
                     {t('pro.test_all')}
                   </Button>
                 </div>
@@ -563,22 +549,28 @@ export function ProviderEditorDrawer({
                           >
                             <span className={styles['item-title']}>{t('pro.key_label', { n: idx + 1 })}</span>
                             {displayKey && (
-                              <span className={styles['item-key']} title={maskKeyText(displayKey)}>
+                              <span className={styles['item-key']} data-tip={maskKeyText(displayKey)} data-tip-overflow="">
                                 {maskKeyText(displayKey)}
                               </span>
                             )}
                           </button>
 
                           <div className={styles['item-actions']}>
-                            <Button type="link" size="small" onClick={() => handleTestKey(k, idx)}>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              loading={testingKeyIds.has(k.id)}
+                              disabled={testingKeyIds.has(k.id)}
+                              onClick={() => handleTestKey(k, idx)}
+                            >
                               {t('pro.test_single')}
                             </Button>
                             {/* A pointer affordance only: the header button is the toggle a
                                 keyboard and a screen reader use, and a second one would be
                                 announced twice. */}
                             <Button
-                              type="text"
-                              size="small"
+                              variant="ghost"
+                              size="sm"
                               icon={<DownOutlined className={styles['chevron']} />}
                               data-expanded={isExpanded || undefined}
                               aria-hidden="true"
@@ -599,8 +591,8 @@ export function ProviderEditorDrawer({
                                 isDanger
                               >
                                 <Button
-                                  type="text"
-                                  size="small"
+                                  variant="ghost"
+                                  size="sm"
                                   danger
                                   icon={<CloseOutlined />}
                                   aria-label={`${t('common.delete')}: ${t('pro.key_label', { n: idx + 1 })}`}
@@ -721,8 +713,8 @@ export function ProviderEditorDrawer({
                           className={styles['header-input']}
                         />
                         <Button
-                          size="small"
-                          type="text"
+                          size="sm"
+                          variant="ghost"
                           danger
                           icon={<CloseOutlined />}
                           aria-label={`${t('common.delete')}: ${h.key || t('pro.section_headers')}`}
@@ -735,7 +727,7 @@ export function ProviderEditorDrawer({
                   </div>
                 )}
                 <Button
-                  type="dashed"
+                  variant="dashed"
                   icon={<PlusOutlined />}
                   onClick={() =>
                     setFormHeaders((prev) => [
@@ -773,8 +765,6 @@ export function ProviderEditorDrawer({
                     <Button
                       icon={<SyncOutlined spin={isPullingModels} />}
                       loading={isPullingModels}
-                      disabled={isDemo}
-                      title={isDemo ? t('demo.blocked') : undefined}
                       onClick={handlePullModels}
                     >
                       {endpointModels.length > 0
@@ -822,13 +812,9 @@ export function ProviderEditorDrawer({
                             <AutoComplete
                               value={m.name}
                               options={modelOptions}
-                              // The options are already narrowed by the typed
-                              // text above, so the popup must not apply a second,
-                              // differently-scoped filter on top of them. Stated
-                              // explicitly rather than left to the combobox
-                              // default, which is what silently made this
-                              // dropdown unfiltered in the first place.
-                              showSearch={{ filterOption: false }}
+                              filterOption={false}
+                              placeholder={t('pro.actual_request_model')}
+                              showCaret={endpointModels.length > 0}
                               onSelect={(val) => {
                                 setFormModels((prev) =>
                                   prev.map((item) =>
@@ -850,16 +836,7 @@ export function ProviderEditorDrawer({
                                 );
                               }}
                               className={styles['model-input']}
-                            >
-                              <Input
-                                placeholder={t('pro.actual_request_model')}
-                                suffix={
-                                  endpointModels.length > 0 ? (
-                                    <DownOutlined className={styles['model-suffix']} />
-                                  ) : <span />
-                                }
-                              />
-                            </AutoComplete>
+                            />
                             <Input
                               value={m.alias}
                               onChange={(e) =>
@@ -873,16 +850,16 @@ export function ProviderEditorDrawer({
                               className={styles['model-input']}
                             />
                             <Button
-                              type="text"
-                              size="small"
+                              variant="ghost"
+                              size="sm"
                               icon={<DownOutlined className={styles['chevron']} />}
                               aria-label={m.name || t('pro.actual_request_model')}
                               aria-expanded={isExpanded}
                               onClick={() => toggleModelExpanded(m.id)}
                             />
                             <Button
-                              size="small"
-                              type="text"
+                              size="sm"
+                              variant="ghost"
                               danger
                               icon={<CloseOutlined />}
                               aria-label={`${t('common.delete')}: ${m.name || t('pro.actual_request_model')}`}
@@ -905,7 +882,7 @@ export function ProviderEditorDrawer({
                               <div>
                                 <Checkbox
                                   checked={m.image || false}
-                                  onChange={(e) => updateModelImage(m.id, e.target.checked)}
+                                  onCheckedChange={(checked) => updateModelImage(m.id, checked)}
                                 >
                                   <span className={styles['flag-label']}>
                                     {t('pro.allow_image_endpoint')}
@@ -928,10 +905,10 @@ export function ProviderEditorDrawer({
                                   checked={THINKING_LEVEL_OPTIONS.every((opt) => m.thinking?.levels?.includes(opt.value))}
                                   indeterminate={THINKING_LEVEL_OPTIONS.some((opt) => m.thinking?.levels?.includes(opt.value))
                                     && !THINKING_LEVEL_OPTIONS.every((opt) => m.thinking?.levels?.includes(opt.value))}
-                                  onChange={(event) => {
+                                  onCheckedChange={(checked) => {
                                     const current = m.thinking?.levels ?? [];
                                     const known = new Set(THINKING_LEVEL_OPTIONS.map((opt) => opt.value));
-                                    const next = event.target.checked
+                                    const next = checked
                                       ? [...THINKING_LEVEL_OPTIONS.map((opt) => opt.value), ...current.filter((level) => !known.has(level))]
                                       : current.filter((level) => !known.has(level));
                                     setThinkingLevels(m.id, next);
@@ -940,34 +917,25 @@ export function ProviderEditorDrawer({
                                   {t('pro.select_all')}
                                 </Checkbox>
                               </div>
-                              <Row gutter={[10, 10]}>
+                              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                                 {THINKING_LEVEL_OPTIONS.map((opt) => {
                                   const isChecked =
                                     m.thinking?.levels?.includes(opt.value) || false;
                                   return (
-                                    <Col xs={24} sm={12} key={opt.value}>
-                                      <div
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => toggleThinkingLevel(m.id, opt.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === ' ' || e.key === 'Enter') {
-                                            e.preventDefault();
-                                            toggleThinkingLevel(m.id, opt.value);
-                                          }
-                                        }}
-                                        aria-pressed={isChecked}
-                                        className={`${styles['level-option']} ${isChecked ? styles['level-option-checked'] : ''}`}
-                                      >
-                                        <Checkbox checked={isChecked} tabIndex={-1} className={styles['level-check']}>
+                                    <div key={opt.value}>
+                                      {/* The tile is the checkbox's label: one control, so the whole
+                                          tile takes the click and a keyboard reaches the box once. */}
+                                      <label className={`${styles['level-option']} ${isChecked ? styles['level-option-checked'] : ''}`}>
+                                        <span className={styles['level-start']}>
+                                          <Checkbox checked={isChecked} onCheckedChange={() => toggleThinkingLevel(m.id, opt.value)} />
                                           <span className={styles['level-label']}>{t(opt.labelKey)}</span>
-                                        </Checkbox>
+                                        </span>
                                         <span className={styles['level-value']}>{opt.value}</span>
-                                      </div>
-                                    </Col>
+                                      </label>
+                                    </div>
                                   );
                                 })}
-                              </Row>
+                              </div>
                             </div>
 
                             <ModelOptionsFields
@@ -990,7 +958,7 @@ export function ProviderEditorDrawer({
                   </div>
                 )}
 
-                <Button type="dashed" icon={<PlusOutlined />} onClick={handleAddModel}>
+                <Button variant="dashed" icon={<PlusOutlined />} onClick={handleAddModel}>
                   {t('pro.add_model_entry')}
                 </Button>
           </EditorSection>
@@ -1016,7 +984,7 @@ export function ProviderEditorDrawer({
               showProblems={isPolicyChecked}
             />
           </EditorSection>
-        </Form>
+        </div>
         <ModelPickerModal
           isOpen={isModelPickerOpen && providerDrawerOpen && endpointModels.length > 0}
           models={endpointModels}

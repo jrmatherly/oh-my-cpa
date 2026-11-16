@@ -97,13 +97,20 @@ func olderAPIVersion(daemon, fallback string) string {
 	return fallback
 }
 
+// do sends JSON or a streamed image archive to the daemon and decodes its HTTP errors.
 func (e *Engine) do(ctx context.Context, method, path string, query url.Values, body any) (*http.Response, error) {
 	target := "http://docker/v" + e.apiVersion + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
 	var reader io.Reader
-	if body != nil {
+	contentType := "application/json"
+
+	// Image archives stream directly to the local daemon; ordinary API bodies stay JSON.
+	if stream, ok := body.(io.Reader); ok {
+		reader = stream
+		contentType = "application/x-tar"
+	} else if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
@@ -115,7 +122,7 @@ func (e *Engine) do(ctx context.Context, method, path string, query url.Values, 
 		return nil, err
 	}
 	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Content-Type", contentType)
 	}
 	response, err := e.httpClient.Do(request)
 	if err != nil {
@@ -171,8 +178,9 @@ type Container struct {
 	Config       map[string]any `json:"Config"`
 	HostConfig   map[string]any `json:"HostConfig"`
 	State        struct {
-		Running bool `json:"Running"`
-		Health  *struct {
+		Running    bool `json:"Running"`
+		Restarting bool `json:"Restarting"`
+		Health     *struct {
 			Status string `json:"Status"`
 		} `json:"Health"`
 	} `json:"State"`
@@ -368,6 +376,14 @@ func (e *Engine) ConnectNetwork(ctx context.Context, network, container string, 
 		payload["EndpointConfig"] = endpoint
 	}
 	return e.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", nil, payload, nil)
+}
+
+// DisconnectNetwork removes a temporary proxy-network attachment after downloading the image.
+func (e *Engine) DisconnectNetwork(ctx context.Context, network, container string) error {
+	// Detach only this updater; the console and the proxy keep their existing network endpoints.
+	return e.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/disconnect", nil,
+		map[string]any{"Container": container}, nil,
+	)
 }
 
 // WatchContainerStarts calls onStart with the container ID each time a container

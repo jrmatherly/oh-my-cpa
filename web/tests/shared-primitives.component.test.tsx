@@ -6,7 +6,9 @@ import { DeferredMount } from '../src/components/common/DeferredMount';
 import { Tooltip } from '../src/components/common/Tooltip';
 import { progressTasks } from '../src/utils/progressTasks';
 import { AppDrawer } from '../src/components/common/AppDrawer';
+import { AppModal } from '../src/components/common/AppModal';
 import { ConfirmAction } from '../src/components/common/ConfirmAction';
+import { confirmModal } from '../src/components/feedback';
 import { EmptyState } from '../src/components/common/EmptyState';
 import { Meter } from '../src/components/common/Meter';
 import { NumberInput } from '../src/components/common/NumberInput';
@@ -14,15 +16,23 @@ import { Pager } from '../src/components/common/Pager';
 import { SearchInput } from '../src/components/common/SearchInput';
 import { SectionHeading } from '../src/components/common/SectionHeading';
 import { SelectionBar } from '../src/components/common/SelectionBar';
-import { Tag, ToggleTag } from '../src/components/common/Tag';
+import { EffortTag, Tag, ToggleTag } from '../src/components/common/Tag';
 import { PageHeader } from '../src/components/common/PageHeader';
 import { SummaryStrip } from '../src/components/common/SummaryStrip';
 import { MaskedText } from '../src/components/common/MaskedText';
 import { MarkArtwork } from '../src/components/common/MarkArtwork';
 import { RemoteImage } from '../src/components/common/RemoteImage';
+import { Select } from '../src/components/ui/select';
+import { Tabs } from '../src/components/ui/tabs';
+import { Combobox } from '../src/components/ui/combobox';
+import { AutoComplete } from '../src/components/ui/autocomplete';
+import { DataTable } from '../src/components/ui/table';
 import { I18nProvider, useT, type MessageKey } from '../src/i18n';
+import { ThemeProvider } from '../src/theme/ThemeContext';
+import { DashboardTrendChart } from '../src/charts/DashboardTrendChart';
+import { RoutingPanel } from '../src/components/dashboard/routing/RoutingPanel';
 import { renderWithOmc } from './support/render';
-import { installOmcApi } from './support/omcApi';
+import { installOmcApi, json } from './support/omcApi';
 
 describe('SearchInput', () => {
   it('is named by its label, shows it as the placeholder, and reports text rather than events', () => {
@@ -38,12 +48,12 @@ describe('SearchInput', () => {
 
   it('keeps a longer placeholder apart from the accessible name and clears to an empty string', () => {
     const onChange = vi.fn();
-    const { container } = render(
+    render(
       <SearchInput value="prod" onChange={onChange} label="Search requests" placeholder="Model, key or request ID" />,
     );
     expect(screen.getByRole('textbox', { name: 'Search requests' }).getAttribute('placeholder')).toBe('Model, key or request ID');
 
-    fireEvent.click(container.querySelector('.ant-input-clear-icon')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     expect(onChange.mock.calls).toEqual([['']]);
   });
@@ -131,7 +141,7 @@ describe('AppDrawer', () => {
     act(() => select(null));
 
     expect(screen.getByText('Body of request 42')).toBeTruthy();
-    expect(document.querySelector('.ant-drawer-title')?.textContent).toBe('request 42');
+    expect(document.querySelector('[data-slot="sheet-title"]')?.textContent).toBe('request 42');
     expect(document.querySelector('.app-drawer-footer-actions button')?.textContent).toBe('Copy request 42');
   });
 
@@ -171,6 +181,18 @@ describe('Tag', () => {
 
     expect(onChange.mock.calls).toEqual([[true]]);
   });
+
+  it('as an effort spells the parameter and colours only a ranked level that reasons', () => {
+    for (const [effort, label, hue] of [['max', 'Max', 'var(--effort-6)'], ['xhigh', 'xHigh', 'var(--effort-5)'], ['high', 'High', 'var(--effort-4)'], ['low', 'Low', 'var(--effort-2)'], ['none', 'None', ''], ['ultra', 'Ultra', '']]) {
+      const { container, unmount } = render(<EffortTag effort={effort} />);
+      const tag = container.querySelector<HTMLElement>('.effort-tag')!;
+      expect(tag.textContent, effort).toBe(label);
+      expect(tag.classList.contains('is-small'), effort).toBe(true);
+      expect(tag.style.getPropertyValue('--effort-hue'), effort).toBe(hue);
+      unmount();
+    }
+    expect(render(<EffortTag effort="" />).container.innerHTML).toBe('');
+  });
 });
 
 describe('ConfirmAction', () => {
@@ -185,7 +207,7 @@ describe('ConfirmAction', () => {
     );
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
     const confirm = screen.getByRole('button', { name: 'Delete' });
-    expect(confirm.classList.contains('ant-btn-dangerous')).toBe(true);
+    expect(confirm.hasAttribute('data-danger')).toBe(true);
 
     fireEvent.click(confirm);
 
@@ -209,8 +231,8 @@ describe('ConfirmAction', () => {
     await screen.findByRole('button', { name: 'Cancel' });
     // jsdom never ends a motion, so a tooltip on its way out keeps its node in the leave state.
     await waitFor(() => {
-      const tooltip = screen.queryByText('Delete key')?.closest('.ant-tooltip');
-      expect(!tooltip || /-leave\b/.test(tooltip.className)).toBe(true);
+      const tooltip = screen.queryByRole('tooltip');
+      expect(!tooltip || tooltip.hasAttribute('data-ending-style')).toBe(true);
     });
   });
 });
@@ -223,7 +245,7 @@ describe('SelectionBar', () => {
       </SelectionBar>,
     );
     expect(screen.getByRole('status').textContent).toBe('3 selected');
-    expect(container.querySelector('.selection-bar.is-framed')).toBeTruthy();
+    expect(container.querySelector('.selection-bar')).toBeTruthy();
     expect(container.querySelector('.selection-bar-note')?.textContent).toBe('2 on other pages');
     expect(container.querySelector('.selection-bar-actions button')?.textContent).toBe('Delete');
   });
@@ -293,16 +315,16 @@ describe('Pager', () => {
   it('reports the page chosen and offers no page-size menu', () => {
     const onChange = vi.fn();
     const { container } = render(<Pager page={1} pageSize={20} total={48} onChange={onChange} />);
-    expect(container.querySelector('.ant-pagination-options')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
 
-    fireEvent.click(container.querySelector('.ant-pagination-item-2') as HTMLElement);
+    fireEvent.click(container.querySelector('[data-page="2"]') as HTMLElement);
 
     expect(onChange).toHaveBeenCalledWith(2, 20);
   });
 
   it('steps through pages without a field to type in', () => {
     const { container } = render(<Pager variant="stepped" page={2} pageSize={10} total={48} onChange={() => undefined} />);
-    expect(container.querySelector('.ant-pagination-simple')).toBeTruthy();
+    expect(container.querySelector('[data-variant="stepped"]')).toBeTruthy();
     expect(container.querySelector('input')).toBeNull();
   });
 });
@@ -312,12 +334,12 @@ describe('the translator', () => {
     const t = useT();
     // A miss reaches the translator as plain text: the runtime answers any string with itself, and
     // this is the one place a caller has to say so.
-    return <span>{t('toString' as MessageKey)} · {t('no.such.id' as MessageKey, { n: 1 })}</span>;
+    return <span>{t('toString' as MessageKey)} / {t('no.such.id' as MessageKey, { n: 1 })}</span>;
   }
 
   it('renders an id the catalog does not define as itself, including a name the prototype carries', () => {
     render(<I18nProvider><UnknownIds /></I18nProvider>);
-    expect(document.body.textContent).toContain('toString · no.such.id');
+    expect(document.body.textContent).toContain('toString / no.such.id');
   });
 });
 
@@ -342,6 +364,81 @@ describe('Tooltip', () => {
     expect(screen.getByRole('textbox', { name: 'Draft' })).toBe(trigger);
     expect(document.activeElement).toBe(trigger);
     expect(trigger.getAttribute('aria-describedby')).toBe('field-hint');
+  });
+
+  it('opens a tap-readable or delegated data-tip on mobile touch and reliably closes on outside tap, repeat tap, or scroll', async () => {
+    const { ChartContainer, ChartTooltipContent } = await import('../src/components/ui/chart');
+    const { DelegatedTooltipLayer } = await import('../src/components/ui/tooltip');
+
+    render(
+      <div>
+        <DelegatedTooltipLayer />
+        <span data-testid="tip-badge" data-tip="Exact: 1,234,567 tokens">1.2M</span>
+        <div data-testid="outside">Outside area</div>
+        <ChartContainer config={{ val: { label: 'Tokens', color: '#00a2fb' } }} responsive={false} data-testid="mobile-chart">
+          <ChartTooltipContent active label="12:00" payload={[{ name: 'val', dataKey: 'val', value: 4200, payload: { t: 1 } }]} />
+        </ChartContainer>
+      </div>,
+    );
+
+    const badge = screen.getByTestId('tip-badge');
+    const outside = screen.getByTestId('outside');
+    const chart = screen.getByTestId('mobile-chart');
+
+    // 1. Mobile tap on non-interactive data-tip opens it, outside tap closes it immediately.
+    fireEvent.pointerDown(badge, { pointerType: 'touch', clientX: 20, clientY: 20 });
+    fireEvent.pointerUp(badge, { pointerType: 'touch', clientX: 20, clientY: 20 });
+    await waitFor(() => expect(screen.getByText('Exact: 1,234,567 tokens')).toBeTruthy());
+
+    fireEvent.pointerDown(outside, { pointerType: 'touch', clientX: 200, clientY: 200 });
+    await waitFor(() => expect(screen.queryByText('Exact: 1,234,567 tokens')).toBeNull());
+
+    // 2. ChartTooltipContent on mobile touch: visible on tap, closes on outside tap and on scroll.
+    fireEvent.pointerDown(chart, { pointerType: 'touch', clientX: 50, clientY: 50 });
+    fireEvent.pointerUp(chart, { pointerType: 'touch', clientX: 50, clientY: 50 });
+    expect(chart.querySelector('[data-slot="chart-tooltip"]')).not.toBeNull();
+
+    // Repeat tap on same active point toggles chart tooltip off!
+    fireEvent.pointerDown(chart, { pointerType: 'touch', clientX: 50, clientY: 50 });
+    fireEvent.pointerUp(chart, { pointerType: 'touch', clientX: 50, clientY: 50 });
+    expect(chart.querySelector('[data-slot="chart-tooltip"]')).toBeNull();
+
+    // Tap again to open, then scroll page -> closes immediately!
+    fireEvent.pointerDown(chart, { pointerType: 'touch', clientX: 60, clientY: 50 });
+    fireEvent.pointerUp(chart, { pointerType: 'touch', clientX: 60, clientY: 50 });
+    expect(chart.querySelector('[data-slot="chart-tooltip"]')).not.toBeNull();
+
+    fireEvent.scroll(document);
+    expect(chart.querySelector('[data-slot="chart-tooltip"]')).toBeNull();
+  });
+});
+
+describe('Delegated tooltip cards', () => {
+  it('draws a card as rows, keeps an echo silent, and closes the open hint when the pointer reaches it', async () => {
+    const { DelegatedTooltipLayer } = await import('../src/components/ui/tooltip');
+    const { tipCard } = await import('../src/components/common/tipCard');
+    render(
+      <div>
+        <DelegatedTooltipLayer />
+        <span data-testid="card" {...tipCard({ heading: 'Versus the previous period', rows: [{ label: 'Change', value: '+40.2%', tone: 'up' }], notes: ['Scaled from the robust average'] })}>40.2%</span>
+        <span data-testid="echo" data-tip="1,234">1,234</span>
+      </div>,
+    );
+    const card = screen.getByTestId('card');
+    fireEvent.pointerDown(card, { pointerType: 'touch', clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(card, { pointerType: 'touch', clientX: 10, clientY: 10 });
+    await waitFor(() => expect(document.querySelector('[data-slot="tooltip-readout"]')).not.toBeNull());
+    const popup = document.querySelector('[data-slot="tooltip"]')!;
+    expect(popup.textContent).toContain('Change');
+    expect(popup.textContent).toContain('+40.2%');
+    expect(popup.textContent).toContain('Scaled from the robust average');
+
+    // The exact count equals what the element already prints, so the tap closes the card and opens nothing.
+    const echo = screen.getByTestId('echo');
+    fireEvent.pointerDown(echo, { pointerType: 'touch', clientX: 40, clientY: 10 });
+    fireEvent.pointerUp(echo, { pointerType: 'touch', clientX: 40, clientY: 10 });
+    await waitFor(() => expect(screen.queryByText('Scaled from the robust average')).toBeNull());
+    expect(screen.queryByText('1,234', { selector: '[data-slot="tooltip"] *, [data-slot="tooltip"]' })).toBeNull();
   });
 });
 
@@ -523,6 +620,61 @@ describe('RemoteImage', () => {
     expect(container.querySelector('.placeholder')).toBeNull();
   });
 
+  it('mounts a previously settled remote source in a single pass without flashing a placeholder', () => {
+    const settledUrl = 'https://cdn.example/settled-provider-mark.png';
+    const first = render(<RemoteImage src={settledUrl} size={20} />);
+    expect(first.container.querySelector('[data-remote-image="loading"]')).not.toBeNull();
+    fireEvent.load(first.container.querySelector('img')!);
+    expect(first.container.querySelector('[data-remote-image="loaded"]')).not.toBeNull();
+    first.unmount();
+
+    const second = render(<RemoteImage src={settledUrl} size={20} />);
+    expect(second.container.querySelector('[data-remote-image="loaded"]')).not.toBeNull();
+    expect(second.container.querySelector('.placeholder')).toBeNull();
+  });
+
+  it('keeps probing a settled masked source so mid-session failures still fall back', () => {
+    const probes: HTMLImageElement[] = [];
+    const NativeImage = window.Image;
+    vi.spyOn(window, 'Image').mockImplementation(function MockImage() {
+      const img = new NativeImage();
+      probes.push(img);
+      return img;
+    } as unknown as typeof Image);
+
+    const maskedUrl = 'https://cdn.example/masked-plugin.svg';
+    const first = render(
+      <MarkArtwork
+        artworks={[{ url: maskedUrl, isMono: true }]}
+        size={20}
+        fallback={<span data-fallback="" />}
+      />,
+    );
+    expect(first.container.querySelector('[data-remote-image="loading"]')).not.toBeNull();
+    act(() => {
+      probes[0].onload?.(new Event('load'));
+    });
+    expect(first.container.querySelector('[data-remote-image="loaded"]')).not.toBeNull();
+    first.unmount();
+
+    // Second mount starts ready immediately without flashing a placeholder, yet still probes.
+    const second = render(
+      <MarkArtwork
+        artworks={[{ url: maskedUrl, isMono: true }]}
+        size={20}
+        fallback={<span data-fallback="" />}
+      />,
+    );
+    expect(second.container.querySelector('[data-remote-image="loaded"]')).not.toBeNull();
+    expect(second.container.querySelector('.placeholder')).toBeNull();
+    expect(probes).toHaveLength(2);
+
+    act(() => {
+      probes[1].onerror?.(new Event('error'));
+    });
+    expect(second.container.querySelector('[data-fallback]')).not.toBeNull();
+  });
+
   it('hands a failed source back, so the next candidate and then the fallback draw', () => {
     const { container } = render(
       <MarkArtwork
@@ -549,13 +701,13 @@ describe('RemoteImage', () => {
 
 describe('PageHeader', () => {
   it('renders a text subtitle in a paragraph element', () => {
-    render(<PageHeader title="AI 提供商" subtitle="5 个提供商 · 8 个模型" />);
+    render(<PageHeader title="AI 提供商" subtitle="5 个提供商，8 个模型" />);
     const heading = screen.getByRole('heading', { level: 1, name: 'AI 提供商' });
     expect(heading).toBeTruthy();
 
     const subtitle = document.querySelector('.terminal-subtitle');
     expect(subtitle?.tagName.toLowerCase()).toBe('p');
-    expect(subtitle?.textContent).toBe('5 个提供商 · 8 个模型');
+    expect(subtitle?.textContent).toBe('5 个提供商，8 个模型');
   });
 
   it('renders a SummaryStrip child under the title without paragraph wrapping', () => {
@@ -582,3 +734,507 @@ describe('PageHeader', () => {
   });
 });
 
+describe('Base UI Select, Tabs, Combobox & AutoComplete contracts', () => {
+  it('keeps an initially empty controlled Select synchronized across external updates and clear', () => {
+    function Harness() {
+      const [val, setVal] = React.useState<string | undefined>(undefined);
+      return (
+        <div>
+          <button type="button" onClick={() => setVal('claude')}>Set Claude</button>
+          <Select
+            aria-label="Protocol"
+            allowClear
+            placeholder="All protocols"
+            value={val}
+            onChange={(next) => setVal(next)}
+            options={[
+              { value: 'alpha', label: 'Alpha' },
+              { value: 'claude', label: 'Claude' },
+            ]}
+          />
+        </div>
+      );
+    }
+    renderWithOmc(<Harness />);
+    const trigger = screen.getByRole('combobox', { name: 'Protocol' });
+    expect(trigger.textContent).toContain('All protocols');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set Claude' }));
+    expect(trigger.textContent).toContain('Claude');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(trigger.textContent).toContain('All protocols');
+  });
+
+  it('retains visited Tabs panel state when destroyOnHidden is false and discards it when true', () => {
+    function CounterPanel({ label }: { label: string }) {
+      const [count, setCount] = React.useState(0);
+      return (
+        <button type="button" onClick={() => setCount((c) => c + 1)}>
+          {label}: {count}
+        </button>
+      );
+    }
+    const { rerender } = renderWithOmc(
+      <Tabs
+        defaultActiveKey="tail"
+        items={[
+          { key: 'tail', label: 'Tail', children: <CounterPanel label="Tail count" /> },
+          { key: 'errors', label: 'Errors', children: <CounterPanel label="Error count" /> },
+        ]}
+      />,
+    );
+
+    // Lazy initial mount: inactive Errors panel is not mounted before first visit.
+    expect(screen.queryByRole('button', { name: /Error count/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Tail count: 0' }));
+    expect(screen.getByRole('button', { name: 'Tail count: 1' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Errors' }));
+    expect(screen.getByRole('button', { name: 'Error count: 0' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Tail' }));
+    expect(screen.getByRole('button', { name: 'Tail count: 1' })).toBeTruthy();
+
+    rerender(
+      <Tabs
+        destroyOnHidden
+        defaultActiveKey="tail"
+        items={[
+          { key: 'tail', label: 'Tail', children: <CounterPanel label="Tail count" /> },
+          { key: 'errors', label: 'Errors', children: <CounterPanel label="Error count" /> },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Errors' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tail' }));
+    expect(screen.getByRole('button', { name: 'Tail count: 0' })).toBeTruthy();
+  });
+
+  it('wires aria-activedescendant on Combobox and AutoComplete and ignores Enter during IME composition', async () => {
+    const onComboChange = vi.fn();
+    const onAutoSelect = vi.fn();
+    renderWithOmc(
+      <div>
+        <Combobox
+          aria-label="Model picker"
+          showSearch
+          open
+          options={[
+            { value: 'gpt-5', label: 'GPT-5' },
+            { value: 'claude-4', label: 'Claude 4' },
+          ]}
+          onChange={onComboChange}
+        />
+        <AutoComplete
+          aria-label="Alias target"
+          value="g"
+          options={[
+            { value: 'gpt-5', label: 'GPT-5' },
+            { value: 'gemini', label: 'Gemini' },
+          ]}
+          onSelect={onAutoSelect}
+        />
+      </div>,
+    );
+
+    const searchInput = await screen.findByRole('combobox', { name: 'Model picker search' });
+    const firstOptId = searchInput.getAttribute('aria-activedescendant');
+    expect(firstOptId).toBeTruthy();
+    expect(document.getElementById(firstOptId!)?.textContent).toContain('GPT-5');
+
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' });
+    const secondOptId = searchInput.getAttribute('aria-activedescendant');
+    expect(secondOptId).toBeTruthy();
+    expect(secondOptId).not.toBe(firstOptId);
+    expect(document.getElementById(secondOptId!)?.textContent).toContain('Claude 4');
+
+    // IME composition confirmation must not commit the highlighted option.
+    fireEvent.keyDown(searchInput, { key: 'Enter', isComposing: true });
+    expect(onComboChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+    expect(onComboChange).toHaveBeenCalledWith('claude-4', expect.objectContaining({ value: 'claude-4' }));
+
+    const autoInput = screen.getByRole('combobox', { name: 'Alias target' });
+    fireEvent.focus(autoInput);
+    await waitFor(() => expect(autoInput.getAttribute('aria-expanded')).toBe('true'));
+    const autoActiveId = autoInput.getAttribute('aria-activedescendant');
+    expect(autoActiveId).toBeTruthy();
+    expect(document.getElementById(autoActiveId!)?.textContent).toContain('GPT-5');
+
+    fireEvent.keyDown(autoInput, { key: 'Enter', isComposing: true });
+    expect(onAutoSelect).not.toHaveBeenCalled();
+  });
+
+  it('layers AppModal above AppDrawer even when the modal portal mounted first', () => {
+    installOmcApi();
+    let setModalOpen!: (open: boolean) => void;
+    let setDrawerOpen!: (open: boolean) => void;
+    const Host = () => {
+      const [modalOpen, _setModalOpen] = React.useState(true);
+      const [drawerOpen, _setDrawerOpen] = React.useState(false);
+      setModalOpen = _setModalOpen;
+      setDrawerOpen = _setDrawerOpen;
+      return (
+        <>
+          <AppModal open={modalOpen} title="First modal" onCancel={() => _setModalOpen(false)}>
+            modal body
+          </AppModal>
+          <AppDrawer open={drawerOpen} widthKey="test_stacking" title="Later drawer" onClose={() => _setDrawerOpen(false)}>
+            drawer body
+          </AppDrawer>
+        </>
+      );
+    };
+    renderWithOmc(<Host />);
+
+    // Close modal (kept mounted via keepMounted), open drawer later, then reopen modal.
+    act(() => setModalOpen(false));
+    act(() => setDrawerOpen(true));
+    act(() => setModalOpen(true));
+
+    const sheet = document.querySelector<HTMLElement>('[data-slot="sheet-content"]')!;
+    const dialogBackdrop = document.querySelector<HTMLElement>('[data-slot="dialog-backdrop"]')!;
+    const dialogViewport = document.querySelector<HTMLElement>('[data-slot="dialog-viewport"]')!;
+    expect(Number(dialogBackdrop.style.zIndex)).toBeGreaterThan(Number(sheet.style.zIndex));
+    expect(Number(dialogViewport.style.zIndex)).toBeGreaterThan(Number(dialogBackdrop.style.zIndex));
+
+    // Pressing Escape dismisses only the top modal and keeps the underlying drawer open.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-slot="dialog-content"][data-open]')).toBeNull();
+    expect(document.querySelector('[data-slot="sheet-content"][data-open]')).not.toBeNull();
+
+    // A second Escape dismisses the now-topmost drawer.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-slot="sheet-content"][data-open]')).toBeNull();
+  });
+
+  it('dismisses only the topmost sibling ConfirmDialogHost or equal-zIndex AppModal on Escape', () => {
+    installOmcApi();
+    let setDrawerOpen!: (open: boolean) => void;
+    const Host = () => {
+      const [drawerOpen, _setDrawerOpen] = React.useState(true);
+      const [firstModalOpen, setFirstModalOpen] = React.useState(true);
+      const [secondModalOpen, setSecondModalOpen] = React.useState(true);
+      setDrawerOpen = _setDrawerOpen;
+      return (
+        <>
+          <AppDrawer open={drawerOpen} widthKey="test_confirm_stack" title="Base drawer" onClose={() => _setDrawerOpen(false)}>
+            drawer body
+          </AppDrawer>
+          <AppModal open={firstModalOpen} title="Lower modal" onCancel={() => setFirstModalOpen(false)}>
+            lower modal
+          </AppModal>
+          <AppModal open={secondModalOpen} title="Upper modal" onCancel={() => setSecondModalOpen(false)}>
+            upper modal
+          </AppModal>
+        </>
+      );
+    };
+    renderWithOmc(<Host />);
+
+    act(() => {
+      confirmModal({ title: 'Confirm action' });
+    });
+
+    // Escape closes ConfirmDialogHost (1081) without closing either modal or the drawer.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-slot="alert-dialog-content"][data-open]')).toBeNull();
+    expect(document.querySelectorAll('[data-slot="dialog-content"][data-open]')).toHaveLength(2);
+    expect(document.querySelector('[data-slot="sheet-content"][data-open]')).not.toBeNull();
+
+    // Next Escape closes only the later-DOM equal-zIndex modal ("Upper modal"), keeping "Lower modal" open.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const remainingDialogs = [...document.querySelectorAll('[data-slot="dialog-content"][data-open]')];
+    expect(remainingDialogs).toHaveLength(1);
+    expect(remainingDialogs[0].textContent).toContain('Lower modal');
+    expect(document.querySelector('[data-slot="sheet-content"][data-open]')).not.toBeNull();
+
+    // Next Escape closes "Lower modal", leaving only the drawer open.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-slot="dialog-content"][data-open]')).toBeNull();
+    expect(document.querySelector('[data-slot="sheet-content"][data-open]')).not.toBeNull();
+    act(() => setDrawerOpen(false));
+  });
+
+  it('keeps sheet centering insets on AppModal until its exit transition completes on outside press', async () => {
+    installOmcApi();
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    try {
+      let setDrawerOpen!: (open: boolean) => void;
+      let setModalOpen!: (open: boolean) => void;
+      const Host = () => {
+        const [drawerOpen, _setDrawerOpen] = React.useState(true);
+        const [modalOpen, _setModalOpen] = React.useState(false);
+        setDrawerOpen = _setDrawerOpen;
+        setModalOpen = _setModalOpen;
+        return (
+          <AppDrawer open={drawerOpen} width="wide" widthKey="test_span_close" title="Detail drawer" onClose={() => _setDrawerOpen(false)}>
+            <AppModal open={modalOpen} size="large" title="Usage forecast" onCancel={() => _setModalOpen(false)}>
+              modal body
+            </AppModal>
+          </AppDrawer>
+        );
+      };
+      renderWithOmc(<Host />);
+
+      const sheet = document.querySelector<HTMLElement>('[data-slot="sheet-content"]')!;
+      vi.spyOn(sheet, 'getBoundingClientRect').mockReturnValue({
+        left: 512,
+        right: 1272,
+        top: 8,
+        bottom: 712,
+        width: 760,
+        height: 704,
+        x: 512,
+        y: 8,
+        toJSON: () => ({}),
+      });
+
+      act(() => setModalOpen(true));
+
+      const dialogViewport = document.querySelector<HTMLElement>('[data-slot="dialog-viewport"]')!;
+      const dialogContent = document.querySelector<HTMLElement>('[data-slot="dialog-content"]')!;
+      expect(dialogViewport.style.paddingInlineStart).toBe('512px');
+      expect(dialogViewport.style.paddingInlineEnd).toBe('8px');
+
+      let resolveExit!: () => void;
+      const exitFinished = new Promise<void>((resolve) => {
+        resolveExit = resolve;
+      });
+      dialogContent.getAnimations = () => [
+        {
+          finished: exitFinished,
+          effect: { getTiming: () => ({ duration: 180, iterations: 1 }) },
+        } as unknown as Animation,
+      ];
+
+      fireEvent.pointerDown(dialogViewport, { button: 0 });
+      fireEvent.click(dialogViewport);
+
+      expect(dialogContent.hasAttribute('data-open')).toBe(false);
+      expect(sheet.hasAttribute('data-open')).toBe(true);
+      expect(dialogViewport.style.paddingInlineStart).toBe('512px');
+      expect(dialogViewport.style.paddingInlineEnd).toBe('8px');
+
+      await act(async () => {
+        resolveExit();
+        await exitFinished;
+      });
+
+      await waitFor(() => {
+        expect(dialogViewport.style.paddingInlineStart).toBe('');
+        expect(dialogViewport.style.paddingInlineEnd).toBe('');
+      });
+
+      // Reopening inside an open drawer re-applies the sheet centering insets,
+      // while closing the drawer leaves the page clean for subsequent tests.
+      act(() => setModalOpen(true));
+      expect(dialogContent.hasAttribute('data-open')).toBe(true);
+      expect(dialogViewport.style.paddingInlineStart).toBe('512px');
+      expect(dialogViewport.style.paddingInlineEnd).toBe('8px');
+      act(() => setModalOpen(false));
+      act(() => setDrawerOpen(false));
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+    }
+  });
+});
+
+describe('RoutingPanel loading topology', () => {
+  it('renders the topology skeleton inside RoutingPanel while initial routing data is pending and swaps to the live map on resolve', async () => {
+    const api = installOmcApi();
+    const held = api.hold('GET', '/usage/routing');
+
+    renderWithOmc(<ThemeProvider><RoutingPanel /></ThemeProvider>);
+
+    const panel = screen.getByTestId('dashboard-routing');
+    const skeleton = screen.getByTestId('routing-skeleton');
+    expect(panel.contains(skeleton)).toBe(true);
+    expect(skeleton.closest('[role="status"][aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByTestId('routing-map')).toBeNull();
+
+    await held.arrived;
+    held.release(json({
+      as_of_ms: 1_760_000_000_000,
+      window_ms: 60_000,
+      records: [],
+      cooldowns: [],
+      has_more: false,
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('routing-skeleton')).toBeNull();
+      expect(screen.getByTestId('routing-map')).toBeTruthy();
+    });
+  });
+});
+
+describe('Combobox empty-string option selection', () => {
+  it('displays and marks an explicit empty-string option when value is "" and shows placeholder otherwise', () => {
+    const { rerender } = renderWithOmc(
+      <Combobox
+        aria-label="Warmup model"
+        value=""
+        open
+        options={[
+          { value: '', label: 'Auto (gpt-6-luna)' },
+          { value: 'gpt-6-luna', label: 'gpt-6-luna' },
+        ]}
+      />,
+    );
+    const trigger = screen.getByRole('combobox', { name: 'Warmup model' });
+    expect(trigger.textContent).toContain('Auto (gpt-6-luna)');
+    const autoOption = screen.getByRole('option', { name: 'Auto (gpt-6-luna)' });
+    expect(autoOption.getAttribute('aria-selected')).toBe('true');
+
+    rerender(
+      <Combobox
+        aria-label="Warmup model"
+        value=""
+        placeholder="Pick a model"
+        options={[
+          { value: 'gpt-6-luna', label: 'gpt-6-luna' },
+        ]}
+      />,
+    );
+    expect(screen.getByRole('combobox', { name: 'Warmup model' }).textContent).toContain('Pick a model');
+  });
+});
+
+describe('DataTable row slots', () => {
+  it('marks rendered data rows with data-slot="table-row" and omits it from empty-state rows', () => {
+    const columns = [{ title: 'Name', dataIndex: 'name', key: 'name' }] as const;
+    const CustomRow = (props: React.HTMLAttributes<HTMLTableRowElement>) => <tr data-custom-row="true" {...props} />;
+
+    const { container, rerender } = render(
+      <DataTable<{ id: string; name: string }>
+        rowKey="id"
+        columns={columns}
+        dataSource={[]}
+        locale={{ emptyText: 'Nothing yet' }}
+      />,
+    );
+    expect(container.querySelectorAll('[data-slot="table-row"]')).toHaveLength(0);
+
+    rerender(
+      <DataTable<{ id: string; name: string }>
+        rowKey="id"
+        columns={columns}
+        dataSource={[{ id: 'p1', name: 'Alpha' }]}
+        components={{ body: { row: CustomRow } }}
+      />,
+    );
+    const rows = container.querySelectorAll('tbody [data-slot="table-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('data-row-key')).toBe('p1');
+    expect(rows[0].getAttribute('data-custom-row')).toBe('true');
+  });
+});
+
+describe('Select and Combobox inline action controls', () => {
+  it('elevates Select clear button above the trigger touch pseudo-element and clears without opening', () => {
+    const onChange = vi.fn();
+    const onOpenChange = vi.fn();
+    renderWithOmc(
+      <Select
+        aria-label="Choose option"
+        value="alpha"
+        allowClear
+        onChange={onChange}
+        onOpenChange={onOpenChange}
+        options={[{ value: 'alpha', label: 'Alpha' }]}
+      />,
+    );
+    const clearBtn = screen.getByRole('button', { name: 'Clear' });
+    expect(clearBtn.className).toContain('relative');
+    expect(clearBtn.className).toContain('z-[1]');
+    fireEvent.click(clearBtn);
+    expect(onChange).toHaveBeenCalledWith(undefined);
+    expect(onOpenChange).not.toHaveBeenCalledWith(true);
+  });
+
+  it('elevates Combobox tag-remove and clear buttons above the trigger touch pseudo-element', () => {
+    const onChange = vi.fn();
+    const onOpenChange = vi.fn();
+    renderWithOmc(
+      <Combobox
+        aria-label="Models"
+        mode="multiple"
+        allowClear
+        value={['m1', 'm2']}
+        onChange={onChange}
+        onOpenChange={onOpenChange}
+        options={[
+          { value: 'm1', label: 'Model One' },
+          { value: 'm2', label: 'Model Two' },
+        ]}
+      />,
+    );
+    const removeOne = screen.getByRole('button', { name: 'Remove m1' });
+    const clearAll = screen.getByRole('button', { name: 'Clear' });
+    expect(removeOne.className).toContain('relative');
+    expect(removeOne.className).toContain('z-[1]');
+    expect(clearAll.className).toContain('relative');
+    expect(clearAll.className).toContain('z-[1]');
+
+    fireEvent.click(removeOne);
+    expect(onChange.mock.calls[0][0]).toEqual(['m2']);
+    expect(onOpenChange).not.toHaveBeenCalledWith(true);
+
+    fireEvent.click(clearAll);
+    expect(onChange.mock.calls[1][0]).toEqual([]);
+  });
+});
+
+describe('DashboardTrendChart native SVG sparkline', () => {
+  it('renders monotone SVG paths synchronously and reveals bucket tooltip on pointer hover', () => {
+    const surface = renderWithOmc(
+      <ThemeProvider>
+        <DashboardTrendChart
+          ariaLabel="Total requests"
+          height={64}
+          points={[
+            { t: 1_700_000_000_000, v: 12, f: 0, tokens: 120 },
+            { t: 1_700_000_060_000, v: 48, f: 0, tokens: 480 },
+            { t: 1_700_000_120_000, v: 24, f: 0, tokens: 240 },
+          ]}
+          pick={(p) => p.v ?? 0}
+          label={(t) => `bucket-${t}`}
+          format={(v) => `${v} reqs`}
+        />
+      </ThemeProvider>,
+    );
+
+    const chart = screen.getByRole('img', { name: 'Total requests' });
+    chart.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 480, bottom: 64, width: 480, height: 64, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    const paths = surface.container.querySelectorAll('svg path');
+    expect(paths.length).toBeGreaterThanOrEqual(2);
+
+    // At 480px host width (2x the 240 viewBox), 12px maps to viewBox x=6 -> index 0 (12 reqs),
+    // and 240px maps to viewBox x=120 -> index 1 (48 reqs).
+    fireEvent.pointerMove(chart, { clientX: 12, clientY: 24, pointerType: 'mouse' });
+    expect(screen.getByText('12 reqs')).toBeTruthy();
+
+    fireEvent.pointerMove(chart, { clientX: 240, clientY: 24, pointerType: 'mouse' });
+    expect(screen.getByText('bucket-1700000060000')).toBeTruthy();
+    expect(screen.getByText('48 reqs')).toBeTruthy();
+
+    fireEvent.pointerLeave(chart, { pointerType: 'mouse' });
+    expect(screen.queryByText('48 reqs')).toBeNull();
+
+    // Keyboard navigation selects points with ArrowLeft / ArrowRight / Home / End and clears on Escape.
+    expect(chart.getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(chart, { key: 'End' });
+    expect(screen.getByText('24 reqs')).toBeTruthy();
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' });
+    expect(screen.getByText('48 reqs')).toBeTruthy();
+    fireEvent.keyDown(chart, { key: 'Home' });
+    expect(screen.getByText('12 reqs')).toBeTruthy();
+    fireEvent.keyDown(chart, { key: 'Escape' });
+    expect(screen.queryByText('12 reqs')).toBeNull();
+  });
+});

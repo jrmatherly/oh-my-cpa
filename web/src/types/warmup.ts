@@ -1,5 +1,7 @@
 import { providerDisplayName } from './providerMetadata';
 
+export const WARMUP_TASK_ORDER_PREFERENCE = 'omc_warmup_task_order';
+
 export interface WarmupTrigger {
   kind: 'window' | 'daily' | 'every';
   window?: string;
@@ -110,6 +112,12 @@ export interface WarmupCredentialGroup {
   accounts: WarmupCatalogAccount[];
 }
 
+export interface WarmupTaskGroup {
+  provider: string;
+  label: string;
+  tasks: WarmupTask[];
+}
+
 /**
  * The credential picker's groups: one per provider, in the catalogue's own order and named the way
  * the rest of the console names that provider.
@@ -125,6 +133,39 @@ export function groupWarmupAccounts(
       label: providerDisplayName(group.provider, pluginTitles),
       accounts: group.accounts,
     }));
+}
+
+/**
+ * Groups warmup tasks by provider in catalogue order (followed by any provider missing from the
+ * catalogue in first-seen task order).
+ */
+export function groupWarmupTasks(
+  tasks: readonly WarmupTask[],
+  catalog?: WarmupCatalog,
+  pluginTitles?: ReadonlyMap<string, string>,
+): WarmupTaskGroup[] {
+  if (tasks.length === 0) return [];
+  const buckets = new Map<string, WarmupTask[]>();
+  for (const task of tasks) {
+    const provider = task.provider.trim() || 'unknown';
+    const existing = buckets.get(provider);
+    if (existing) existing.push(task);
+    else buckets.set(provider, [task]);
+  }
+  const orderedProviders: string[] = [];
+  for (const group of catalog?.providers ?? []) {
+    if (buckets.has(group.provider) && !orderedProviders.includes(group.provider)) {
+      orderedProviders.push(group.provider);
+    }
+  }
+  for (const provider of buckets.keys()) {
+    if (!orderedProviders.includes(provider)) orderedProviders.push(provider);
+  }
+  return orderedProviders.map((provider) => ({
+    provider,
+    label: providerDisplayName(provider, pluginTitles),
+    tasks: buckets.get(provider) ?? [],
+  }));
 }
 
 /** The task's own model, else the one the server picked for Auto: the server alone knows which listed names are OAuth aliases. */
@@ -167,21 +208,33 @@ export function canSaveWarmupTask(task: WarmupTaskInput): boolean {
  */
 export function generatedTaskName(task: Pick<WarmupTaskInput, 'account' | 'auth_index' | 'provider' | 'trigger'>): string {
   const target = task.account.trim() || task.auth_index.trim() || task.provider.trim();
-  switch (task.trigger.kind) {
+  const trigger = triggerToken(task.trigger);
+  return trigger === null ? target : `${target} (${trigger})`;
+}
+
+function triggerToken(trigger: WarmupTaskInput['trigger']): string | null {
+  switch (trigger.kind) {
     case 'window':
-      return `${target} · ${task.trigger.window ?? ''}`;
+      return trigger.window ?? '';
     case 'daily':
-      return `${target} · ${task.trigger.time ?? ''}`;
+      return trigger.time ?? '';
     case 'every':
-      return `${target} · ${task.trigger.hours ?? 0}h`;
+      return `${trigger.hours ?? 0}h`;
     default:
-      return target;
+      return null;
   }
+}
+
+/** Names stored before the server wrote the trigger in parentheses still read as generated. */
+function legacyGeneratedTaskName(task: Pick<WarmupTaskInput, 'account' | 'auth_index' | 'provider' | 'trigger'>): string {
+  const target = task.account.trim() || task.auth_index.trim() || task.provider.trim();
+  const trigger = triggerToken(task.trigger);
+  return trigger === null ? target : `${target} \u00b7 ${trigger}`; // separator-ok: recognises names stored before
 }
 
 export function hasCustomTaskName(task: Pick<WarmupTaskInput, 'name' | 'account' | 'auth_index' | 'provider' | 'trigger'>): boolean {
   const name = task.name.trim();
-  return name !== '' && name !== generatedTaskName(task);
+  return name !== '' && name !== generatedTaskName(task) && name !== legacyGeneratedTaskName(task);
 }
 
 /** A new task's draft, on the first credential the picker lets the operator choose. */
