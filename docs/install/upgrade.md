@@ -89,6 +89,21 @@ the installed container's name: remove the standalone updater container first wi
 `docker rm -f oh-my-cpa-updater`.
 
 
+## Moving from the upstream image
+
+A deployment that runs `wiziscool/oh-my-cpa` is not moved to this fork from the console:
+its updater applies only releases signed by upstream, for the image repository the
+console already runs. Change the image by hand once. Set
+`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:latest` in `.env` (or change the `image:` line
+in a Compose file you maintain), then run the commands under [By hand](#by-hand). Data,
+ports and settings are kept.
+
+A deployment whose updater was added with `updater install` then runs the
+[install command](#enabling-console-updates-on-an-existing-deployment) once more, after
+the console is on the new image, to replace the updater. The installer finds the console
+by its own image repository, so it reports no console while the two differ. Naming one
+with `--container <name>` selects it, and a console on a different image is left as it is.
+
 ## Compatibility for existing deployments
 
 Normal upgrades (`Update now` in the console, or `docker compose pull && docker compose up -d`
@@ -124,13 +139,3 @@ Only if you **replace your Compose file** with a newly downloaded `compose.full.
 
 Native executables upgrade by replacing the binary; see
 [Upgrading a native install](native.md#upgrading-a-native-install).
-
-## Moving from the upstream image
-
-A deployment that runs `wiziscool/oh-my-cpa` is not updated to this fork from the
-console: the updater applies a release only to the image repository the console already
-runs, and trusts this fork's signing key alone. Change the image by hand once. Set
-`OMCPA_IMAGE=ghcr.io/jrmatherly/oh-my-cpa:latest` in `.env` (or change the `image:` line
-in a Compose file you maintain), then run `docker compose pull && docker compose up -d`.
-A deployment whose updater was added with `updater install` runs that command again
-from the new image. Data, ports and settings are kept.

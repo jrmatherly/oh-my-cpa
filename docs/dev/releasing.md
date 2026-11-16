@@ -135,8 +135,10 @@ promotion failed, versioned pulls still work; retry promotion rather than republ
 Retry with "Re-run failed jobs" on the same run. A new dispatch rebuilds the image,
 which can change its digest, and then replaces the manifest on a release that may
 already be public. If signing fails, the versioned image tags are already pushed
-and no release exists: fix the key, then delete those package versions before the
-next attempt.
+and no release exists. When the secret was wrong or missing, correct it and re-run
+the failed jobs: the release job signs the digest already pushed, so leave the
+package versions in place. When the committed public key was wrong, correct it in a
+new version; the unreleased version's tags are never offered as an update.
 
 Manual workflow dispatch can recover an existing tag. It resolves and verifies that
 tag's immutable source, regardless of the dispatch branch. A runner/workflow-only
