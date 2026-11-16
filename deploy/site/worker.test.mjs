@@ -100,11 +100,11 @@ function createMemoryCache() {
 
 describe('public site worker (live landing release injection)', () => {
   it('parses only stable GitHub release redirect locations for this repository', () => {
-    assert.equal(parseLatestReleaseLocation('https://github.com/WizisCool/oh-my-cpa/releases/tag/v0.4.3'), '0.4.3');
-    assert.equal(parseLatestReleaseLocation('/WizisCool/oh-my-cpa/releases/tag/v0.10.2'), '0.10.2');
-    assert.equal(parseLatestReleaseLocation('https://github.com/WizisCool/oh-my-cpa/releases/tag/v1.0.0-rc.1'), null);
+    assert.equal(parseLatestReleaseLocation('https://github.com/jrmatherly/oh-my-cpa/releases/tag/v0.4.3'), '0.4.3');
+    assert.equal(parseLatestReleaseLocation('/jrmatherly/oh-my-cpa/releases/tag/v0.10.2'), '0.10.2');
+    assert.equal(parseLatestReleaseLocation('https://github.com/jrmatherly/oh-my-cpa/releases/tag/v1.0.0-rc.1'), null);
     assert.equal(parseLatestReleaseLocation('https://github.com/other/repo/releases/tag/v0.4.3'), null);
-    assert.equal(parseLatestReleaseLocation('https://evil.example/WizisCool/oh-my-cpa/releases/tag/v0.4.3'), null);
+    assert.equal(parseLatestReleaseLocation('https://evil.example/jrmatherly/oh-my-cpa/releases/tag/v0.4.3'), null);
   });
 
   it('rewrites rendered landing HTML byte-for-byte to match a freshly rendered release version', () => {
@@ -159,12 +159,12 @@ describe('public site worker (live landing release injection)', () => {
       now: () => clock,
       fetchImpl: async (url, init) => {
         upstreamCalls += 1;
-        assert.equal(url, 'https://github.com/WizisCool/oh-my-cpa/releases/latest');
+        assert.equal(url, 'https://github.com/jrmatherly/oh-my-cpa/releases/latest');
         assert.equal(init.redirect, 'manual');
         if (failUpstream) throw new Error('upstream timeout');
         return new Response(null, {
           status: 302,
-          headers: { Location: `https://github.com/WizisCool/oh-my-cpa/releases/tag/${upstreamTag}` },
+          headers: { Location: `https://github.com/jrmatherly/oh-my-cpa/releases/tag/${upstreamTag}` },
         });
       },
     });
@@ -274,7 +274,7 @@ describe('public site worker (live landing release injection)', () => {
         if (multiFail) throw new Error('offline');
         return new Response(null, {
           status: 302,
-          headers: { Location: `https://github.com/WizisCool/oh-my-cpa/releases/tag/${multiTag}` },
+          headers: { Location: `https://github.com/jrmatherly/oh-my-cpa/releases/tag/${multiTag}` },
         });
       },
     });
@@ -288,7 +288,7 @@ describe('public site worker (live landing release injection)', () => {
         if (multiFail) throw new Error('offline');
         return new Response(null, {
           status: 302,
-          headers: { Location: `https://github.com/WizisCool/oh-my-cpa/releases/tag/${multiTag}` },
+          headers: { Location: `https://github.com/jrmatherly/oh-my-cpa/releases/tag/${multiTag}` },
         });
       },
     });

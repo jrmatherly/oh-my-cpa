@@ -199,7 +199,7 @@ test('resolveSiteVersion prefers stable GitHub latest release tag and falls back
       fetchImpl: async () =>
         new Response(null, {
           status: 302,
-          headers: { Location: 'https://github.com/WizisCool/oh-my-cpa/releases/tag/v0.4.3' },
+          headers: { Location: 'https://github.com/jrmatherly/oh-my-cpa/releases/tag/v0.4.3' },
         }),
     }),
     '0.4.3',
