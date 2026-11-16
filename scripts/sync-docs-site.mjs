@@ -557,7 +557,8 @@ export async function syncDocsSite({ repoRoot }) {
 
   fs.rmSync(contentDir, { recursive: true, force: true });
   fs.mkdirSync(contentDir, { recursive: true });
-  for (const lang of DOCS_LANGUAGES) fs.rmSync(path.join(publicDir, lang), { recursive: true, force: true });
+  // `zh` is output an older checkout generated; Next would publish it from `public/` as it stands.
+  for (const lang of [...DOCS_LANGUAGES, 'zh']) fs.rmSync(path.join(publicDir, lang), { recursive: true, force: true });
 
   const write = (rel, text) => {
     const abs = path.join(contentDir, rel);

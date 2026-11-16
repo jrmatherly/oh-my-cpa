@@ -21,7 +21,11 @@ test('docs site manifest points every page to existing canonical repository file
 });
 
 test('syncDocsSite generates MDX, agent Markdown and llms.txt with rewritten links', async () => {
+  const staleDir = path.join(ROOT, 'deploy', 'site', 'docs', 'public', 'zh');
+  fs.mkdirSync(staleDir, { recursive: true });
+  fs.writeFileSync(path.join(staleDir, 'llms.txt'), 'left by an older build\n');
   const result = await syncDocsSite({ repoRoot: ROOT });
+  assert.equal(fs.existsSync(staleDir), false, 'output of a retired language is removed');
   assert.equal(result.pageCount, listDocsPages().length);
   for (const file of ['index.mdx', 'start/quickstart.mdx', 'install/index.mdx']) {
     assert.ok(fs.existsSync(path.join(result.contentDir, file)), `missing ${file}`);
