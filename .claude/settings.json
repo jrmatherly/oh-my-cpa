@@ -11,7 +11,6 @@
       "Bash(pnpm check-css-modules)",
       "Bash(pnpm check:feedback)",
       "Bash(pnpm check-docs)",
-      "Bash(pnpm lint:antd)",
       "Bash(pnpm lint:go)",
       "Bash(go test *)",
       "Bash(go vet *)",
