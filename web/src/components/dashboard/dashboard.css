@@ -417,8 +417,8 @@
    rail: the underline runs along the line the head already draws, and glides on the console's
    selection thumb. The first label keeps the title's inset, so the head reads as a title still. */
 .has-lens [data-slot="panel-head"] { align-items: stretch; padding-block: 0; }
-/* The trend card carries the tabs and the naming toggle together when the usage card is hidden;
-   its toggle rule above is the more specific one and would lift the tabs 8px off the rule. */
+/* With the usage card hidden the trend card carries the tabs, and under Models the naming toggle
+   too; its toggle rule above is the more specific one and would lift the tabs 8px off the rule. */
 .model-trend-card.has-lens:has(.model-view-toggle) [data-slot="panel-head"] { padding-block: 0; }
 .has-lens [data-slot="panel-head-title"] { display: flex; }
 .has-lens [data-slot="panel-head-extra"] { align-self: center; }

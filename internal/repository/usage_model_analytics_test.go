@@ -296,6 +296,9 @@ func TestQueryUsageModelBucketsGroupsByClientProgram(t *testing.T) {
 		clientEvent("c-3", nil, base, 30, true),
 		// A non-generation request carries no client usage, whoever sent it.
 		clientEvent("c-4", &claudeUA, base, 999, false),
+		// Alone in its bucket, its folded row is empty and unattributed: it must not surface as
+		// an unknown client with no usage.
+		clientEvent("c-6", &codexUA, base.Add(15*time.Minute), 500, false),
 	}); err != nil {
 		t.Fatal(err)
 	}

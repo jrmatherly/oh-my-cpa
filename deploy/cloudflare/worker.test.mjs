@@ -269,6 +269,18 @@ describe('routing', () => {
     assert.ok(DATASET.responses[byModel]);
   });
 
+  it('serves the client grouping, and the model view when no grouping is named', () => {
+    const path = '/api/v1/management/dashboard/models?preset=24h';
+    const byModel = responseNameFor(request(`${path}&group_by=model`));
+    const byCall = responseNameFor(request(`${path}&group_by=call`));
+    const byClient = responseNameFor(request(`${path}&group_by=client`));
+    // The console leaves the parameter off for the model view, as the server's default allows.
+    assert.equal(responseNameFor(request(path)), byModel);
+    assert.notEqual(byClient, byModel);
+    assert.notEqual(byClient, byCall);
+    assert.ok(DATASET.responses[byClient]);
+  });
+
   it('answers the heatmap for a viewer in any timezone', () => {
     // The console sends the viewer's IANA zone, which cannot be enumerated, so the
     // route has to answer every one of them rather than only the captured two.

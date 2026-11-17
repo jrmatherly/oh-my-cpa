@@ -384,6 +384,12 @@ export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = React.memo(functi
   const groups = React.useMemo(() => models.data?.models ?? [], [models.data]);
   const { focusedKey, toggleSeries, clearFocus } = useSeriesFocus(groups, models.data !== undefined, shown);
   const colors = React.useMemo(() => seriesColorRange(theme.palette, groups), [theme.palette, groups]);
+  // The usage card says where a clipped client read starts. With that card off the board the trend
+  // is the only reader of the lens, and a shortened or empty trend would pass for the whole window.
+  const coveredFrom = hasLensTabs && isClients ? models.data?.covered_from : undefined;
+  const since = coveredFrom === undefined ? undefined : (
+    <span className="model-usage-since">{t('dash.clients.since', { time: dayjs(coveredFrom).format('MM-DD HH:mm') })}</span>
+  );
 
   return (
     <Panel
@@ -392,7 +398,7 @@ export const ModelTrendPanel: React.FC<ModelTrendPanelProps> = React.memo(functi
       // The trend takes the lens tabs as its title only while the usage card is off the board.
       title={hasLensTabs ? <ModelLensTabs {...props} /> : <span className="tile-label">{title}</span>}
       // The naming toggle sits here, where the head has room; it refines the model lens only.
-      extra={lens === 'clients' ? undefined : <ModelViewToggle />}
+      extra={lens === 'clients' ? since : <ModelViewToggle />}
     >
       <ModelPanelBody models={models} lens={shownLens} fallback={<ModelTrendPlaceholder hasHeader={false} />}>
         {groups.length === 0 ? (

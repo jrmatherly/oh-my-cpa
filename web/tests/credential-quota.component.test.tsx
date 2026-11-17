@@ -27,6 +27,7 @@ import type { CredentialActions } from '../src/pages/oauthManagement/CredentialP
 import { OAuthManagementPage } from '../src/pages/oauthManagement/OAuthManagementPage';
 import { installOmcApi } from './support/omcApi';
 import { renderWithOmc } from './support/render';
+import dayjs from '../src/utils/time';
 import { buildCredentialSections } from '../src/pages/oauthManagement/credentialSections';
 import { buildOAuthWorkspaceProjection } from '../src/pages/oauthManagement/oauthWorkspaceLogic';
 import type { ManagementAuthFile } from '../src/types/managementAuthFile';
@@ -832,6 +833,52 @@ describe('dashboard model panels and heatmap alignment states', () => {
       await within(view.container).findByText(t('dash.models.error'));
       fireEvent.click(screen.getByRole('tab', { name: t('dash.models.lens_clients') }));
       await within(view.container).findByText(t('dash.clients.error'));
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it.each([
+    ['the usage card', <ModelUsagePanel key="usage" query="preset=1h" range={{ preset: '1h' }} enabled />],
+    ['the trend card carrying the lens alone', <ModelTrendPanel key="trend" query="preset=1h" range={{ preset: '1h' }} enabled hasLensTabs />],
+  ])('says where a clipped client read starts on %s', async (_card, panel) => {
+    const api = installOmcApi();
+    const window = { from: NOW_MS - HOUR_MS, to: NOW_MS, bucket_ms: 60_000, minutes: 60 };
+    const coveredFrom = NOW_MS - 10 * 60_000;
+    api.on('GET', '/management/dashboard/models', (request) => {
+      const isClient = request.query.get('group_by') === 'client';
+      return {
+        window,
+        total_tokens: 1200,
+        models: [{
+          model: isClient ? 'claude-code' : 'gpt-5', folded: false, tokens: 1200, requests: 4, priced_requests: 4,
+          cost_usd: 0.12, series: [{ t: NOW_MS - 60_000, tokens: 1200 }], ...(isClient ? { category: 'agent' } : {}),
+        }],
+        ...(isClient ? { covered_from: coveredFrom } : {}),
+        partial_errors: [],
+      };
+    });
+    const t = makeT('en');
+    const since = t('dash.clients.since', { time: dayjs(coveredFrom).format('MM-DD HH:mm') });
+
+    const view = renderWithOmc(
+      <MemoryRouter>
+        <ThemeProvider>
+          <TokenDisplayProvider>
+            <CurrencyDisplayProvider>
+              <ModelPanelsProvider>{panel}</ModelPanelsProvider>
+            </CurrencyDisplayProvider>
+          </TokenDisplayProvider>
+        </ThemeProvider>
+      </MemoryRouter>,
+    );
+    try {
+      await waitFor(() => expect(screen.getAllByText('gpt-5').length).toBeGreaterThan(0));
+      expect(screen.queryByText(since)).toBeNull();
+      fireEvent.click(screen.getByRole('tab', { name: t('dash.models.lens_clients') }));
+      await within(view.container).findByText(since);
+      fireEvent.click(screen.getByRole('tab', { name: t('dash.models.lens_models') }));
+      await waitFor(() => expect(screen.queryByText(since)).toBeNull());
     } finally {
       view.unmount();
     }
