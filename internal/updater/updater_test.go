@@ -391,8 +391,8 @@ func TestProxyDownloadsRejectCorruptContent(t *testing.T) {
 				t.Fatal("corrupted image content must be refused")
 			}
 
-			// The pull fails as soon as the corrupt layer breaks the stream, which can be
-			// before the daemon's handler has been scheduled to count the request.
+			// The corrupt layer aborts the archive upload, so the pull can return before the
+			// daemon's handler goroutine has run to count the request.
 			loads := 0
 			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
 				daemon.mu.Lock()
