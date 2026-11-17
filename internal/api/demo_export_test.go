@@ -1394,6 +1394,9 @@ func assertDemoQuotaEvidenceExamples(t *testing.T, responses map[string]demoExpo
 		"auth-antigravity-01/ag_Gemini Models_gemini-shared-5h": true,
 	}
 	for _, observation := range quotas.Quotas {
+		if observation.AuthIndex == "auth-codex-01" && (observation.ResetCredits == nil || len(observation.ResetCredits.Credits) != 2) {
+			t.Fatalf("exported Codex quota carries no reset credits: %+v", observation.ResetCredits)
+		}
 		for _, window := range observation.Windows {
 			key := observation.AuthIndex + "/" + window.ID
 			if !expected[key] {
