@@ -1129,3 +1129,45 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 		})
 	}
 }
+
+// A load fans out a reader per key family, plus the client keys, aliases and
+// exclusions, and each takes its value from the v8 view. CPA parses the whole
+// file for every such read, so the load fetches the view once and never asks
+// for one path, which CPA answers with 404 while that path is unset.
+func TestProjectedStateLoadReadsTheConfigViewOnce(t *testing.T) {
+	upstream := &configFixtureCPA{}
+	var handler *Handler
+	var mu sync.Mutex
+	viewReads := 0
+	var pathReads []string
+	_, _, _ = startDashboardTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		path := request.URL.Path
+		if request.Method == http.MethodGet {
+			mu.Lock()
+			if path == "/v8/management/config" {
+				viewReads++
+			}
+			if strings.HasPrefix(path, "/v8/management/config/api-keys/") || strings.HasPrefix(path, "/v8/management/config/oauth/") {
+				pathReads = append(pathReads, path)
+			}
+			mu.Unlock()
+		}
+		if path == "/v8/management/config" || path == "/v8/management/config.yaml" {
+			upstream.serve(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{}`))
+	}, func(h *Handler) { handler = h })
+	mu.Lock()
+	viewReads, pathReads = 0, nil
+	mu.Unlock()
+	if _, err := handler.loadUpstreamProjectedState(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if viewReads != 1 || len(pathReads) != 0 {
+		t.Fatalf("one load read the view %d times and these paths: %v; want one view read and no path read", viewReads, pathReads)
+	}
+}

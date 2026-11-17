@@ -434,6 +434,8 @@ func (h *Handler) readProviderItemsCore(ctx context.Context, client *management.
 }
 
 func (h *Handler) readProviderItemsUpstreamWithStatus(ctx context.Context, client *management.Client) ([]ProviderItemDTO, bool) {
+	// Each family reads its stored groups from the v8 view; the list reads it once.
+	ctx = management.WithSharedConfigView(ctx)
 	items := make([]ProviderItemDTO, 0)
 	customNames := h.loadProviderNames(ctx)
 	customWebsites := h.loadProviderWebsites(ctx)

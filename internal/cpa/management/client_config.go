@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/configyaml"
 )
@@ -183,6 +184,14 @@ func (c *Client) ConfigView(ctx context.Context) (map[string]any, ResponseMeta, 
 	if c == nil {
 		return nil, ResponseMeta{}, errors.New("CPA client is not initialized")
 	}
+	if shared, ok := ctx.Value(sharedConfigViewKey{}).(*sharedConfigView); ok {
+		shared.once.Do(func() { shared.view, shared.meta, shared.err = c.fetchConfigView(ctx) })
+		return shared.view, shared.meta, shared.err
+	}
+	return c.fetchConfigView(ctx)
+}
+
+func (c *Client) fetchConfigView(ctx context.Context) (map[string]any, ResponseMeta, error) {
 	var response map[string]any
 	meta, err := c.DoJSONWithMeta(ctx, http.MethodGet, "/config", &response)
 	if err != nil {
@@ -192,6 +201,24 @@ func (c *Client) ConfigView(ctx context.Context) (map[string]any, ResponseMeta, 
 		response = map[string]any{}
 	}
 	return response, meta, nil
+}
+
+type sharedConfigViewKey struct{}
+
+type sharedConfigView struct {
+	once sync.Once
+	view map[string]any
+	meta ResponseMeta
+	err  error
+}
+
+// WithSharedConfigView makes every ConfigView call on the returned context
+// share one fetch. It is for a read-only load that fans out many readers; a
+// write must not use it, because a write reads the configuration it is about
+// to change and needs it fresh. Sharing the map is safe because every reader
+// only looks values up in it or copies them out.
+func WithSharedConfigView(ctx context.Context) context.Context {
+	return context.WithValue(ctx, sharedConfigViewKey{}, &sharedConfigView{})
 }
 
 // ConfigYAML returns CPA's v8 view of the stored configuration as YAML: the
