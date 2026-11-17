@@ -391,9 +391,17 @@ func TestProxyDownloadsRejectCorruptContent(t *testing.T) {
 				t.Fatal("corrupted image content must be refused")
 			}
 
-			daemon.mu.Lock()
-			loads := daemon.loads
-			daemon.mu.Unlock()
+			// The corrupt layer aborts the archive upload, so the pull can return before the
+			// daemon's handler goroutine has run to count the request.
+			loads := 0
+			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+				daemon.mu.Lock()
+				loads = daemon.loads
+				daemon.mu.Unlock()
+				if corruptManifest || loads == 1 || time.Now().After(deadline) {
+					break
+				}
+			}
 
 			if !corruptManifest && loads != 1 {
 				t.Fatal("the corrupted layer was not exercised during archive import")
