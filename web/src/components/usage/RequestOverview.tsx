@@ -65,6 +65,8 @@ export function RequestOverview({
 }: RequestOverviewProps) {
   const t = useT();
   const clientId = eventClientId(event);
+  // A client that was not recognised reads as the User-Agent it sent, as the list row prints it.
+  const userAgent = event.user_agent?.trim() || undefined;
   return (
     <div className="req-overview">
       {event.failed && <FailureSummary event={event} onShowDiagnostics={onShowDiagnostics} />}
@@ -76,8 +78,8 @@ export function RequestOverview({
           <RouteNode
             icon={<ClientMark id={clientId} category={event.client_agent_category} fallback={<DesktopOutlined />} />}
             label={t('events.col_client')}
-            value={clientId && clientDisplayName(clientId, t)}
-            tip={event.user_agent?.trim() || undefined}
+            value={clientId ? clientDisplayName(clientId, t) : userAgent}
+            tip={clientId ? userAgent : undefined}
           />
           <li className="req-route-link" aria-hidden><ArrowRightOutlined /></li>
           <RouteNode
