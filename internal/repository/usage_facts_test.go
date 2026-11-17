@@ -37,11 +37,11 @@ func seedFactEvents(t *testing.T, repo *Repository, baseMS, spanMS int64, count 
 			ttft = random.Int63n(900)
 		}
 		_, err := repo.SQL().Exec(`
-			INSERT INTO usage_events (instance_id, event_key, client_agent, api_group_key, provider, auth_type, model, model_alias,
+			INSERT INTO usage_events (instance_id, event_key, client_agent, generate, api_group_key, provider, auth_type, model, model_alias,
 				auth_index, timestamp_ms, failed, latency_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens,
 				cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, cost_nanos, pricing_status, created_at_ms)
-			VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			fmt.Sprintf("event-%d-%d", seed, index), clients[index%len(clients)], fmt.Sprintf("key-%d", random.Intn(2)),
+			VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			fmt.Sprintf("event-%d-%d", seed, index), clients[index%len(clients)], index%5 != 0, fmt.Sprintf("key-%d", random.Intn(2)),
 			providers[random.Intn(len(providers))], authTypes[random.Intn(len(authTypes))],
 			models[random.Intn(len(models))], aliases[random.Intn(len(aliases))], fmt.Sprintf("auth-%d", random.Intn(3)),
 			baseMS+random.Int63n(spanMS), random.Intn(2), random.Int63n(4000), ttft,
@@ -62,7 +62,7 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 		SELECT api_group_key, model, COALESCE(model_alias, ''), auth_index, provider, auth_type, timestamp_ms,
 		       failed, input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_read_tokens,
 		       cache_creation_tokens, total_tokens, latency_ms, ttft_ms, cost_nanos, pricing_status,
-		       executor_type, endpoint,
+		       executor_type, endpoint, client_agent, generate,
 		       (token_accounting IS NOT NULL AND json_extract(token_accounting, '$.status') = 'complete')
 		FROM usage_events WHERE instance_id = ? AND timestamp_ms >= ? AND timestamp_ms <= ?`,
 		query.InstanceID, query.FromMS, query.ToMS)
@@ -73,7 +73,8 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 	grouped := map[string]*UsageFactRow{}
 	for rows.Next() {
 		var key, model, alias, authIndex, provider, authType, status, executorType, endpoint string
-		var isCanonical bool
+		var isCanonical, isGenerate bool
+		var clientAgent string
 		var timestampMS int64
 		var failed int64
 		var measures UsageMeasures
@@ -81,7 +82,7 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 		if err := rows.Scan(&key, &model, &alias, &authIndex, &provider, &authType, &timestampMS, &failed,
 			&measures.InputTokens, &measures.OutputTokens, &measures.ReasoningTokens, &measures.CachedTokens,
 			&measures.CacheReadTokens, &measures.CacheCreationTokens, &measures.TotalTokens, &measures.LatencySumMS,
-			&ttft, &cost, &status, &executorType, &endpoint, &isCanonical); err != nil {
+			&ttft, &cost, &status, &executorType, &endpoint, &clientAgent, &isGenerate, &isCanonical); err != nil {
 			t.Fatal(err)
 		}
 		measures.Accounting.PromptTokens, measures.Accounting.CompletionTokens, measures.Accounting.EffectiveCacheReadTokens, measures.Accounting.EffectiveTotalTokens = NormalizeEventPartition(EventPartitionInput{
@@ -116,6 +117,12 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 			if len(wanted) > 0 && !slices.Contains(wanted, values[dimension]) {
 				isKept = false
 			}
+		}
+		if clientAgent == "" {
+			clientAgent = "unknown"
+		}
+		if len(query.ClientAgents) > 0 && (!isGenerate || !slices.Contains(query.ClientAgents, clientAgent)) {
+			isKept = false
 		}
 		if !isKept {
 			continue
@@ -167,6 +174,19 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 	return result
 }
 
+// clientView keeps what a client read is defined to carry: the normalised
+// accounting. Its raw token columns differ between the rollups and the records.
+func clientView(rows []UsageFactRow) []UsageFactRow {
+	out := make([]UsageFactRow, len(rows))
+	for index, row := range rows {
+		row.InputTokens, row.OutputTokens, row.CachedTokens, row.CacheReadTokens, row.TotalTokens = 0, 0, 0, 0, 0
+		row.Accounting.CanonicalRequests, row.Accounting.UnresolvedRequests = 0, 0
+		row.Accounting.RawInputTokens, row.Accounting.RawOutputTokens, row.Accounting.RawTotalTokens = 0, 0, 0
+		out[index] = row
+	}
+	return out
+}
+
 // clientTotals is what a client attribution read reports per client.
 type clientTotals struct{ Requests, Failures, CostNanos int64 }
 
@@ -174,7 +194,7 @@ type clientTotals struct{ Requests, Failures, CostNanos int64 }
 func recordClients(t *testing.T, repo *Repository, fromMS, toMS int64) (map[string]clientTotals, int64) {
 	t.Helper()
 	rows, err := repo.SQL().Query(`
-		SELECT CASE WHEN client_agent = '' THEN 'unknown' ELSE client_agent END, COUNT(1), SUM(failed), SUM(COALESCE(cost_nanos, 0))
+		SELECT CASE WHEN client_agent = '' THEN 'unknown' ELSE client_agent END, COUNT(1), SUM(generate), SUM(generate * failed), SUM(generate * COALESCE(cost_nanos, 0))
 		FROM usage_events WHERE instance_id = 'default' AND timestamp_ms >= ? AND timestamp_ms <= ? GROUP BY 1`, fromMS, toMS)
 	if err != nil {
 		t.Fatal(err)
@@ -185,11 +205,12 @@ func recordClients(t *testing.T, repo *Repository, fromMS, toMS int64) (map[stri
 	for rows.Next() {
 		var id string
 		var totals clientTotals
-		if err := rows.Scan(&id, &totals.Requests, &totals.Failures, &totals.CostNanos); err != nil {
+		var all int64
+		if err := rows.Scan(&id, &all, &totals.Requests, &totals.Failures, &totals.CostNanos); err != nil {
 			t.Fatal(err)
 		}
 		clients[id] = totals
-		retained += totals.Requests
+		retained += all
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -256,6 +277,8 @@ func factTestQueries(baseMS int64) []UsageFactQuery {
 			}
 			queries = append(queries, UsageFactQuery{InstanceID: "default", FromMS: window[0], ToMS: window[1], BucketMS: bucketMS, Filters: ClientKeyFilter("key-1")})
 			queries = append(queries, UsageFactQuery{InstanceID: "default", FromMS: window[0], ToMS: window[1], BucketMS: bucketMS,
+				Dimensions: []UsageDimension{UsageDimensionModel}, ClientAgents: []string{"unknown", "pi"}})
+			queries = append(queries, UsageFactQuery{InstanceID: "default", FromMS: window[0], ToMS: window[1], BucketMS: bucketMS,
 				Dimensions: []UsageDimension{UsageDimensionKey},
 				Filters:    map[UsageDimension][]string{UsageDimensionCallPoint: {"fast", "gamma"}, UsageDimensionCredential: {"auth-0", "auth-2"}}})
 		}
@@ -280,6 +303,9 @@ func TestUsageFactsMatchRequestRecordsAtEveryFoldDepth(t *testing.T) {
 				t.Fatalf("%s %+v: %v", stage, query, err)
 			}
 			want := recordFacts(t, repo, query)
+			if len(query.ClientAgents) > 0 {
+				got.Rows, want = clientView(got.Rows), clientView(want)
+			}
 			if !reflect.DeepEqual(got.Rows, want) {
 				t.Fatalf("%s: facts disagree with request records for %+v\n got %d rows %+v\nwant %d rows %+v",
 					stage, query, len(got.Rows), got.Totals(), len(want), UsageFactResult{Rows: want}.Totals())
@@ -565,6 +591,17 @@ func TestCalendarBucketsFollowTheWallClock(t *testing.T) {
 							t.Fatalf("%s: %s %s buckets disagree with request records\n got %d rows %+v\nwant %d rows %+v",
 								stage, location, unit, len(got.Rows), got.Totals(), len(want), UsageFactResult{Rows: want}.Totals())
 						}
+					}
+					// A client read has no local-day grain, so it must answer the same grid from the fine table.
+					query := UsageFactQuery{InstanceID: "default", FromMS: window[0], ToMS: window[1],
+						Calendar: &UsageCalendar{Location: location, Unit: unit}, ClientAgents: []string{"unknown", "pi"}}
+					got, err := repo.QueryUsageFacts(ctx, query)
+					if err != nil {
+						t.Fatalf("%s %s %s client read: %v", stage, location, unit, err)
+					}
+					if want := clientView(recordFacts(t, repo, query)); !reflect.DeepEqual(clientView(got.Rows), want) {
+						t.Fatalf("%s: %s %s client buckets disagree with request records\n got %+v\nwant %+v",
+							stage, location, unit, UsageFactResult{Rows: clientView(got.Rows)}.Totals(), UsageFactResult{Rows: want}.Totals())
 					}
 				}
 			}

@@ -559,12 +559,14 @@ export const InsightsPage: React.FC = () => {
       onChange={(next: InsightsBucketChoice) => setView({ bucket: next })}
     />
   );
+  // A client read withholds a comparison that would reach behind request retention.
+  const isCompareWithheld = Boolean(cube) && !cube?.compare && requestedView.isComparing && Boolean(view.filters.client?.length);
   const compareButton = (
     <ToolButton
       icon={<SwapOutlined />}
-      label={t(requestedView.isComparing ? 'insights.compare_off' : 'insights.compare_on')}
-      variant={requestedView.isComparing ? 'active' : 'secondary'}
-      aria-pressed={requestedView.isComparing}
+      label={t(isCompareWithheld ? 'insights.compare_withheld' : isComparing ? 'insights.compare_off' : 'insights.compare_on')}
+      variant={isComparing ? 'active' : 'secondary'}
+      aria-pressed={isComparing}
       disabled={!cube?.compare}
       onClick={() => setView({ isComparing: !requestedView.isComparing })}
       data-testid="insights-compare"
@@ -667,7 +669,8 @@ export const InsightsPage: React.FC = () => {
         onChange={(filters) => setView({ filters })}
         onOpen={openDetail}
         onViewRequests={() => navigate(eventsHref(requestedView.filters))}
-        canViewRequests={cube ? canDrillUsageEvents(cube, requestedView.filters) : false}
+        // A cube held over from other clients resolves a provider to their credentials, not the requested ones.
+        canViewRequests={cube && !cubeQuery.isPlaceholderData ? canDrillUsageEvents(cube, requestedView.filters) : false}
       />
       {cubeQuery.isError && (
         <LoadFailure

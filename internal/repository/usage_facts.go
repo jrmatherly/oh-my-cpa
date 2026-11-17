@@ -469,6 +469,8 @@ type UsageFactQuery struct {
 	// ClientAgents keeps only the generation requests of these client programs.
 	// Client attribution is rolled up beside the request records and pruned with
 	// them, so such a read starts no earlier than the request-record horizon.
+	// The rollups hold the normalised accounting only: in a client read the raw
+	// token columns, CanonicalRequests and UnresolvedRequests are not meaningful.
 	ClientAgents []string
 }
 

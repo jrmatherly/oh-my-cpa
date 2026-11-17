@@ -615,6 +615,10 @@ func TestInsightsClientsAggregatesAgentsFiltersAndRetentionCoverage(t *testing.T
 	if requests, cube := clientRequests("preset=90d&client_agent=" + usage.ClientAgentCodexCLI); requests != 0 || !cube.Window.Clipped || cube.Window.Widened || cube.Window.FromMS != retentionCutoff || cube.Compare != nil || len(cube.PreviousRows) != 0 {
 		t.Fatalf("clipped client read = %d %+v compare %+v, want 0 requests from the horizon %d and no comparison", requests, cube.Window, cube.Compare, retentionCutoff)
 	}
+	// A clipped read still answers for the records retention kept.
+	if requests, cube := clientRequests("preset=90d&client_agent=" + usage.ClientAgentClaudeCode); requests != 2 || !cube.Window.Clipped {
+		t.Fatalf("clipped client read = %d %+v, want the 2 retained requests", requests, cube.Window)
+	}
 	if _, cube := clientRequests("preset=90d"); cube.Window.Clipped || cube.Compare == nil {
 		t.Fatalf("unfiltered read must neither clip nor drop its comparison: %+v %+v", cube.Window, cube.Compare)
 	}

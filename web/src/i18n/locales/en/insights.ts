@@ -12,6 +12,7 @@ export default {
   'insights.bucket.month': 'By month',
   'insights.compare_on': 'Compare with the previous period',
   'insights.compare_off': 'Stop comparing',
+  'insights.compare_withheld': 'Clients are traced within request retention, so the previous period cannot be compared',
   'insights.compare_window': 'Compared with {from} – {to}, scaled from that period’s robust average',
   'insights.compare_heading': 'Versus the previous period',
   'insights.compare_change': 'Change',

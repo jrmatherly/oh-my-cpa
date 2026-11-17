@@ -213,6 +213,34 @@ describe('insights page', () => {
       .every((request) => !request.query.has('client_agent'))).toBe(true);
     expect(within(screen.getByTestId('insights-filter-bar')).getByText('Claude Code')).toBeTruthy();
     await waitFor(() => expect(within(within(clients).getAllByRole('listitem')[0]!).getByRole('button', { pressed: true })).toBeTruthy());
+
+    fireEvent.click(within(clients).getByRole('button', { name: /^Clear/ }));
+    await waitFor(() => expect(new URLSearchParams(lastSearch).has('client')).toBe(false));
+  });
+
+  it('says why a client read has no comparison, and does not show it as running', async () => {
+    api.on('GET', '/management/insights/cube', () => ({ ...CUBE, compare_window: null }));
+    mount('/insights?client=claude-code');
+    const compare = await screen.findByTestId('insights-compare');
+    await waitFor(() => expect(compare.getAttribute('aria-label')).toBe('Clients are traced within request retention, so the previous period cannot be compared'));
+    expect(compare.getAttribute('aria-pressed')).toBe('false');
+    expect((compare as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps the filtered request link closed while the cube still answers for other clients', async () => {
+    mount('/insights?client=claude-code');
+    const link = () => screen.getByTestId('insights-filter-requests') as HTMLButtonElement;
+    await waitFor(() => expect(link().disabled).toBe(false));
+    const clients = await screen.findByTestId('insights-ranking-client');
+    await waitFor(() => expect(within(clients).getAllByRole('listitem').length).toBeGreaterThan(1));
+
+    const cube = api.hold('GET', '/management/insights/cube');
+    fireEvent.click(within(within(clients).getAllByRole('listitem')[1]!).getByRole('button', { pressed: false }));
+    await cube.arrived;
+    expect(link().disabled).toBe(true);
+
+    cube.release(CUBE);
+    await waitFor(() => expect(link().disabled).toBe(false));
   });
 
   it('offers a retry when the client attribution fails to load', async () => {
