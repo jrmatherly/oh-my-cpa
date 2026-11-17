@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -27,10 +26,8 @@ func TestMoveProviderFamilyKeepsUnrelatedStoredGroupsAndUsesOneGuardedWrite(t *t
 		switch r.Method + " " + r.URL.Path {
 		case "GET /v0/management/config.yaml":
 			_, _ = w.Write([]byte(storedYAML))
-		case "GET /v8/management/config/api-keys/claude":
-			_, _ = w.Write([]byte(sourceJSON))
-		case "GET /v8/management/config/api-keys/codex":
-			_, _ = w.Write([]byte(targetJSON))
+		case "GET /v8/management/config":
+			_, _ = w.Write([]byte(`{"api-keys":{"claude":` + sourceJSON + `,"codex":` + targetJSON + `}}`))
 		case "GET /v0/management/claude-api-key":
 			_, _ = w.Write([]byte(`{"claude-api-key":[{"api-key":"first","base-url":"https://relay.test"},{"api-key":"moved","base-url":"https://relay.test","auth-index":"move-index"},{"api-key":"last","base-url":"https://relay.test"}]}`))
 		case "GET /v0/management/codex-api-key":
@@ -119,8 +116,8 @@ func TestMoveProviderFamilyBackupFailureAndRevisionConflict(t *testing.T) {
 				switch {
 				case r.URL.Path == "/v0/management/config.yaml":
 					_, _ = w.Write([]byte("config-version: 8\n"))
-				case strings.HasPrefix(r.URL.Path, "/v8/management/config/api-keys/"):
-					_, _ = w.Write([]byte(`[{"name":"entry","base-url":"https://relay.test","keys":[{"api-key":"move-key"}]}]`))
+				case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config":
+					_, _ = w.Write([]byte(`{"api-keys":{"claude":[{"name":"entry","base-url":"https://relay.test","keys":[{"api-key":"move-key"}]}],"codex":[{"name":"entry","base-url":"https://relay.test","keys":[{"api-key":"move-key"}]}]}}`))
 				case r.URL.Path == "/v0/management/claude-api-key":
 					_, _ = w.Write([]byte(`{"claude-api-key":[{"api-key":"move-key","base-url":"https://relay.test"}]}`))
 				case r.URL.Path == "/v0/management/codex-api-key":

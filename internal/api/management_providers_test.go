@@ -37,8 +37,9 @@ type providerFakeServerState struct {
 	// Keep persisted v8 groups independent of the normalized runtime lists;
 	// reconstructing storage from runtime hides inheritance regressions.
 	storedGroups map[string][]map[string]any
-	// groupsReadErrors makes the stored v8 group read fail for a family while
-	// its v0 runtime endpoint stays available.
+	// groupsReadErrors makes the stored v8 groups of a family unreadable (the
+	// view carries a value of the wrong shape for it) while its v0 runtime
+	// endpoint stays available. Only the keys matter.
 	groupsReadErrors map[string]int
 	// hooksMu guards the hooks below, which a test installs before issuing any
 	// request and the serving goroutines read per request.
@@ -190,7 +191,7 @@ func newProviderTestFixture(t *testing.T) providerTestFixture {
 		// A codex read followed later by a provider write is one read-modify-write
 		// window. Bracketing both here is what lets a test assert that two windows
 		// never overlap, which is the invariant that prevents a lost update.
-		isCodexRead := request.Method == http.MethodGet && (request.URL.Path == "/v0/management/codex-api-key" || request.URL.Path == "/v8/management/config/api-keys/codex")
+		isCodexRead := request.Method == http.MethodGet && request.URL.Path == "/v0/management/codex-api-key"
 		if isCodexRead || (request.Method == http.MethodPatch && request.URL.Path == "/v8/management/config") {
 			state.beginCodexSection()
 			defer state.endCodexSection()
@@ -202,14 +203,6 @@ func newProviderTestFixture(t *testing.T) providerTestFixture {
 		}
 		state.mu.Lock()
 		defer state.mu.Unlock()
-		const groupsPrefix = "/v8/management/config/api-keys/"
-		if request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, groupsPrefix) {
-			if status := state.groupsReadErrors[strings.TrimPrefix(request.URL.Path, groupsPrefix)]; status != 0 {
-				writer.WriteHeader(status)
-				_, _ = writer.Write([]byte(`{"error":"stored groups unavailable"}`))
-				return
-			}
-		}
 		if serveProviderGroups(writer, request, state.providerList, func(string) { state.putCount++ }, state.storedGroups) {
 			return
 		}
@@ -218,7 +211,18 @@ func newProviderTestFixture(t *testing.T) providerTestFixture {
 
 		switch {
 		case path == "/v8/management/config" && request.Method == http.MethodGet:
-			_ = json.NewEncoder(writer).Encode(map[string]any{"access": map[string]any{"api-keys": state.clientKeys}})
+			view := map[string]any{"access": map[string]any{"api-keys": state.clientKeys}}
+			groups := map[string]any{}
+			for family, stored := range providerGroupsView(providerGroupFamilies, state.providerList, state.storedGroups) {
+				groups[family] = stored
+			}
+			for family := range state.groupsReadErrors {
+				groups[family] = "unreadable"
+			}
+			if len(groups) > 0 {
+				view["api-keys"] = groups
+			}
+			_ = json.NewEncoder(writer).Encode(view)
 		case path == "/v8/management/config" && request.Method == http.MethodPatch:
 			var merge struct {
 				Access struct {

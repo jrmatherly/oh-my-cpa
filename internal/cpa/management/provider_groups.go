@@ -77,8 +77,7 @@ func (c *Client) configValueAt(ctx context.Context, path []string, output any) (
 // configViewValueAt decodes one path of the v8 view into output, which stays
 // untouched when the path is not set. It reads the whole view because CPA
 // answers a single unset path with 404, logs a warning for it, and that answer
-// makes the client forget the gateway serves v8. Use it for a path that is
-// ordinarily empty.
+// makes the client forget the gateway serves v8.
 func (c *Client) configViewValueAt(ctx context.Context, path []string, output any) error {
 	view, _, err := c.ConfigView(ctx)
 	if err != nil {
@@ -106,7 +105,7 @@ func isConfigPathMissing(err error) bool {
 // storedKeyGroups reads one credential group list as stored.
 func (c *Client) storedKeyGroups(ctx context.Context, path []string) ([]map[string]any, error) {
 	var groups []map[string]any
-	if _, err := c.configValueAt(ctx, path, &groups); err != nil {
+	if err := c.configViewValueAt(ctx, path, &groups); err != nil {
 		return nil, err
 	}
 	return groups, nil

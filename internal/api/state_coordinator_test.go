@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -472,10 +473,6 @@ func TestStateCoordinatorExternalRefreshUpdatesHTTPAndSSE(t *testing.T) {
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-			_, _ = writer.Write([]byte(`[]`))
-			return
-		}
 		_, _ = writer.Write([]byte(`{}`))
 	}, func(h *Handler) { handler = h })
 	if err := handler.EnableStateCoordinator(context.Background(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -695,11 +692,7 @@ func TestStateCoordinatorObservesDelayedRuntimeReload(t *testing.T) {
 		case "/v0/management/codex-api-key":
 			_, _ = fmt.Fprintf(writer, `{"codex-api-key":[{"api-key":"delayed-runtime-key","auth-index":"idx-%d"}]}`, runtimeGeneration.Load())
 		default:
-			if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-				_, _ = writer.Write([]byte(`[]`))
-			} else {
-				_, _ = writer.Write([]byte(`{}`))
-			}
+			_, _ = writer.Write([]byte(`{}`))
 		}
 	}, func(h *Handler) { handler = h })
 	if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -936,7 +929,23 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 				}
 				_, _, _ = startDashboardTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
 					switch request.URL.Path {
-					case "/v8/management/config", "/v8/management/config.yaml":
+					case "/v8/management/config":
+						if request.Method != http.MethodGet || groupStatus.Load() == 0 {
+							upstream.serve(writer, request)
+							return
+						}
+						// The family's stored groups are unreadable while the rest of
+						// the view, and so the rest of the load, stays intact.
+						recorded := httptest.NewRecorder()
+						upstream.serve(recorded, request)
+						var view map[string]any
+						_ = json.Unmarshal(recorded.Body.Bytes(), &view)
+						if view == nil {
+							view = map[string]any{}
+						}
+						view["api-keys"] = map[string]any{family: "unreadable"}
+						_ = json.NewEncoder(writer).Encode(view)
+					case "/v8/management/config.yaml":
 						upstream.serve(writer, request)
 					case "/v0/management/config":
 						_, _ = fmt.Fprintf(writer, `{"generation":%d}`, generation.Load())
@@ -951,18 +960,8 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 						} else {
 							_, _ = fmt.Fprintf(writer, `{"openai-compatibility":[{"name":"generation-%d"}]}`, captured)
 						}
-					case "/v8/management/config/api-keys/" + family:
-						if status := groupStatus.Load(); status != 0 {
-							writer.WriteHeader(int(status))
-						} else {
-							_, _ = writer.Write([]byte(`[]`))
-						}
 					default:
-						if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-							_, _ = writer.Write([]byte(`[]`))
-						} else {
-							_, _ = writer.Write([]byte(`{}`))
-						}
+						_, _ = writer.Write([]byte(`{}`))
 					}
 				}, func(h *Handler) { handler = h })
 				if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -1085,8 +1084,14 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 				case "/v0/management/config":
 					_, _ = writer.Write([]byte(`{"generation":1}`))
 				case runtimePath:
-					if count := runtimeReads.Add(1); isDegraded.Load() && count%2 == 0 {
-						writer.WriteHeader(http.StatusServiceUnavailable)
+					// While degraded the editable read finds the runtime list missing,
+					// and the fallback read that follows it fails outright.
+					if count := runtimeReads.Add(1); isDegraded.Load() {
+						if count%2 == 1 {
+							writer.WriteHeader(http.StatusNotFound)
+						} else {
+							writer.WriteHeader(http.StatusServiceUnavailable)
+						}
 						return
 					}
 					if family == "codex" {
@@ -1094,14 +1099,8 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 					} else {
 						_, _ = writer.Write([]byte(`{"openai-compatibility":[{"name":"runtime-recovered"}]}`))
 					}
-				case "/v8/management/config/api-keys/" + family:
-					writer.WriteHeader(http.StatusNotFound)
 				default:
-					if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-						_, _ = writer.Write([]byte(`[]`))
-					} else {
-						_, _ = writer.Write([]byte(`{}`))
-					}
+					_, _ = writer.Write([]byte(`{}`))
 				}
 			}, func(h *Handler) { handler = h })
 			if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
