@@ -216,6 +216,15 @@ describe('insights page', () => {
     await act(async () => { await client.refetchQueries({ queryKey: ['insights-clients'] }); });
     await waitFor(() => expect(within(clients).getByText('Client attribution could not be loaded')).toBeTruthy());
     expect(within(clients).getByText('Claude Code')).toBeTruthy();
+
+    // The same holds when the read it kept was empty.
+    api.on('GET', '/management/insights/clients', () => ({ ...CLIENTS, clients: [] }));
+    fireEvent.click(within(clients).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(within(clients).getByText('No usage in this window')).toBeTruthy());
+    api.on('GET', '/management/insights/clients', () => json({ error: 'records unavailable' }, 500));
+    await act(async () => { await client.refetchQueries({ queryKey: ['insights-clients'] }); });
+    await waitFor(() => expect(within(clients).getByText('Client attribution could not be loaded')).toBeTruthy());
+    expect(within(clients).getByText('No usage in this window')).toBeTruthy();
   });
 
   it('keeps the client drill-down closed while the cube still holds the previous window', async () => {

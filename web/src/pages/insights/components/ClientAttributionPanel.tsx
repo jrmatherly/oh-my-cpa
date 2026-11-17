@@ -86,11 +86,12 @@ export const ClientAttributionPanel: React.FC<ClientAttributionPanelProps> = ({
         <div className={styles['filter-values-empty']}>{t('insights.client.uncaptured')}</div>
       ) : error && !data ? (
         <LoadFailure title={t('insights.client.error_title')} error={error} onRetry={onRetry} />
-      ) : groups.length === 0 ? (
-        isLoading ? <div className={styles['ranking-placeholder']} aria-hidden="true" /> : <EmptyState size="compact" title={t('insights.no_usage')} />
       ) : (
         <>
         {error ? <LoadFailure tone="warning" title={t('insights.client.error_title')} error={error} onRetry={onRetry} /> : null}
+        {groups.length === 0 ? (
+        isLoading ? <div className={styles['ranking-placeholder']} aria-hidden="true" /> : <EmptyState size="compact" title={t('insights.no_usage')} />
+      ) : (
         <ol className={clsx(styles['ranking-list'], styles['ranking-list-plain'])}>
           {groups.slice(0, limit).map((group) => {
             const item = items.get(group.id)!;
@@ -128,6 +129,7 @@ export const ClientAttributionPanel: React.FC<ClientAttributionPanelProps> = ({
             );
           })}
         </ol>
+      )}
         </>
       )}
     </Panel>
