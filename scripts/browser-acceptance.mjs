@@ -128,6 +128,9 @@ async function auditRoutes(page, responseBodies, routes) {
   for (const [route, selector, options] of routes) {
     await page.goto(`${appURL}${route}`, { waitUntil: 'domcontentloaded' });
     await page.locator(selector).first().waitFor({ state: 'visible', timeout: 15000 });
+    // The route's loading skeleton carries the same marker and no text, so wait for the page itself;
+    // a route that never draws text still fails the check below.
+    await page.waitForFunction(() => document.body.innerText.trim().length > 0, null, { timeout: 15000 }).catch(() => {});
     const overflow = await measureStable(
       () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
       { page, label: `the ${route} overflow measurement` },
