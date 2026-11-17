@@ -6,7 +6,8 @@ import { PanelTitle } from '../../../components/common/PanelTitle';
 import { EmptyState } from '../../../components/common/EmptyState';
 import { ChartLegend } from '../../../components/common/ChartLegend';
 import { ResponsiveList } from '../../../components/common/ResponsiveList';
-import { BarChartOutlined, DashboardOutlined, TableOutlined } from '../../../components/icons';
+import { ToolButton } from '../../../components/common/ToolButton';
+import { ArrowDownOutlined, ArrowUpOutlined, BarChartOutlined, DashboardOutlined, TableOutlined } from '../../../components/icons';
 import { useTokenDisplayStyle } from '../../../types/tokenDisplayContext';
 import { formatTokens, formatTokensFull } from '../../../types/tokenDisplay';
 import { formatShare } from '../../../types/insightsFormat';
@@ -234,6 +235,8 @@ function ModelProfileTable({ profiles, dimension, labels, isPhone }: {
     () => columns.filter((column) => column.sortValue).map((column) => ({ value: String(column.key), label: column.title as string })),
     [columns],
   );
+  const sortKey = sorted.sortKey === null ? 'requests' : String(sorted.sortKey);
+  const isAscending = sorted.order === 'ascending';
   return (
     <>
       {isPhone && (
@@ -242,9 +245,16 @@ function ModelProfileTable({ profiles, dimension, labels, isPhone }: {
           <Select
             size="sm"
             aria-label={t('insights.sort_label')}
-            value={sorted.sortKey === null ? 'requests' : String(sorted.sortKey)}
+            value={sortKey}
             options={sortOptions}
-            onChange={(key: string) => sorted.sortBy(key)}
+            onChange={(key: string) => sorted.sortBy(key, sorted.order)}
+          />
+          <ToolButton
+            variant="ghost"
+            size="sm"
+            icon={isAscending ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+            label={t(isAscending ? 'insights.sort_ascending' : 'insights.sort_descending')}
+            onClick={() => sorted.sortBy(sortKey, isAscending ? 'descending' : 'ascending')}
           />
         </div>
       )}

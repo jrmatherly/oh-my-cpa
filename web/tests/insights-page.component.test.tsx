@@ -1,5 +1,5 @@
 import type React from 'react';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { installOmcApi, json, type OmcApi } from './support/omcApi';
@@ -210,6 +210,12 @@ describe('insights page', () => {
     api.on('GET', '/management/insights/clients', () => CLIENTS);
     fireEvent.click(within(clients).getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(within(clients).getByText('Claude Code')).toBeTruthy());
+
+    // A refresh that fails keeps the ranking and says so beside it.
+    api.on('GET', '/management/insights/clients', () => json({ error: 'records unavailable' }, 500));
+    await act(async () => { await client.refetchQueries({ queryKey: ['insights-clients'] }); });
+    await waitFor(() => expect(within(clients).getByText('Client attribution could not be loaded')).toBeTruthy());
+    expect(within(clients).getByText('Claude Code')).toBeTruthy();
   });
 
   it('keeps the client drill-down closed while the cube still holds the previous window', async () => {
@@ -308,6 +314,9 @@ describe('insights page', () => {
     fireEvent.mouseDown(within(panel).getByRole('combobox', { name: 'Sort by' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Avg latency' }));
     await waitFor(() => expect(order()).toEqual(['sonnet', 'gpt-5']));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Largest first' }));
+    await waitFor(() => expect(order()).toEqual(['gpt-5', 'sonnet']));
+    expect(within(panel).getByRole('button', { name: 'Smallest first' })).toBeTruthy();
 
     fireEvent.click(viewOption('Table')!);
     await waitFor(() => expect(within(panel).queryByRole('combobox', { name: 'Sort by' })).toBeNull());

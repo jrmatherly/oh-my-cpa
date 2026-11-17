@@ -20,8 +20,10 @@ export interface ColumnSort<T> {
   data: readonly T[];
   /** The column in force, for a surface without headers to click (a phone's rows). */
   sortKey: React.Key | null;
-  /** Orders by a column, largest first. */
-  sortBy: (key: React.Key) => void;
+  /** The direction in force; the page's own ranking reads as largest first. */
+  order: 'ascending' | 'descending';
+  /** Orders by a column, largest first unless told otherwise. */
+  sortBy: (key: React.Key, order?: 'ascending' | 'descending') => void;
 }
 
 export function useColumnSort<T>(columns: readonly SortableColumn<T>[], data: readonly T[]): ColumnSort<T> {
@@ -56,6 +58,6 @@ export function useColumnSort<T>(columns: readonly SortableColumn<T>[], data: re
       ),
     };
   });
-  const sortBy = React.useCallback((key: React.Key) => setSort({ key, order: 'descending' }), []);
-  return { columns: headed, data: sorted, sortKey: active ? sort!.key : null, sortBy };
+  const sortBy = React.useCallback((key: React.Key, order: 'ascending' | 'descending' = 'descending') => setSort({ key, order }), []);
+  return { columns: headed, data: sorted, sortKey: active ? sort!.key : null, order: active ? sort!.order : 'descending', sortBy };
 }

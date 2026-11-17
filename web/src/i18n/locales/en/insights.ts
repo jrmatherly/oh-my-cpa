@@ -120,6 +120,8 @@ export default {
   'insights.col.ttft': 'TTFT',
   'insights.view_profile': 'Model load profile',
   'insights.sort_label': 'Sort by',
+  'insights.sort_descending': 'Largest first',
+  'insights.sort_ascending': 'Smallest first',
   'insights.profile.net_input': 'Net input per call',
   'insights.profile.output': 'Output per call',
   'insights.export_csv': 'Export CSV',
