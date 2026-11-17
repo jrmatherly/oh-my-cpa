@@ -1,11 +1,12 @@
-import { formatCurrency, USD_CURRENCY, type DisplayCurrency } from './currencyDisplay';
+import { currencyReadout, formatCurrency, USD_CURRENCY, type DisplayCurrency } from './currencyDisplay';
 /**
  * How the Insights page writes a metric. One place, so a tile, a ranking row, a matrix cell and a
  * tooltip print the same value the same way.
  */
 
-import { formatTokens, formatTokensFull, type TokenNumberStyle } from './tokenDisplay';
-import type { InsightsMetric, MetricComparison } from './insightsCube';
+import { formatTokens, formatTokensFull, resolveCountFlowReadout, resolveTokenFlowReadout, type TokenNumberStyle } from './tokenDisplay';
+import type { CubeMetric, MetricComparison } from './insightsCube';
+import type { RollingReadout } from './rollingNumber';
 
 const COUNT = new Intl.NumberFormat('en');
 const BASELINE_COUNT_1 = new Intl.NumberFormat('en', { maximumFractionDigits: 1 });
@@ -24,12 +25,13 @@ export function formatLatency(ms: number): string {
 }
 
 /** A metric's readout; null is written as a dash, never as zero. */
-export function formatMetric(metric: InsightsMetric, value: number | null, style: TokenNumberStyle, currency: DisplayCurrency = USD_CURRENCY): string {
+export function formatMetric(metric: CubeMetric, value: number | null, style: TokenNumberStyle, currency: DisplayCurrency = USD_CURRENCY): string {
   if (value === null || !Number.isFinite(value)) return '—';
   switch (metric) {
     case 'cost':
       return formatCurrency(value, currency);
     case 'tokens':
+    case 'net_tokens':
       return formatTokens(value, style);
     case 'requests':
       return Number.isInteger(value) ? COUNT.format(value) : formatCountBaseline(value);
@@ -39,12 +41,35 @@ export function formatMetric(metric: InsightsMetric, value: number | null, style
 }
 
 /**
+ * `formatMetric` as a rolling readout: the same reading, split into the number that moves and the
+ * marks that do not. A request count that is not whole is a baseline, which never rolls, and a
+ * latency changes its unit word at a second, which `RollingNumber` prints in place.
+ */
+export function metricReadout(metric: CubeMetric, value: number | null, style: TokenNumberStyle, currency: DisplayCurrency = USD_CURRENCY): RollingReadout | undefined {
+  if (value === null || !Number.isFinite(value)) return undefined;
+  switch (metric) {
+    case 'cost':
+      return currencyReadout(value, currency);
+    case 'tokens':
+    case 'net_tokens':
+      return resolveTokenFlowReadout(value, style);
+    case 'requests':
+      return Number.isInteger(value) ? resolveCountFlowReadout(value) : undefined;
+    case 'latency':
+      // The seconds are read back from the printed form: its rounding, not Intl's, owns the digits.
+      return value >= 1000
+        ? { number: Number((value / 1000).toFixed(2)), suffix: 's', format: { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 } }
+        : { number: Math.round(value), suffix: 'ms', format: { useGrouping: false, maximumFractionDigits: 0 } };
+  }
+}
+
+/**
  * The exact form behind a rounded readout, for its title. Money has none: its reading already
  * states the precision.
  */
-export function formatMetricExact(metric: InsightsMetric, value: number | null): string | undefined {
+export function formatMetricExact(metric: CubeMetric, value: number | null): string | undefined {
   if (value === null || !Number.isFinite(value)) return undefined;
-  if (metric === 'tokens') return formatTokensFull(value);
+  if (metric === 'tokens' || metric === 'net_tokens') return formatTokensFull(value);
   if (metric === 'requests') return COUNT.format(value);
   return undefined;
 }
