@@ -281,12 +281,11 @@ func (c *Client) requireKnownPlugin(ctx context.Context, id string, path []strin
 	if slices.ContainsFunc(plugins, func(plugin PluginItem) bool { return plugin.ID == strings.TrimSpace(id) }) {
 		return nil
 	}
-	var config any
-	configured, err := c.configValueAt(ctx, path, &config)
-	if err != nil {
+	var config map[string]any
+	if err := c.configViewValueAt(ctx, path, &config); err != nil {
 		return err
 	}
-	if !configured {
+	if config == nil {
 		return errPluginNotFound
 	}
 	return nil
@@ -305,11 +304,10 @@ func (c *Client) PluginConfig(ctx context.Context, id string) (map[string]any, e
 		return nil, err
 	}
 	var config map[string]any
-	configured, err := c.configValueAt(ctx, path, &config)
-	if err != nil {
+	if err := c.configViewValueAt(ctx, path, &config); err != nil {
 		return nil, err
 	}
-	if !configured {
+	if config == nil {
 		plugins, err := c.Plugins(ctx)
 		if err != nil {
 			return nil, err

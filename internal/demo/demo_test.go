@@ -603,7 +603,6 @@ func TestUpstreamServesTheConsoleSurface(t *testing.T) {
 		managementPrefix + "/config",
 		managementPrefix + "/config.yaml",
 		managementPrefix + "/routing/model-definitions/codex",
-		managementPrefix + "/config/plugins/configs/usage-exporter",
 		legacyManagementPrefix + "/config.yaml",
 		legacyManagementPrefix + "/openai-compatibility",
 		legacyManagementPrefix + "/claude-api-key",

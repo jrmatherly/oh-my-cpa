@@ -534,6 +534,12 @@ func isPathPrefix(prefix, path []string) bool {
 	return true
 }
 
+// isConfigPathMissing reports CPA's answer for a path that is not set.
+func isConfigPathMissing(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound && strings.Contains(httpErr.Body, "not_found")
+}
+
 func configPathEndpoint(path []string) string {
 	escaped := make([]string, len(path))
 	for i, key := range path {

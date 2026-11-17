@@ -3,9 +3,7 @@ package management
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -55,25 +53,6 @@ func (f ConfigKeyFamily) GroupsPath() []string {
 // providers, one group per provider.
 var OPENAI_COMPATIBILITY_GROUPS_PATH = []string{"api-keys", "openai-compatibility"}
 
-// configValueAt reads one path of the v8 configuration view into output. An
-// absent path is not an error: it reports false.
-func (c *Client) configValueAt(ctx context.Context, path []string, output any) (bool, error) {
-	if c == nil {
-		return false, errors.New("CPA client is not initialized")
-	}
-	request, err := c.newRequest(ctx, http.MethodGet, configPathEndpoint(path), nil, "")
-	if err != nil {
-		return false, err
-	}
-	if _, err := c.do(request, output); err != nil {
-		if isConfigPathMissing(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
 // configViewValueAt decodes one path of the v8 view into output, which stays
 // untouched when the path is not set. It reads the whole view because CPA
 // answers a single unset path with 404, logs a warning for it, and that answer
@@ -95,11 +74,6 @@ func (c *Client) configViewValueAt(ctx context.Context, path []string, output an
 		return fmt.Errorf("decode %s: %w", strings.Join(path, "."), err)
 	}
 	return nil
-}
-
-func isConfigPathMissing(err error) bool {
-	var httpErr *HTTPError
-	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound && strings.Contains(httpErr.Body, "not_found")
 }
 
 // storedKeyGroups reads one credential group list as stored.

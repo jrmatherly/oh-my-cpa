@@ -59,7 +59,7 @@ type pluginRouteCall struct {
 	method, path, query, authorization, cookie, managementKey, contentType, body string
 }
 
-// pluginConfigsPath is where the fake serves `plugins.configs.<id>`.
+// pluginConfigsPath is where the fake accepts a write of `plugins.configs.<id>`.
 const pluginConfigsPath = "/v8/management/config/plugins/configs/"
 
 const pluginTestConfigYAML = `# gateway
@@ -168,14 +168,14 @@ func startPluginTestServer(t *testing.T) (*http.Client, string, *repository.Repo
 		case path == "/v8/management/config.yaml" && request.Method == http.MethodGet:
 			writer.Header().Set("Content-Type", "application/yaml")
 			_, _ = writer.Write([]byte(state.configYAML))
-		case strings.HasPrefix(path, pluginConfigsPath) && request.Method == http.MethodGet:
-			config, ok := state.configs[strings.TrimPrefix(path, pluginConfigsPath)]
-			if !ok {
-				writer.WriteHeader(http.StatusNotFound)
-				_, _ = writer.Write([]byte(`{"error":"not_found"}`))
-				return
+		case path == "/v8/management/config" && request.Method == http.MethodGet:
+			// The console reads a plugin's settings from the view, where CPA
+			// leaves out a plugin that has none.
+			plugins := map[string]any{}
+			if len(state.configs) > 0 {
+				plugins["configs"] = state.configs
 			}
-			_ = json.NewEncoder(writer).Encode(config)
+			_ = json.NewEncoder(writer).Encode(map[string]any{"plugins": plugins})
 		case strings.HasPrefix(path, pluginConfigsPath) && request.Method == http.MethodPut:
 			var body map[string]any
 			_ = json.NewDecoder(request.Body).Decode(&body)

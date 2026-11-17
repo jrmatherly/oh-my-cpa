@@ -340,25 +340,60 @@ func TestOAuthExcludedModelsAreReadAsCPAAppliesThem(t *testing.T) {
 	}
 }
 
-func TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne(t *testing.T) {
-	gateway := &configGateway{answer: func(method, path string) (int, string) {
+// pluginViewGateway knows three plugins: "installed" has no saved settings,
+// "configured" has settings but is not installed, and "ghost" is neither.
+func pluginViewGateway() *configGateway {
+	return &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
 		switch {
-		case strings.HasPrefix(path, "/v8/management/config/plugins/configs/"):
-			return http.StatusNotFound, `{"error":"not_found"}`
+		case method == http.MethodGet && path == "/v8/management/config":
+			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"}}}}`
 		case path == "/v8/management/plugins":
 			return http.StatusOK, `{"plugins":[{"id":"installed","enabled":false}]}`
+		case strings.HasPrefix(path, "/v8/management/config/plugins/configs/") && method == http.MethodGet:
+			return http.StatusNotFound, `{"error":"not_found"}`
 		}
 		return 0, ""
 	}}
+}
+
+func requireNoPluginPathRead(t *testing.T, gateway *configGateway) {
+	t.Helper()
+	for _, request := range gateway.sent() {
+		if strings.HasPrefix(request, "GET /v8/management/config/plugins/configs/") {
+			t.Fatalf("a plugin's settings were read by path, which CPA answers with 404 while unset: %v", gateway.sent())
+		}
+	}
+}
+
+func TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne(t *testing.T) {
+	gateway := pluginViewGateway()
 	client := newConfigClient(t, gateway)
 	config, err := client.PluginConfig(context.Background(), "installed")
-	if err != nil || len(config) != 0 {
+	if err != nil || config == nil || len(config) != 0 {
 		t.Fatalf("installed plugin config = %#v, %v; want an empty object", config, err)
 	}
+	config, err = client.PluginConfig(context.Background(), "configured")
+	if err != nil || config["level"] != "info" {
+		t.Fatalf("configured plugin config = %#v, %v; want its saved settings", config, err)
+	}
 	var httpErr *HTTPError
-	if _, err := client.PluginConfig(context.Background(), "ghost"); err == nil || !errors.As(err, &httpErr) || !strings.Contains(httpErr.Body, "plugin_not_found") {
+	if _, err := client.PluginConfig(context.Background(), "ghost"); err == nil || !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound || !strings.Contains(httpErr.Body, "plugin_not_found") {
 		t.Fatalf("unknown plugin err = %v, want plugin_not_found", err)
 	}
+	requireNoPluginPathRead(t, gateway)
+}
+
+func TestPluginWritesAcceptAConfiguredPluginThatIsNotInstalled(t *testing.T) {
+	gateway := pluginViewGateway()
+	client := newConfigClient(t, gateway)
+	if err := client.SetPluginEnabled(context.Background(), "configured", true); err != nil {
+		t.Fatalf("enable a configured plugin: %v", err)
+	}
+	var httpErr *HTTPError
+	if err := client.SetPluginEnabled(context.Background(), "ghost", true); err == nil || !errors.As(err, &httpErr) || !strings.Contains(httpErr.Body, "plugin_not_found") {
+		t.Fatalf("unknown plugin err = %v, want plugin_not_found", err)
+	}
+	requireNoPluginPathRead(t, gateway)
 }
 
 func TestUpdateConfigAPIKeysKeepsAnImplicitDefaultBaseURLImplicit(t *testing.T) {
