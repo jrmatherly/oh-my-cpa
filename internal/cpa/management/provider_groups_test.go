@@ -340,17 +340,16 @@ func TestOAuthExcludedModelsAreReadAsCPAAppliesThem(t *testing.T) {
 	}
 }
 
-// pluginViewGateway knows three plugins: "installed" has no saved settings,
-// "configured" has settings but is not installed, and "ghost" is neither.
+// pluginViewGateway knows four plugins: "installed" has no saved settings,
+// "configured" and "scalar" have settings but are not installed ("scalar" in a
+// shape the console cannot show), and "ghost" is neither.
 func pluginViewGateway() *configGateway {
 	return &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
 		switch {
 		case method == http.MethodGet && path == "/v8/management/config":
-			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"}}}}`
+			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"},"scalar":true}}}`
 		case path == "/v8/management/plugins":
 			return http.StatusOK, `{"plugins":[{"id":"installed","enabled":false}]}`
-		case strings.HasPrefix(path, "/v8/management/config/plugins/configs/") && method == http.MethodGet:
-			return http.StatusNotFound, `{"error":"not_found"}`
 		}
 		return 0, ""
 	}}
@@ -388,6 +387,9 @@ func TestPluginWritesAcceptAConfiguredPluginThatIsNotInstalled(t *testing.T) {
 	client := newConfigClient(t, gateway)
 	if err := client.SetPluginEnabled(context.Background(), "configured", true); err != nil {
 		t.Fatalf("enable a configured plugin: %v", err)
+	}
+	if err := client.SetPluginEnabled(context.Background(), "scalar", true); err != nil {
+		t.Fatalf("a plugin with settings of any shape is known: %v", err)
 	}
 	var httpErr *HTTPError
 	if err := client.SetPluginEnabled(context.Background(), "ghost", true); err == nil || !errors.As(err, &httpErr) || !strings.Contains(httpErr.Body, "plugin_not_found") {

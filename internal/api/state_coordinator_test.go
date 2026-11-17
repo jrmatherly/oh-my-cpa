@@ -801,7 +801,7 @@ func TestStateCoordinatorRecoversCommittedBaselineBeforeNextBatch(t *testing.T) 
 func TestStateCoordinatorRetriesRuntimeFallbackMetadata(t *testing.T) {
 	fixture := newProviderTestFixture(t)
 	fixture.state.mu.Lock()
-	fixture.state.groupsReadErrors = map[string]int{"codex": http.StatusServiceUnavailable}
+	fixture.state.unreadableGroups = map[string]bool{"codex": true}
 	fixture.state.mu.Unlock()
 	if err := fixture.handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
 		t.Fatal(err)
@@ -821,7 +821,7 @@ func TestStateCoordinatorRetriesRuntimeFallbackMetadata(t *testing.T) {
 		t.Fatalf("runtime fallback cleared the editable-read retry marker: %v", err)
 	}
 	fixture.state.mu.Lock()
-	delete(fixture.state.groupsReadErrors, "codex")
+	delete(fixture.state.unreadableGroups, "codex")
 	fixture.state.mu.Unlock()
 	if err := fixture.handler.stateCoord.RefreshNow(t.Context()); err != nil {
 		t.Fatal(err)

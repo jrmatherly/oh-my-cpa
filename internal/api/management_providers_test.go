@@ -37,10 +37,12 @@ type providerFakeServerState struct {
 	// Keep persisted v8 groups independent of the normalized runtime lists;
 	// reconstructing storage from runtime hides inheritance regressions.
 	storedGroups map[string][]map[string]any
-	// groupsReadErrors makes the stored v8 groups of a family unreadable (the
+	// unreadableGroups makes the stored v8 groups of a family unreadable (the
 	// view carries a value of the wrong shape for it) while its v0 runtime
-	// endpoint stays available. Only the keys matter.
-	groupsReadErrors map[string]int
+	// endpoint stays available.
+	unreadableGroups map[string]bool
+	// viewReads counts reads of the v8 view.
+	viewReads int
 	// hooksMu guards the hooks below, which a test installs before issuing any
 	// request and the serving goroutines read per request.
 	hooksMu sync.Mutex
@@ -211,12 +213,13 @@ func newProviderTestFixture(t *testing.T) providerTestFixture {
 
 		switch {
 		case path == "/v8/management/config" && request.Method == http.MethodGet:
+			state.viewReads++
 			view := map[string]any{"access": map[string]any{"api-keys": state.clientKeys}}
 			groups := map[string]any{}
-			for family, stored := range providerGroupsView(providerGroupFamilies, state.providerList, state.storedGroups) {
+			for family, stored := range providerGroupsView(state.providerList, state.storedGroups) {
 				groups[family] = stored
 			}
-			for family := range state.groupsReadErrors {
+			for family := range state.unreadableGroups {
 				groups[family] = "unreadable"
 			}
 			if len(groups) > 0 {
@@ -411,13 +414,28 @@ func TestManagementProvidersEndpoints(t *testing.T) {
 	}
 }
 
+// Each family reads its stored groups from the v8 view, and CPA parses its whole
+// file for every such read, so one list reads the view once.
+func TestManagementProviderListReadsTheConfigViewOnce(t *testing.T) {
+	client, baseURL, state := startProviderTestServer(t)
+	state.mu.Lock()
+	state.viewReads = 0
+	state.mu.Unlock()
+	resp, payload := getJSON(t, client, baseURL+"/omc/api/v1/management/providers")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get providers status = %d body %s", resp.StatusCode, payload)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.viewReads != 1 {
+		t.Fatalf("one provider list read the view %d times, want 1", state.viewReads)
+	}
+}
+
 func TestManagementProviderListFallsBackWhenStoredGroupsFail(t *testing.T) {
 	client, baseURL, state := startProviderTestServer(t)
 	state.mu.Lock()
-	state.groupsReadErrors = map[string]int{
-		"codex":                   http.StatusBadGateway,
-		openAICompatibilityFamily: http.StatusServiceUnavailable,
-	}
+	state.unreadableGroups = map[string]bool{"codex": true, openAICompatibilityFamily: true}
 	state.codexProviders[0]["connection-pool"] = map[string]any{"enabled": true}
 	state.oaiProviders[0]["connection-pool"] = map[string]any{"enabled": true}
 	state.oaiProviders[0]["api-key-entries"] = []any{map[string]any{

@@ -281,7 +281,8 @@ func (c *Client) requireKnownPlugin(ctx context.Context, id string, path []strin
 	if slices.ContainsFunc(plugins, func(plugin PluginItem) bool { return plugin.ID == strings.TrimSpace(id) }) {
 		return nil
 	}
-	var config map[string]any
+	// Settings of any shape make the plugin known; only their presence matters.
+	var config any
 	if err := c.configViewValueAt(ctx, path, &config); err != nil {
 		return err
 	}

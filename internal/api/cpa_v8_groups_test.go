@@ -25,9 +25,9 @@ var providerGroupFamilies = []string{"codex", "claude", "gemini", "meta", "xai",
 // fake keeps one, otherwise one group per entry of the flat list (CPA's
 // conversion of a pre-v8 file). A family with no entries is left out, as CPA
 // leaves an unset path out.
-func providerGroupsView(families []string, lists func(family string) *[]map[string]any, stored map[string][]map[string]any) map[string][]map[string]any {
+func providerGroupsView(lists func(family string) *[]map[string]any, stored map[string][]map[string]any) map[string][]map[string]any {
 	view := map[string][]map[string]any{}
-	for _, family := range families {
+	for _, family := range providerGroupFamilies {
 		list := lists(family)
 		if list == nil || len(*list) == 0 {
 			continue
