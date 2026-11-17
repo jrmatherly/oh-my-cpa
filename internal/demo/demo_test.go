@@ -145,6 +145,20 @@ func TestSeedFillsTheDatabaseTheConsoleReads(t *testing.T) {
 			t.Errorf("model %q is configured by the fixture but carried no traffic", profile.name)
 		}
 	}
+
+	// The reset credits the fixture publishes have to reach the snapshot the quota
+	// page reads, or the card that lists them never appears.
+	snapshots, err := repo.GetLatestQuotaSnapshots(ctx, []string{"auth-codex-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var credits quota.CodexResetCreditsInfo
+	if err := json.Unmarshal([]byte(snapshots["auth-codex-01"].ResetCreditsJSON), &credits); err != nil {
+		t.Fatalf("seeded Codex snapshot carries no reset credits: %v", err)
+	}
+	if credits.AvailableCount != 2 || len(credits.Credits) != 2 || credits.Credits[0].ExpiresAtMS == nil {
+		t.Fatalf("seeded reset credits = %+v, want the fixture's two dated credits", credits)
+	}
 }
 
 // The cost column is the part of the dashboard that a fixture most easily gets

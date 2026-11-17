@@ -89,7 +89,7 @@ func TestSeedQuotaObservationsWrapCancellation(t *testing.T) {
 
 func TestSaveDemoQuotaSnapshotWrapMarshalFailure(t *testing.T) {
 	usedPercent := math.NaN()
-	err := saveDemoQuotaSnapshot(context.Background(), nil, "auth-test", "codex", nil, []quota.QuotaWindow{{UsedPercent: &usedPercent}}, 1)
+	err := saveDemoQuotaSnapshot(context.Background(), nil, "auth-test", "codex", nil, []quota.QuotaWindow{{UsedPercent: &usedPercent}}, nil, 1)
 	var marshalError *json.UnsupportedValueError
 	if !errors.As(err, &marshalError) || !strings.Contains(err.Error(), "marshal quota snapshot for auth-test") {
 		t.Fatalf("marshal failure must identify the credential and preserve its cause: %v", err)

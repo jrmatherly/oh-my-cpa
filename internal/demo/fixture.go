@@ -888,8 +888,8 @@ func quotaPayloads(now time.Time) map[string]any {
 		codexResetCreditsURL: map[string]any{
 			"available_count": 2,
 			"credits": []map[string]any{
-				{"id": "credit-01", "status": "available", "reset_type": "monthly", "granted_at": now.Add(-9 * 24 * time.Hour).Format(time.RFC3339), "expires_at": now.Add(21 * 24 * time.Hour).Format(time.RFC3339)},
-				{"id": "credit-02", "status": "available", "reset_type": "promotional", "granted_at": now.Add(-2 * 24 * time.Hour).Format(time.RFC3339), "expires_at": now.Add(28 * 24 * time.Hour).Format(time.RFC3339)},
+				{"id": "credit-01", "status": "available", "reset_type": "codex_rate_limits", "granted_at": now.Add(-9 * 24 * time.Hour).Format(time.RFC3339), "expires_at": now.Add(21 * 24 * time.Hour).Format(time.RFC3339)},
+				{"id": "credit-02", "status": "available", "reset_type": "codex_rate_limits", "granted_at": now.Add(-2 * 24 * time.Hour).Format(time.RFC3339), "expires_at": now.Add(28 * 24 * time.Hour).Format(time.RFC3339)},
 			},
 		},
 		codexSubscriptionURL: map[string]any{
