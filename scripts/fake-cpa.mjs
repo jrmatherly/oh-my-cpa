@@ -651,7 +651,19 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
         if (Object.keys(value).length > 0) oauth[name] = value;
         else delete oauth[name];
       }
-      json(response, 200, { ...configDoc, oauth });
+      // Key groups and plugin settings are read from the view too, and CPA
+      // leaves an unset family or plugin out of it.
+      const groups = Object.fromEntries(
+        Object.entries(providerLists)
+          .map(([family, list]) => [family, groupEntries(family, list.get())])
+          .filter(([, entries]) => entries.length > 0),
+      );
+      const plugins = { ...configDoc.plugins };
+      if (pluginConfigs.size > 0) plugins.configs = Object.fromEntries(pluginConfigs);
+      // The credential lists are the source of truth here, so a document that
+      // carries its own `api-keys` does not speak for them.
+      const { 'api-keys': _documentGroups, ...document } = configDoc;
+      json(response, 200, { ...document, oauth, plugins, ...(Object.keys(groups).length > 0 ? { 'api-keys': groups } : {}) });
       return;
     }
     // The v8 view and the stored file are the same document here: the fixture's
@@ -671,18 +683,14 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       json(response, 200, Object.fromEntries(Object.entries(providerLists).map(([family, list]) => [family, groupEntries(family, list.get())])));
       return;
     }
-    if (settingPath[0] === 'api-keys' && settingPath.length === 2 && (request.method === 'GET' || request.method === 'DELETE')) {
+    if (settingPath[0] === 'api-keys' && settingPath.length === 2 && request.method === 'DELETE') {
       const list = providerLists[settingPath[1]]?.get() ?? [];
       if (list.length === 0) {
         json(response, 404, { error: 'not_found' });
         return;
       }
-      if (request.method === 'DELETE') {
-        providerLists[settingPath[1]].set([]);
-        json(response, 200, { status: 'ok', 'config-version': 8 });
-        return;
-      }
-      json(response, 200, groupEntries(settingPath[1], list));
+      providerLists[settingPath[1]].set([]);
+      json(response, 200, { status: 'ok', 'config-version': 8 });
       return;
     }
     if (settingPath[0] === 'oauth' && settingPath[1] === 'model-alias' && settingPath.length === 3 && request.method === 'DELETE') {
@@ -706,14 +714,6 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     }
     if (settingPath[0] === 'plugins' && settingPath[1] === 'configs' && settingPath.length === 3) {
       const id = settingPath[2];
-      if (request.method === 'GET') {
-        if (!pluginConfigs.has(id)) {
-          json(response, 404, { error: 'not_found' });
-          return;
-        }
-        json(response, 200, pluginConfigs.get(id));
-        return;
-      }
       if (request.method === 'PUT') {
         let payload = {};
         try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch {}

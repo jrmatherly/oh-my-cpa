@@ -63,18 +63,6 @@ func TestIdentityDirectoryLifecycleAcrossToggleDisableAndDeletion(t *testing.T) 
 			}
 			_, _ = writer.Write([]byte(`{"openai-compatibility":[{"name":"inception","base-url":"https://proxyuser:proxypass@api.inceptionlabs.ai/v1?secret_param=1","disabled":` + disabledStr + `,"api-key-entries":[{"api-key":"` + rawProviderKey + `"` + authIdxField + `}]}]}`))
 
-		case request.Method == http.MethodGet && path == "/v8/management/config/api-keys/openai-compatibility":
-			if oaiDeleted {
-				writer.WriteHeader(http.StatusNotFound)
-				_, _ = writer.Write([]byte(`{"error":"not_found"}`))
-				return
-			}
-			disabledStr := "false"
-			if oaiDisabled {
-				disabledStr = "true"
-			}
-			_, _ = writer.Write([]byte(`[{"name":"inception","base-url":"https://proxyuser:proxypass@api.inceptionlabs.ai/v1?secret_param=1","disabled":` + disabledStr + `,"keys":[{"api-key":"` + rawProviderKey + `"}]}]`))
-
 		case request.Method == http.MethodDelete && path == "/v8/management/config/api-keys/openai-compatibility":
 			oaiDeleted = true
 			_, _ = writer.Write([]byte(`{"status":"ok"}`))
@@ -102,7 +90,15 @@ func TestIdentityDirectoryLifecycleAcrossToggleDisableAndDeletion(t *testing.T) 
 			_, _ = writer.Write([]byte("config-version: 8\n"))
 
 		case request.Method == http.MethodGet && path == "/v8/management/config":
-			_, _ = writer.Write([]byte(`{"config-version":8}`))
+			if oaiDeleted {
+				_, _ = writer.Write([]byte(`{"config-version":8}`))
+				return
+			}
+			disabledStr := "false"
+			if oaiDisabled {
+				disabledStr = "true"
+			}
+			_, _ = writer.Write([]byte(`{"config-version":8,"api-keys":{"openai-compatibility":[{"name":"inception","base-url":"https://proxyuser:proxypass@api.inceptionlabs.ai/v1?secret_param=1","disabled":` + disabledStr + `,"keys":[{"api-key":"` + rawProviderKey + `"}]}]}}`))
 
 		case request.Method == http.MethodGet && strings.HasPrefix(path, "/v8/management/credentials"):
 			if authFileDeleted {
@@ -149,11 +145,6 @@ func TestIdentityDirectoryLifecycleAcrossToggleDisableAndDeletion(t *testing.T) 
 			_, _ = writer.Write([]byte(`{"file_deleted":true,"configured_removed":true}`))
 
 		default:
-			if strings.HasPrefix(path, "/v8/management/config/api-keys/") {
-				writer.WriteHeader(http.StatusNotFound)
-				_, _ = writer.Write([]byte(`{"error":"not_found"}`))
-				return
-			}
 			_, _ = writer.Write([]byte(`{}`))
 		}
 	}))
@@ -522,16 +513,11 @@ func TestProviderDeletionArchiveRefusalAndNamespaceIsolation(t *testing.T) {
 		case r.Method == http.MethodGet && (r.URL.Path == "/v0/management/config.yaml" || r.URL.Path == "/v8/management/config.yaml"):
 			_, _ = w.Write([]byte("config-version: 8\n"))
 		case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config":
-			_, _ = w.Write([]byte(`{"config-version":8}`))
+			_, _ = w.Write([]byte(`{"config-version":8,"api-keys":{"openai-compatibility":[{"name":"relay","base-url":"https://relay.test/v1","keys":[{"api-key":"dummy-key-alpha-beta"}]}]}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v0/management/openai-compatibility":
 			_, _ = w.Write([]byte(`{"openai-compatibility":[{"name":"relay","base-url":"https://relay.test/v1","api-key-entries":[{"api-key":"dummy-key-alpha-beta","auth-index":"idx-relay"}]}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config/api-keys/openai-compatibility":
-			_, _ = w.Write([]byte(`[{"name":"relay","base-url":"https://relay.test/v1","keys":[{"api-key":"dummy-key-alpha-beta"}]}]`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v0/management/"):
 			_, _ = w.Write([]byte(`{}`))
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v8/management/config/api-keys/"):
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":"not_found"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -750,9 +736,6 @@ func TestProviderDeletionPartialSnapshotRefusal(t *testing.T) {
 					_, _ = w.Write([]byte(`{"codex-api-key":[{"api-key":"sk-codex-alpha-1234","base-url":"https://api.openai.com/v1","auth-index":"idx-codex-1"}]}`))
 				case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v0/management/"):
 					_, _ = w.Write([]byte(`{}`))
-				case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v8/management/config/api-keys/"):
-					w.WriteHeader(http.StatusNotFound)
-					_, _ = w.Write([]byte(`{"error":"not_found"}`))
 				default:
 					w.WriteHeader(http.StatusNotFound)
 				}

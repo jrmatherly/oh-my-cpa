@@ -855,6 +855,8 @@ func (h *Handler) loadUpstreamProjectedState(ctx context.Context) (projectedConf
 	if err != nil {
 		return projectedConfigState{}, err
 	}
+	// The readers below that use the v8 view share one fetch of it. Nothing here writes.
+	ctx = management.WithSharedConfigView(ctx)
 
 	runtimeRevision, err := client.RuntimeConfigRevision(ctx)
 	if err != nil {

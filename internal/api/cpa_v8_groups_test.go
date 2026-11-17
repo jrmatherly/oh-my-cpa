@@ -17,12 +17,35 @@ var providerGroupSharedFields = map[string]bool{
 	"request-scoped-errors": true, "connection-pool": true,
 }
 
+// providerGroupFamilies are the families a fake CPA may keep key groups for.
+var providerGroupFamilies = []string{"codex", "claude", "gemini", "meta", "xai", "vertex", "interactions", "openai-compatibility"}
+
+// providerGroupsView is what a fake CPA puts under `api-keys` in its v8 view,
+// which is where the console reads stored groups: the stored document when the
+// fake keeps one, otherwise one group per entry of the flat list (CPA's
+// conversion of a pre-v8 file). A family with no entries is left out, as CPA
+// leaves an unset path out.
+func providerGroupsView(lists func(family string) *[]map[string]any, stored map[string][]map[string]any) map[string][]map[string]any {
+	view := map[string][]map[string]any{}
+	for _, family := range providerGroupFamilies {
+		list := lists(family)
+		if list == nil || len(*list) == 0 {
+			continue
+		}
+		if groups, hasStored := stored[family]; hasStored {
+			view[family] = groups
+			continue
+		}
+		view[family] = groupFlatList(family, genericEntries(*list))
+	}
+	return view
+}
+
 // serveProviderGroups answers the v8 configuration routes a provider write
 // uses, over the flat per-family lists a fake CPA keeps for its v0 reads, the
-// way CPA itself does: reading a family renders one group per entry (CPA's
-// conversion of a pre-v8 file), and writing groups flattens them back, one entry
-// per key. An entry keeps the auth index of the key it replaces, since CPA
-// derives the index from the key's content. It reports whether it answered.
+// way CPA itself does: writing groups flattens them back, one entry per key.
+// An entry keeps the auth index of the key it replaces, since CPA derives the
+// index from the key's content. It reports whether it answered.
 //
 // If supplied, stored is the authoritative v8 group document, independent of
 // the flattened runtime list.
@@ -36,7 +59,7 @@ func serveProviderGroups(writer http.ResponseWriter, request *http.Request, list
 	const groupsPrefix = "/v8/management/config/api-keys/"
 	path := request.URL.Path
 	switch {
-	case strings.HasPrefix(path, groupsPrefix) && (request.Method == http.MethodGet || request.Method == http.MethodDelete):
+	case strings.HasPrefix(path, groupsPrefix) && request.Method == http.MethodDelete:
 		family := strings.TrimPrefix(path, groupsPrefix)
 		list := lists(family)
 		if list == nil {
@@ -48,20 +71,12 @@ func serveProviderGroups(writer http.ResponseWriter, request *http.Request, list
 			_, _ = writer.Write([]byte(`{"error":"not_found"}`))
 			return true
 		}
-		if request.Method == http.MethodDelete {
-			*list = []map[string]any{}
-			delete(storedGroups, family)
-			if written != nil {
-				written(family)
-			}
-			_, _ = writer.Write([]byte(`{"status":"ok"}`))
-			return true
+		*list = []map[string]any{}
+		delete(storedGroups, family)
+		if written != nil {
+			written(family)
 		}
-		groups, hasStored := storedGroups[family]
-		if !hasStored {
-			groups = groupFlatList(family, genericEntries(*list))
-		}
-		_ = json.NewEncoder(writer).Encode(groups)
+		_, _ = writer.Write([]byte(`{"status":"ok"}`))
 		return true
 	case path == "/v8/management/config" && request.Method == http.MethodPatch:
 		data, _ := io.ReadAll(request.Body)

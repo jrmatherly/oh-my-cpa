@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -567,5 +568,90 @@ func TestRuntimeConfigRevisionCanonicalizesWithoutReturningSecrets(t *testing.T)
 	third, err := client.RuntimeConfigRevision(t.Context())
 	if err != nil || second == third {
 		t.Fatalf("a changed runtime value was not observed: %q %q %v", second, third, err)
+	}
+}
+
+// viewGateway answers the v8 view with whatever answer returns for the n-th
+// read, and counts the reads.
+func viewGateway(answer func(read int) (int, string)) (*configGateway, func() int) {
+	reads := 0
+	gateway := &configGateway{}
+	gateway.answer = func(method, path string) (int, string) {
+		if method != http.MethodGet || path != "/v8/management/config" {
+			return 0, ""
+		}
+		reads++
+		return answer(reads)
+	}
+	return gateway, func() int {
+		gateway.mu.Lock()
+		defer gateway.mu.Unlock()
+		return reads
+	}
+}
+
+func TestSharedConfigViewFetchesOncePerContext(t *testing.T) {
+	gateway, reads := viewGateway(func(read int) (int, string) {
+		return http.StatusOK, fmt.Sprintf(`{"read":%d}`, read)
+	})
+	client := newConfigClient(t, gateway)
+	ctx := WithSharedConfigView(context.Background())
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			view, _, err := client.ConfigView(ctx)
+			if err != nil || view["read"] != float64(1) {
+				t.Errorf("view = %#v, err = %v; want the first read", view, err)
+			}
+		})
+	}
+	wg.Wait()
+	if got := reads(); got != 1 {
+		t.Fatalf("view reads = %d, want 1", got)
+	}
+}
+
+func TestConfigViewFetchesEveryTimeWithoutTheSharedContext(t *testing.T) {
+	gateway, reads := viewGateway(func(read int) (int, string) {
+		return http.StatusOK, fmt.Sprintf(`{"read":%d}`, read)
+	})
+	client := newConfigClient(t, gateway)
+	for want := 1; want <= 3; want++ {
+		view, _, err := client.ConfigView(context.Background())
+		if err != nil || view["read"] != float64(want) {
+			t.Fatalf("view = %#v, err = %v; want read %d", view, err, want)
+		}
+	}
+	if got := reads(); got != 3 {
+		t.Fatalf("view reads = %d, want 3", got)
+	}
+}
+
+func TestSharedConfigViewHandsItsFailureToEveryReader(t *testing.T) {
+	gateway, reads := viewGateway(func(int) (int, string) {
+		return http.StatusInternalServerError, `{"error":"read_failed"}`
+	})
+	client := newConfigClient(t, gateway)
+	ctx := WithSharedConfigView(context.Background())
+	for range 4 {
+		if _, _, err := client.ConfigView(ctx); err == nil {
+			t.Fatal("a failed shared read must fail every reader")
+		}
+	}
+	if got := reads(); got != 1 {
+		t.Fatalf("view reads = %d, want 1", got)
+	}
+}
+
+func TestSharedConfigViewsDoNotLeakBetweenContexts(t *testing.T) {
+	gateway, _ := viewGateway(func(read int) (int, string) {
+		return http.StatusOK, fmt.Sprintf(`{"read":%d}`, read)
+	})
+	client := newConfigClient(t, gateway)
+	for want := 1; want <= 2; want++ {
+		view, _, err := client.ConfigView(WithSharedConfigView(context.Background()))
+		if err != nil || view["read"] != float64(want) {
+			t.Fatalf("view = %#v, err = %v; want read %d", view, err, want)
+		}
 	}
 }

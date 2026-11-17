@@ -24,6 +24,9 @@ type groupsGateway struct {
 	runtime string
 	written []map[string]any
 	removed bool
+	// pathReads counts reads of the family's own path, which CPA answers with
+	// 404 while the family is unset.
+	pathReads int
 }
 
 func (g *groupsGateway) handler() http.Handler {
@@ -36,13 +39,16 @@ func (g *groupsGateway) handler() http.Handler {
 			_, _ = writer.Write([]byte("config-version: 8\n"))
 		case request.Method == http.MethodGet && request.URL.Path == "/v0/management/"+g.runtimeEndpoint():
 			_, _ = writer.Write([]byte(g.runtime))
-		case request.Method == http.MethodGet && request.URL.Path == "/v8/management/config/api-keys/"+g.family:
+		case request.Method == http.MethodGet && request.URL.Path == "/v8/management/config":
 			if g.stored == "" {
-				writer.WriteHeader(http.StatusNotFound)
-				_, _ = writer.Write([]byte(`{"error":"not_found"}`))
+				_, _ = writer.Write([]byte(`{"config-version":8}`))
 				return
 			}
-			_, _ = writer.Write([]byte(g.stored))
+			_, _ = writer.Write([]byte(`{"config-version":8,"api-keys":{"` + g.family + `":` + g.stored + `}}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/v8/management/config/api-keys/"+g.family:
+			g.pathReads++
+			writer.WriteHeader(http.StatusNotFound)
+			_, _ = writer.Write([]byte(`{"error":"not_found"}`))
 		case request.Method == http.MethodPatch && request.URL.Path == "/v8/management/config":
 			body, _ := io.ReadAll(request.Body)
 			var merge struct {
@@ -160,6 +166,52 @@ func TestEditableOpenAICompatibilityVerifiesIdentityOnCaseFoldFallback(t *testin
 	}
 	if entries[0].APIKeyEntries[0].AuthIndex != "idx-right" {
 		t.Fatalf("auth index = %q, want idx-right", entries[0].APIKeyEntries[0].AuthIndex)
+	}
+}
+
+func TestStoredKeyGroupsReadFromTheViewWithoutAskingForThePath(t *testing.T) {
+	gateway := &groupsGateway{
+		family:  "codex",
+		stored:  `[{"name":"team","base-url":"https://c.test","priority":2,"keys":[{"api-key":"k1"},{"api-key":"k2","priority":5}]}]`,
+		runtime: `{"codex-api-key":[{"api-key":"k1","base-url":"https://c.test","priority":2,"auth-index":"a1"},{"api-key":"k2","base-url":"https://c.test","priority":5,"auth-index":"a2"}]}`,
+	}
+	entries, err := newGroupsClient(t, gateway).EditableConfigAPIKeys(context.Background(), ConfigFamilyCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].origin == nil || entries[1].origin == nil || entries[0].origin != entries[1].origin {
+		t.Fatalf("both keys must be matched to their stored group: %#v", entries)
+	}
+	if entries[1].AuthIndex != "a2" {
+		t.Fatalf("auth index = %q, want a2", entries[1].AuthIndex)
+	}
+	if gateway.pathReads != 0 {
+		t.Fatalf("path reads = %d, want 0", gateway.pathReads)
+	}
+}
+
+func TestStoredKeyGroupsOfAnUnsetFamilyAreEmptyWithoutA404(t *testing.T) {
+	gateway := &groupsGateway{
+		family:  "codex",
+		runtime: `{"codex-api-key":[{"api-key":"k1","base-url":"https://c.test","auth-index":"a1"}]}`,
+	}
+	entries, err := newGroupsClient(t, gateway).EditableConfigAPIKeys(context.Background(), ConfigFamilyCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].origin != nil || entries[0].AuthIndex != "a1" {
+		t.Fatalf("an unset family keeps the runtime list: %#v", entries)
+	}
+	if gateway.pathReads != 0 {
+		t.Fatalf("path reads = %d, want 0", gateway.pathReads)
+	}
+}
+
+func TestStoredKeyGroupsRefuseAFamilyOfTheWrongShape(t *testing.T) {
+	gateway := &groupsGateway{family: "codex", stored: `{"name":"x"}`, runtime: `{"codex-api-key":[]}`}
+	_, err := newGroupsClient(t, gateway).EditableConfigAPIKeys(context.Background(), ConfigFamilyCodex)
+	if err == nil || !strings.Contains(err.Error(), "decode api-keys.codex") {
+		t.Fatalf("err = %v, want a decode api-keys.codex error", err)
 	}
 }
 
@@ -288,25 +340,70 @@ func TestOAuthExcludedModelsAreReadAsCPAAppliesThem(t *testing.T) {
 	}
 }
 
-func TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne(t *testing.T) {
-	gateway := &configGateway{answer: func(method, path string) (int, string) {
+// pluginViewGateway knows five plugins: "installed" has no saved settings;
+// "configured", "scalar" and "empty" have an entry but are not installed
+// ("scalar" in a shape the console cannot show, "empty" stored as null); and
+// "ghost" is neither.
+func pluginViewGateway() *configGateway {
+	return &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
 		switch {
-		case strings.HasPrefix(path, "/v8/management/config/plugins/configs/"):
-			return http.StatusNotFound, `{"error":"not_found"}`
+		case method == http.MethodGet && path == "/v8/management/config":
+			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"},"scalar":true,"empty":null}}}`
 		case path == "/v8/management/plugins":
 			return http.StatusOK, `{"plugins":[{"id":"installed","enabled":false}]}`
 		}
 		return 0, ""
 	}}
+}
+
+func requireNoPluginPathRead(t *testing.T, gateway *configGateway) {
+	t.Helper()
+	for _, request := range gateway.sent() {
+		if strings.HasPrefix(request, "GET /v8/management/config/plugins/configs/") {
+			t.Fatalf("a plugin's settings were read by path, which CPA answers with 404 while unset: %v", gateway.sent())
+		}
+	}
+}
+
+func TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne(t *testing.T) {
+	gateway := pluginViewGateway()
 	client := newConfigClient(t, gateway)
 	config, err := client.PluginConfig(context.Background(), "installed")
-	if err != nil || len(config) != 0 {
+	if err != nil || config == nil || len(config) != 0 {
 		t.Fatalf("installed plugin config = %#v, %v; want an empty object", config, err)
 	}
+	config, err = client.PluginConfig(context.Background(), "configured")
+	if err != nil || config["level"] != "info" {
+		t.Fatalf("configured plugin config = %#v, %v; want its saved settings", config, err)
+	}
+	config, err = client.PluginConfig(context.Background(), "empty")
+	if err != nil || config == nil || len(config) != 0 {
+		t.Fatalf("a plugin stored as null config = %#v, %v; want an empty object", config, err)
+	}
 	var httpErr *HTTPError
-	if _, err := client.PluginConfig(context.Background(), "ghost"); err == nil || !errors.As(err, &httpErr) || !strings.Contains(httpErr.Body, "plugin_not_found") {
+	if _, err := client.PluginConfig(context.Background(), "ghost"); err == nil || !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound || !strings.Contains(httpErr.Body, "plugin_not_found") {
 		t.Fatalf("unknown plugin err = %v, want plugin_not_found", err)
 	}
+	requireNoPluginPathRead(t, gateway)
+}
+
+func TestPluginWritesAcceptAConfiguredPluginThatIsNotInstalled(t *testing.T) {
+	gateway := pluginViewGateway()
+	client := newConfigClient(t, gateway)
+	if err := client.SetPluginEnabled(context.Background(), "configured", true); err != nil {
+		t.Fatalf("enable a configured plugin: %v", err)
+	}
+	if err := client.SetPluginConfig(context.Background(), "empty", map[string]any{"level": "debug"}); err != nil {
+		t.Fatalf("a plugin stored as null can be given settings: %v", err)
+	}
+	if err := client.SetPluginEnabled(context.Background(), "scalar", true); err != nil {
+		t.Fatalf("a plugin with settings of any shape is known: %v", err)
+	}
+	var httpErr *HTTPError
+	if err := client.SetPluginEnabled(context.Background(), "ghost", true); err == nil || !errors.As(err, &httpErr) || !strings.Contains(httpErr.Body, "plugin_not_found") {
+		t.Fatalf("unknown plugin err = %v, want plugin_not_found", err)
+	}
+	requireNoPluginPathRead(t, gateway)
 }
 
 func TestUpdateConfigAPIKeysKeepsAnImplicitDefaultBaseURLImplicit(t *testing.T) {

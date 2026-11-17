@@ -80,8 +80,8 @@ func TestVertexOpenAPIReadbackRefusesDroppedPolicy(t *testing.T) {
 			fmt.Fprint(w, "8")
 		case r.URL.Path == "/v0/management/config.yaml":
 			fmt.Fprint(w, "config-version: 8\n")
-		case r.URL.Path == "/v8/management/config/api-keys/vertex":
-			fmt.Fprint(w, `[{"name":"vertex","keys":[{"api-key":"SYNTHETIC-KEY","openapi":true}]}]`)
+		case r.URL.Path == "/v8/management/config" && r.Method == http.MethodGet:
+			fmt.Fprint(w, `{"api-keys":{"vertex":[{"name":"vertex","keys":[{"api-key":"SYNTHETIC-KEY","openapi":true}]}]}}`)
 		case r.URL.Path == "/v8/management/config" && r.Method == http.MethodPatch:
 			fmt.Fprint(w, `{"status":"ok"}`)
 		case r.URL.Path == "/v0/management/vertex-api-key":

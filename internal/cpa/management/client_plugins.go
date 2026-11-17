@@ -281,15 +281,27 @@ func (c *Client) requireKnownPlugin(ctx context.Context, id string, path []strin
 	if slices.ContainsFunc(plugins, func(plugin PluginItem) bool { return plugin.ID == strings.TrimSpace(id) }) {
 		return nil
 	}
-	var config any
-	configured, err := c.configValueAt(ctx, path, &config)
+	_, isConfigured, err := c.pluginSettings(ctx, path)
 	if err != nil {
 		return err
 	}
-	if !configured {
+	if !isConfigured {
 		return errPluginNotFound
 	}
 	return nil
+}
+
+// pluginSettings reads `plugins.configs.<id>` from the v8 view and reports
+// whether the entry exists. An entry stored as null, or in a shape the console
+// cannot show, still exists: the plugin is known and its settings can be
+// replaced.
+func (c *Client) pluginSettings(ctx context.Context, path []string) (any, bool, error) {
+	view, _, err := c.ConfigView(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	value, isConfigured := ValueAt(view, path)
+	return value, isConfigured, nil
 }
 
 // errPluginNotFound is CPA's own answer for a plugin it does not know, so the
@@ -304,12 +316,22 @@ func (c *Client) PluginConfig(ctx context.Context, id string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	var config map[string]any
-	configured, err := c.configValueAt(ctx, path, &config)
+	value, isConfigured, err := c.pluginSettings(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if !configured {
+	var config map[string]any
+	if value != nil {
+		// Copied out, so a caller cannot change the view other readers share.
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(data, &config); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", strings.Join(path, "."), err)
+		}
+	}
+	if !isConfigured {
 		plugins, err := c.Plugins(ctx)
 		if err != nil {
 			return nil, err

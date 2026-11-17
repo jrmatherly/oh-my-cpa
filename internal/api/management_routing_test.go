@@ -72,9 +72,11 @@ func (f *routingFixtureCPA) serve(writer http.ResponseWriter, request *http.Requ
 	path := request.URL.Path
 	switch {
 	case request.Method == http.MethodGet && path == "/v8/management/config":
-		_ = json.NewEncoder(writer).Encode(map[string]any{"routing": map[string]any{"strategy": f.strategy}})
-	case request.Method == http.MethodGet && path == "/v8/management/config/api-keys/claude":
-		_ = json.NewEncoder(writer).Encode(f.groups)
+		view := map[string]any{"routing": map[string]any{"strategy": f.strategy}}
+		if len(f.groups) > 0 {
+			view["api-keys"] = map[string]any{"claude": f.groups}
+		}
+		_ = json.NewEncoder(writer).Encode(view)
 	case request.Method == http.MethodPatch && path == "/v8/management/config":
 		var body map[string]any
 		_ = json.NewDecoder(request.Body).Decode(&body)

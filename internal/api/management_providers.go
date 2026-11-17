@@ -434,12 +434,15 @@ func (h *Handler) readProviderItemsCore(ctx context.Context, client *management.
 }
 
 func (h *Handler) readProviderItemsUpstreamWithStatus(ctx context.Context, client *management.Client) ([]ProviderItemDTO, bool) {
+	// Every stored-group read below shares one fetch of the v8 view. Nothing here writes.
+	ctx = management.WithSharedConfigView(ctx)
 	items := make([]ProviderItemDTO, 0)
 	customNames := h.loadProviderNames(ctx)
 	customWebsites := h.loadProviderWebsites(ctx)
 	testModels, _ := h.loadStringPreference(ctx, repository.PreferenceProviderTestModels)
 
-	// Each family is independent and needs two upstream reads. Read them alongside
+	// Each family makes its own runtime read and takes its stored groups from the
+	// shared view. Read them alongside
 	// the compatibility list, then join by registry position so gateway latency
 	// does not accumulate and completion order cannot reorder positional ids.
 	familyItems := make([][]ProviderItemDTO, len(providerConfigFamilies))

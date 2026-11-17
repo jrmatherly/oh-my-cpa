@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -472,10 +473,6 @@ func TestStateCoordinatorExternalRefreshUpdatesHTTPAndSSE(t *testing.T) {
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-			_, _ = writer.Write([]byte(`[]`))
-			return
-		}
 		_, _ = writer.Write([]byte(`{}`))
 	}, func(h *Handler) { handler = h })
 	if err := handler.EnableStateCoordinator(context.Background(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -695,11 +692,7 @@ func TestStateCoordinatorObservesDelayedRuntimeReload(t *testing.T) {
 		case "/v0/management/codex-api-key":
 			_, _ = fmt.Fprintf(writer, `{"codex-api-key":[{"api-key":"delayed-runtime-key","auth-index":"idx-%d"}]}`, runtimeGeneration.Load())
 		default:
-			if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-				_, _ = writer.Write([]byte(`[]`))
-			} else {
-				_, _ = writer.Write([]byte(`{}`))
-			}
+			_, _ = writer.Write([]byte(`{}`))
 		}
 	}, func(h *Handler) { handler = h })
 	if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -808,7 +801,7 @@ func TestStateCoordinatorRecoversCommittedBaselineBeforeNextBatch(t *testing.T) 
 func TestStateCoordinatorRetriesRuntimeFallbackMetadata(t *testing.T) {
 	fixture := newProviderTestFixture(t)
 	fixture.state.mu.Lock()
-	fixture.state.groupsReadErrors = map[string]int{"codex": http.StatusServiceUnavailable}
+	fixture.state.unreadableGroups = map[string]bool{"codex": true}
 	fixture.state.mu.Unlock()
 	if err := fixture.handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
 		t.Fatal(err)
@@ -828,7 +821,7 @@ func TestStateCoordinatorRetriesRuntimeFallbackMetadata(t *testing.T) {
 		t.Fatalf("runtime fallback cleared the editable-read retry marker: %v", err)
 	}
 	fixture.state.mu.Lock()
-	delete(fixture.state.groupsReadErrors, "codex")
+	delete(fixture.state.unreadableGroups, "codex")
 	fixture.state.mu.Unlock()
 	if err := fixture.handler.stateCoord.RefreshNow(t.Context()); err != nil {
 		t.Fatal(err)
@@ -922,9 +915,10 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 			t.Run(mode+"/"+family, func(t *testing.T) {
 				upstream := &configFixtureCPA{}
 				var handler *Handler
-				var generation, groupStatus atomic.Int32
+				var generation atomic.Int32
+				var isGroupUnreadable atomic.Bool
 				generation.Store(1)
-				groupStatus.Store(http.StatusServiceUnavailable)
+				isGroupUnreadable.Store(true)
 				var shouldBlock atomic.Bool
 				started, release := make(chan struct{}), make(chan struct{})
 				var releaseOnce sync.Once
@@ -936,7 +930,23 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 				}
 				_, _, _ = startDashboardTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
 					switch request.URL.Path {
-					case "/v8/management/config", "/v8/management/config.yaml":
+					case "/v8/management/config":
+						if request.Method != http.MethodGet || !isGroupUnreadable.Load() {
+							upstream.serve(writer, request)
+							return
+						}
+						// The family's stored groups are unreadable while the rest of
+						// the view, and so the rest of the load, stays intact.
+						recorded := httptest.NewRecorder()
+						upstream.serve(recorded, request)
+						var view map[string]any
+						_ = json.Unmarshal(recorded.Body.Bytes(), &view)
+						if view == nil {
+							view = map[string]any{}
+						}
+						view["api-keys"] = map[string]any{family: "unreadable"}
+						_ = json.NewEncoder(writer).Encode(view)
+					case "/v8/management/config.yaml":
 						upstream.serve(writer, request)
 					case "/v0/management/config":
 						_, _ = fmt.Fprintf(writer, `{"generation":%d}`, generation.Load())
@@ -951,18 +961,8 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 						} else {
 							_, _ = fmt.Fprintf(writer, `{"openai-compatibility":[{"name":"generation-%d"}]}`, captured)
 						}
-					case "/v8/management/config/api-keys/" + family:
-						if status := groupStatus.Load(); status != 0 {
-							writer.WriteHeader(int(status))
-						} else {
-							_, _ = writer.Write([]byte(`[]`))
-						}
 					default:
-						if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-							_, _ = writer.Write([]byte(`[]`))
-						} else {
-							_, _ = writer.Write([]byte(`{}`))
-						}
+						_, _ = writer.Write([]byte(`{}`))
 					}
 				}, func(h *Handler) { handler = h })
 				if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -973,7 +973,7 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				groupStatus.Store(0)
+				isGroupUnreadable.Store(false)
 				shouldBlock.Store(true)
 				result := make(chan []ProviderItemDTO, 1)
 				go func() { items, _ := handler.readProviderItemsWithVersion(t.Context(), client); result <- items }()
@@ -1085,8 +1085,14 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 				case "/v0/management/config":
 					_, _ = writer.Write([]byte(`{"generation":1}`))
 				case runtimePath:
-					if count := runtimeReads.Add(1); isDegraded.Load() && count%2 == 0 {
-						writer.WriteHeader(http.StatusServiceUnavailable)
+					// While degraded the editable read finds the runtime list missing,
+					// and the fallback read that follows it fails outright.
+					if count := runtimeReads.Add(1); isDegraded.Load() {
+						if count%2 == 1 {
+							writer.WriteHeader(http.StatusNotFound)
+						} else {
+							writer.WriteHeader(http.StatusServiceUnavailable)
+						}
 						return
 					}
 					if family == "codex" {
@@ -1094,14 +1100,8 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 					} else {
 						_, _ = writer.Write([]byte(`{"openai-compatibility":[{"name":"runtime-recovered"}]}`))
 					}
-				case "/v8/management/config/api-keys/" + family:
-					writer.WriteHeader(http.StatusNotFound)
 				default:
-					if strings.HasPrefix(request.URL.Path, "/v8/management/config/api-keys/") {
-						_, _ = writer.Write([]byte(`[]`))
-					} else {
-						_, _ = writer.Write([]byte(`{}`))
-					}
+					_, _ = writer.Write([]byte(`{}`))
 				}
 			}, func(h *Handler) { handler = h })
 			if err := handler.EnableStateCoordinator(t.Context(), StateCoordinatorOptions{RefreshInterval: time.Hour}); err != nil {
@@ -1128,5 +1128,47 @@ func TestStateCoordinatorRetriesFailedRuntimeFallback(t *testing.T) {
 				t.Fatal("runtime OpenAI provider did not recover")
 			}
 		})
+	}
+}
+
+// A load fans out a reader per key family, plus the client keys, aliases and
+// exclusions, and each takes its value from the v8 view. CPA parses the whole
+// file for every such read, so the load fetches the view once and never asks
+// for one path, which CPA answers with 404 while that path is unset.
+func TestProjectedStateLoadReadsTheConfigViewOnce(t *testing.T) {
+	upstream := &configFixtureCPA{}
+	var handler *Handler
+	var mu sync.Mutex
+	viewReads := 0
+	var pathReads []string
+	_, _, _ = startDashboardTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		path := request.URL.Path
+		if request.Method == http.MethodGet {
+			mu.Lock()
+			if path == "/v8/management/config" {
+				viewReads++
+			}
+			if strings.HasPrefix(path, "/v8/management/config/api-keys/") || strings.HasPrefix(path, "/v8/management/config/oauth/") {
+				pathReads = append(pathReads, path)
+			}
+			mu.Unlock()
+		}
+		if path == "/v8/management/config" || path == "/v8/management/config.yaml" {
+			upstream.serve(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{}`))
+	}, func(h *Handler) { handler = h })
+	mu.Lock()
+	viewReads, pathReads = 0, nil
+	mu.Unlock()
+	if _, err := handler.loadUpstreamProjectedState(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if viewReads != 1 || len(pathReads) != 0 {
+		t.Fatalf("one load read the view %d times and these paths: %v; want one view read and no path read", viewReads, pathReads)
 	}
 }
