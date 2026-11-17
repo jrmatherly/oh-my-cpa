@@ -22,6 +22,21 @@ func TestClassifyClientAgent(t *testing.T) {
 			wantID: ClientAgentHermes, wantCat: ClientAgentCategoryAgent, wantPrefix: "hermes-agent",
 		},
 		{
+			name: "hermes agent camelcase attribution user agent",
+			ua:   "HermesAgent/0.9.2", endpoint: "POST /v1/chat/completions",
+			wantID: ClientAgentHermes, wantCat: ClientAgentCategoryAgent, wantPrefix: "HermesAgent",
+		},
+		{
+			name: "hermes agent custom codex endpoint compatibility user agent",
+			ua:   "codex_cli_rs/0.0.0 (Hermes Agent)", endpoint: "POST /v1/responses",
+			wantID: ClientAgentHermes, wantCat: ClientAgentCategoryAgent, wantPrefix: "",
+		},
+		{
+			name: "hermes agent parenthetical comment after sdk user agent",
+			ua:   "OpenAI/Python 1.55.0 (Hermes Agent)", endpoint: "POST /v1/chat/completions",
+			wantID: ClientAgentHermes, wantCat: ClientAgentCategoryAgent, wantPrefix: "",
+		},
+		{
 			name: "deepseek harness cli and mandatory attribution url",
 			ua:   "deepseek-harness/0.2.1-rc.3 (+https://github.com/deepseek-ai/deepseek-harness)", endpoint: "POST /v1/chat/completions",
 			wantID: ClientAgentDeepSeekHarness, wantCat: ClientAgentCategoryAgent, wantPrefix: "deepseek-harness",
@@ -339,39 +354,93 @@ func TestClassifyClientAgent(t *testing.T) {
 	}
 }
 
-func TestResolveClientAgentPrefersPersistedIdentity(t *testing.T) {
-	got := ResolveClientAgent(ClientAgentCherryStudio, "Mozilla/5.0", "POST /v1/chat/completions")
+func TestPersistedClientAttributionAndZeroReadFallback(t *testing.T) {
+	// Pre-classified persisted ID and prefix must be kept without re-running UA classification.
+	id, prefix := PersistedClientAttribution(ClientAgentCherryStudio, "", "Mozilla/5.0", "POST /v1/chat/completions")
+	if id != ClientAgentCherryStudio || prefix != "" {
+		t.Fatalf("PersistedClientAttribution persisted cherry-studio = (%q, %q)", id, prefix)
+	}
+	id, prefix = PersistedClientAttribution(ClientAgentQwenCode, "claude-cli/0.", "claude-cli/0.1.5", "")
+	if id != ClientAgentQwenCode || prefix != "claude-cli/0." {
+		t.Fatalf("PersistedClientAttribution persisted qwen-code = (%q, %q)", id, prefix)
+	}
+	// Secret-bearing or whitespace-padded prefixes passed directly to storage are sanitized.
+	id, prefix = PersistedClientAttribution(ClientAgentClaudeCode, "Bearer sk-secret-value-1234", "", "")
+	if id != ClientAgentClaudeCode || prefix != "" {
+		t.Fatalf("PersistedClientAttribution secret prefix = (%q, %q)", id, prefix)
+	}
+	id, prefix = PersistedClientAttribution(ClientAgentUnknown, "claude-cli/2.", "claude-cli/2.1.14", "")
+	if id != ClientAgentUnknown || prefix != "" {
+		t.Fatalf("PersistedClientAttribution unknown drops prefix = (%q, %q)", id, prefix)
+	}
+
+	// Empty stored ID classifies once from raw User-Agent and endpoint.
+	id, prefix = PersistedClientAttribution("", "", "codex_cli_rs/0.47.0", "POST /v1/responses")
+	if id != ClientAgentCodexCLI || prefix != "codex_cli_rs" {
+		t.Fatalf("PersistedClientAttribution fallback codex = (%q, %q)", id, prefix)
+	}
+	id, prefix = PersistedClientAttribution("", "", "", "GET /v1/models?client_version=0.47")
+	if id != ClientAgentCodexCLI || prefix != "" {
+		t.Fatalf("PersistedClientAttribution fallback codex models query = (%q, %q)", id, prefix)
+	}
+
+	// Read projection maps empty and "unknown" to "" with zero UA fallback.
+	if got := ClientAgentFromPersisted(ClientAgentUnknown); got != "" {
+		t.Fatalf("ClientAgentFromPersisted(unknown) = %q, want empty", got)
+	}
+	if got := ClientAgentFromPersisted(""); got != "" {
+		t.Fatalf("ClientAgentFromPersisted('') = %q, want empty", got)
+	}
+	if got := ClientAgentFromPersisted(ClientAgentGrokBuild); got != ClientAgentGrokBuild {
+		t.Fatalf("ClientAgentFromPersisted(grok-build) = %q", got)
+	}
+
+	// Historical migration helper preserves pre-067/068 prefix and fallback resolution.
+	got := ResolveHistoricalClientAttribution(ClientAgentCherryStudio, "Mozilla/5.0", "POST /v1/chat/completions")
 	if got.ID != ClientAgentCherryStudio || got.Category != ClientAgentCategoryAgent || got.RawPrefix != "" {
-		t.Fatalf("ResolveClientAgent persisted cherry-studio = %+v", got)
+		t.Fatalf("ResolveHistoricalClientAttribution persisted cherry-studio = %+v", got)
 	}
-
-	legacy := ResolveClientAgent("", "codex_cli_rs/0.47.0", "POST /v1/responses")
+	legacy := ResolveHistoricalClientAttribution("", "codex_cli_rs/0.47.0", "POST /v1/responses")
 	if legacy.ID != ClientAgentCodexCLI || legacy.Category != ClientAgentCategoryAgent || legacy.RawPrefix != "codex_cli_rs" {
-		t.Fatalf("ResolveClientAgent legacy fallback = %+v", legacy)
+		t.Fatalf("ResolveHistoricalClientAttribution legacy fallback = %+v", legacy)
 	}
-
-	qwen := ResolveClientAgent(ClientAgentQwenCode, "claude-cli/0.1.5", "")
+	qwen := ResolveHistoricalClientAttribution(ClientAgentQwenCode, "claude-cli/0.1.5", "")
 	if qwen.ID != ClientAgentQwenCode || qwen.RawPrefix != "claude-cli/0." {
-		t.Fatalf("ResolveClientAgent persisted qwen-code = %+v", qwen)
+		t.Fatalf("ResolveHistoricalClientAttribution persisted qwen-code = %+v", qwen)
 	}
 
-	if id := ResolveClientAgentID(ClientAgentGrokBuild, "grok-shell/0.2.106", "POST /v1/responses"); id != ClientAgentGrokBuild {
-		t.Fatalf("ResolveClientAgentID persisted grok-build = %q", id)
+	hermesCodex := ResolveHistoricalClientAttribution(ClientAgentHermes, "codex_cli_rs/0.0.0", "POST /v1/responses")
+	if hermesCodex.ID != ClientAgentHermes || hermesCodex.Category != ClientAgentCategoryAgent || hermesCodex.RawPrefix != "" {
+		t.Fatalf("ResolveHistoricalClientAttribution persisted hermes over codex_cli_rs = %+v", hermesCodex)
 	}
-	if id := ResolveClientAgentID("", "MiniMaxCode/0.6.8", "POST /v1/messages"); id != ClientAgentMiniMaxCode {
-		t.Fatalf("ResolveClientAgentID fallback minimax-code = %q", id)
+	if id, prefix := PersistedClientAttribution(ClientAgentHermes, "", "codex_cli_rs/0.0.0", "POST /v1/responses"); id != ClientAgentHermes || prefix != "" {
+		t.Fatalf("PersistedClientAttribution persisted hermes over codex_cli_rs = (%q, %q)", id, prefix)
 	}
 
-	// Unversioned guarded short tokens must not bypass the version gate via fallback persistence.
+	// Bare "Hermes" without version or trailing "Agent" must stay guarded against false positives.
+	if bareHermes := ClassifyClientAgent("Hermes", "POST /v1/chat/completions"); bareHermes.ID != ClientAgentUnknown {
+		t.Fatalf("ClassifyClientAgent(\"Hermes\") = %+v, want unknown", bareHermes)
+	}
+
+	if id, _ := PersistedClientAttribution(ClientAgentGrokBuild, "", "grok-shell/0.2.106", "POST /v1/responses"); ClientAgentFromPersisted(id) != ClientAgentGrokBuild {
+		t.Fatalf("PersistedClientAttribution persisted grok-build = %q", id)
+	}
+	if id, prefix := PersistedClientAttribution("", "", "MiniMaxCode/0.6.8", "POST /v1/messages"); ClientAgentFromPersisted(id) != ClientAgentMiniMaxCode || prefix != "MiniMaxCode" {
+		t.Fatalf("PersistedClientAttribution fallback minimax-code = (%q, %q)", id, prefix)
+	}
+
+	// Unversioned guarded short tokens must not bypass the version gate via persistence.
 	for _, bare := range []string{"amp", "void", "pi", "other", "unknown"} {
 		classified := ClassifyClientAgent(bare, "POST /v1/messages")
 		if classified.ID != ClientAgentUnknown || classified.Category != ClientAgentCategoryUnknown {
 			t.Fatalf("ClassifyClientAgent(%q) = %+v, want unknown", bare, classified)
 		}
-		persisted := PersistedClientAgent("", bare, "POST /v1/messages")
-		resolved := ResolveClientAgent(persisted, bare, "POST /v1/messages")
-		if resolved.ID != ClientAgentUnknown || resolved.Category != ClientAgentCategoryUnknown {
-			t.Fatalf("ResolveClientAgent(%q) after persistence = %+v, want unknown", bare, resolved)
+		persistedID, persistedPrefix := PersistedClientAttribution("", "", bare, "POST /v1/messages")
+		if persistedID != ClientAgentUnknown || persistedPrefix != "" {
+			t.Fatalf("PersistedClientAttribution(%q) = (%q, %q), want unknown", bare, persistedID, persistedPrefix)
+		}
+		if readID := ClientAgentFromPersisted(persistedID); readID != "" {
+			t.Fatalf("ClientAgentFromPersisted(%q) = %q, want empty", persistedID, readID)
 		}
 	}
 }
@@ -423,14 +492,16 @@ func TestRedactionFastPathEquivalenceAndZeroAllocHotPath(t *testing.T) {
 	if allocs := testing.AllocsPerRun(200, func() {
 		_ = ClassifyClientAgent("claude-cli/2.1.14 (external, cli)", "POST /v1/messages")
 		_ = ClassifyClientAgent("codex_cli_rs/0.47.0 (Mac OS 15.1; arm64)", "POST /v1/responses")
+		_ = ClassifyClientAgent("codex_cli_rs/0.0.0 (Hermes Agent)", "POST /v1/responses")
+		_ = ClassifyClientAgent("HermesAgent/0.9.2", "POST /v1/chat/completions")
 		_ = ClassifyClientAgent("hindsight/1.2.0", "POST /v1/chat/completions")
 		_ = ClassifyClientAgent("QwenCode/0.2.1", "POST /v1/chat/completions")
 		_ = ClassifyClientAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Maka/0.1.11 Electron/43.2.0", "POST /v1/chat/completions")
 		_ = ClassifyClientAgent("AsyncOpenAI/Python 1.55.0", "POST /v1/chat/completions")
 		for _, id := range canonicalIDs {
-			_ = ResolveClientAgentID(id, "hindsight/1.2.0", "POST /v1/chat/completions")
-			_ = PersistedClientAgent(id, "hindsight/1.2.0", "POST /v1/chat/completions")
-			_ = ResolveClientAgent(id, "hindsight/1.2.0", "")
+			_, _ = PersistedClientAttribution(id, "hindsight", "hindsight/1.2.0", "POST /v1/chat/completions")
+			_ = ClientAgentFromPersisted(id)
+			_ = ResolveHistoricalClientAttribution(id, "hindsight/1.2.0", "")
 		}
 	}); allocs != 0 {
 		t.Fatalf("expected 0 heap allocations on clean hot paths, got %v", allocs)
@@ -453,17 +524,17 @@ func BenchmarkClassifyClientAgent(b *testing.B) {
 	}
 }
 
-func BenchmarkResolveClientAgent(b *testing.B) {
-	b.Run("PersistedIDOnly", func(b *testing.B) {
+func BenchmarkPersistedClientAttribution(b *testing.B) {
+	b.Run("PersistedOnly", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = ResolveClientAgentID(ClientAgentClaudeCode, "claude-cli/2.1.14", "POST /v1/messages")
+			_, _ = PersistedClientAttribution(ClientAgentClaudeCode, "claude-cli/2.", "claude-cli/2.1.14", "POST /v1/messages")
 		}
 	})
-	b.Run("PersistedWithPrefix", func(b *testing.B) {
+	b.Run("ReadProjection", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = ResolveClientAgent(ClientAgentClaudeCode, "claude-cli/2.1.14", "")
+			_ = ClientAgentFromPersisted(ClientAgentClaudeCode)
 		}
 	})
 }
