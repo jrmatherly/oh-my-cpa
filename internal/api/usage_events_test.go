@@ -349,7 +349,7 @@ func TestUsageEventListOmitsDiagnosticFields(t *testing.T) {
 	_, detail := getJSON(t, client, fmt.Sprintf("%s/omc/api/v1/usage/events/%d", baseURL, id))
 	// Protected detail keeps the diagnostic address and proxy chain, while the
 	// user agent is still reduced before persistence.
-	for _, expected := range []string{"client_ip", "x_forwarded_for", "user_agent", "endpoint", "192.0.2.44", "203.0.113.9", "secret-client", "api_key_mask", "sk-12345••••••••7890"} {
+	for _, expected := range []string{"client_ip", "x_forwarded_for", "user_agent", "endpoint", "192.0.2.44", "203.0.113.9", "secret-client", `"client_agent_category":"sdk"`, "api_key_mask", "sk-12345••••••••7890"} {
 		if !strings.Contains(string(detail), expected) {
 			t.Fatalf("detail payload missing diagnostic field %q: %s", expected, detail)
 		}
@@ -643,7 +643,7 @@ func TestUsageEventDetailFailureClassificationAllowlist(t *testing.T) {
 		{"future_classification", ""},
 	} {
 		row := repository.UsageEventRow{Failed: true, FailCode: test.code, FailStatusCode: 400, FailBody: "request_scoped"}
-		detail := projectUsageEventDetail(row, "")
+		detail := projectUsageEventDetail(row, projectUsageEvent(row))
 		got, hasCode := detail["fail_code"]
 		if hasCode != (test.want != "") || (hasCode && got != test.want) {
 			t.Fatalf("project code %q = %v (%v), want %q", test.code, got, hasCode, test.want)
@@ -652,8 +652,8 @@ func TestUsageEventDetailFailureClassificationAllowlist(t *testing.T) {
 			t.Fatalf("failure evidence changed: %+v", detail)
 		}
 	}
-	if detail := projectUsageEventDetail(repository.UsageEventRow{FailCode: usage.FailureRequestScoped}, ""); detail["fail_code"] != nil {
-		t.Fatalf("success projected failure code: %+v", detail)
+	if row := (repository.UsageEventRow{FailCode: usage.FailureRequestScoped}); projectUsageEventDetail(row, projectUsageEvent(row))["fail_code"] != nil {
+		t.Fatal("success projected a failure code")
 	}
 }
 
