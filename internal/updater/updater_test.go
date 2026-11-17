@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 const (
@@ -52,6 +53,8 @@ type proxyRegistryFixture struct {
 	corruptLayer     bool
 
 	corruptManifest bool
+	// vouchedManifest answers the signed digest with content the registry only vouches for in a header.
+	vouchedManifest bool
 }
 
 // newProxyRegistry publishes synthetic images; its unreachable registry address proves the proxy is used.
@@ -125,6 +128,15 @@ func newProxyRegistry(t *testing.T) *proxyRegistryFixture {
 		// Answer the signed digest with different content to exercise the digest check itself.
 		if fixture.corruptManifest && strings.HasSuffix(request.URL.Path, "/manifests/"+TEST_DIGEST) {
 			request.URL.Path = strings.TrimSuffix(request.URL.Path, TEST_DIGEST) + fixture.digest
+		}
+
+		// A signed schema 1 manifest is the one kind whose digest the registry client takes from the
+		// response header, so the header alone can claim the signed digest for any content.
+		if fixture.vouchedManifest && strings.HasSuffix(request.URL.Path, "/manifests/"+TEST_DIGEST) {
+			writer.Header().Set("Content-Type", string(types.DockerManifestSchema1Signed))
+			writer.Header().Set("Docker-Content-Digest", TEST_DIGEST)
+			_, _ = writer.Write([]byte(`{"schemaVersion":1}`))
+			return
 		}
 
 		isConfig := false
@@ -376,35 +388,47 @@ func TestImageImportUsesReportedIdentity(t *testing.T) {
 
 // TestProxyDownloadsRejectCorruptContent preserves the signed digest and blob checks on the alternate route.
 func TestProxyDownloadsRejectCorruptContent(t *testing.T) {
-	for _, corruptManifest := range []bool{true, false} {
-		t.Run(fmt.Sprintf("manifest=%v", corruptManifest), func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		corrupt func(*proxyRegistryFixture)
+		// signed reports whether the pull asks for a digest the registry holds no content for.
+		signed bool
+		stage  string
+		loads  int
+	}{
+		{"manifest", func(r *proxyRegistryFixture) { r.corruptManifest = true }, true, "download the image manifest", 0},
+		{"vouched manifest", func(r *proxyRegistryFixture) { r.vouchedManifest = true }, true, "select the image platform", 0},
+		{"layer", func(r *proxyRegistryFixture) { r.corruptLayer = true }, false, "", 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			registry := newProxyRegistry(t)
-			registry.corruptLayer = !corruptManifest
-			registry.corruptManifest = corruptManifest
+			test.corrupt(registry)
 			daemon, engine := newFakeDaemon(t)
 			digest := registry.digest
-			if corruptManifest {
+			if test.signed {
 				digest = TEST_DIGEST
 			}
 
-			if _, err := engine.PullImageThroughProxy(context.Background(), registry.repository+"@"+digest, registry.proxyURL); err == nil {
-				t.Fatal("corrupted image content must be refused")
+			_, err := engine.PullImageThroughProxy(context.Background(), registry.repository+"@"+digest, registry.proxyURL)
+			if err == nil || !strings.Contains(err.Error(), test.stage) {
+				t.Fatalf("corrupted image content must be refused at %q, got %v", test.stage, err)
 			}
 
 			// The corrupt layer aborts the archive upload, so the pull can return before the
-			// daemon's handler goroutine has run to count the request.
+			// daemon's handler goroutine has run to count the request. A refused manifest never
+			// starts an upload, so its count is final as soon as the pull returns.
 			loads := 0
 			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
 				daemon.mu.Lock()
 				loads = daemon.loads
 				daemon.mu.Unlock()
-				if corruptManifest || loads == 1 || time.Now().After(deadline) {
+				if loads == test.loads || time.Now().After(deadline) {
 					break
 				}
 			}
 
-			if !corruptManifest && loads != 1 {
-				t.Fatal("the corrupted layer was not exercised during archive import")
+			if loads != test.loads {
+				t.Fatalf("archive imports = %d, want %d", loads, test.loads)
 			}
 		})
 	}
