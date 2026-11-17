@@ -299,11 +299,18 @@ function StackLayer({
   React.useLayoutEffect(() => {
     const previous = drawnRef.current;
     drawnRef.current = paths;
-    if (!previous || isMotionReduced()) return;
+    if (!previous) return;
+    const isReduced = isMotionReduced();
     layerRef.current?.querySelectorAll('path').forEach((element, rank) => {
       const from = previous[rank];
       const to = paths[rank];
-      if (!from || !to || from === to || !hasSameShape(from, to) || typeof element.animate !== 'function') return;
+      if (from === to) return;
+      // A drawing that cannot be moved to is shown at once. A move still running would keep
+      // overriding `d` with the drawing before it until it ended, so it stops here.
+      if (isReduced || !from || !to || !hasSameShape(from, to) || typeof element.animate !== 'function') {
+        movesRef.current.get(element)?.cancel();
+        return;
+      }
       const isMoving = movesRef.current.get(element)?.playState === 'running';
       const start = isMoving ? getComputedStyle(element).getPropertyValue('d') : `path("${from}")`;
       movesRef.current.get(element)?.cancel();
