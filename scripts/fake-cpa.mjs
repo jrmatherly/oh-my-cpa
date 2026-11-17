@@ -766,6 +766,9 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
           }
           normalizeCodexBehavior(document);
           configDoc = { ...document, 'config-version': 8 };
+          // A replaced file is the new source of both maps, which the view serves from their own state.
+          oauthModelAliases = structuredClone(document.oauth?.['model-alias'] ?? {});
+          oauthExcludedModels = structuredClone(document.oauth?.['excluded-models'] ?? {});
         } else if (request.method === 'PATCH' && configPath.length === 0) {
           const patch = JSON.parse(bodyText || '{}');
           const legacy = legacyRootIn(patch);
