@@ -19,8 +19,8 @@ func oauthExcludedModelsUpstream(t *testing.T, state map[string][]string) http.H
 	return func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
-		case request.Method == http.MethodGet && request.URL.Path == oauthExcludedModelsUpstreamPath:
-			_ = json.NewEncoder(writer).Encode(state)
+		case request.Method == http.MethodGet && request.URL.Path == "/v8/management/config":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"oauth": map[string]any{"excluded-models": state}})
 		case request.Method == http.MethodPatch && request.URL.Path == "/v8/management/config":
 			var payload struct {
 				OAuth struct {
@@ -127,8 +127,8 @@ func TestManagementOAuthExcludedModelsRoundTrip(t *testing.T) {
 func TestManagementOAuthExcludedModelsRequireReadback(t *testing.T) {
 	handler := func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		if request.Method == http.MethodGet && request.URL.Path == oauthExcludedModelsUpstreamPath {
-			_, _ = writer.Write([]byte(`{"codex":["something-else"]}`))
+		if request.Method == http.MethodGet && request.URL.Path == "/v8/management/config" {
+			_, _ = writer.Write([]byte(`{"oauth":{"excluded-models":{"codex":["something-else"]}}}`))
 			return
 		}
 		_, _ = writer.Write([]byte(`{"status":"ok"}`))

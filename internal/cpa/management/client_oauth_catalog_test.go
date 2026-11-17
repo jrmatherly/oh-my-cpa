@@ -23,10 +23,10 @@ func newOAuthCatalogClient(t *testing.T, files, aliases string, aliasStatus int)
 			_, _ = fmt.Fprintf(writer, `{"files":%s}`, files)
 		case "/v8/management/credentials/models":
 			_, _ = writer.Write([]byte(`{"models":[{"id":"gemini-3.8-flash"}]}`))
-		case "/v8/management/config/oauth/model-alias":
+		case "/v8/management/config":
 			aliasReads.Add(1)
 			writer.WriteHeader(aliasStatus)
-			_, _ = writer.Write([]byte(aliases))
+			_, _ = writer.Write([]byte(`{"oauth":{"model-alias":` + aliases + `}}`))
 		default:
 			_, _ = writer.Write([]byte(`{}`))
 		}
@@ -109,8 +109,8 @@ func TestOAuthCatalogAppliesCredentialModelAliases(t *testing.T) {
 					}
 					writer.WriteHeader(test.status)
 					_, _ = writer.Write([]byte(payload))
-				case "/v8/management/config/oauth/model-alias":
-					_, _ = writer.Write([]byte(test.provider))
+				case "/v8/management/config":
+					_, _ = writer.Write([]byte(`{"oauth":{"model-alias":` + test.provider + `}}`))
 				default:
 					_, _ = writer.Write([]byte(`{}`))
 				}

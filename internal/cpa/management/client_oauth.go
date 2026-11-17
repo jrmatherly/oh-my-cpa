@@ -295,10 +295,34 @@ var OAUTH_MODEL_ALIAS_PATH = []string{"oauth", "model-alias"}
 // them (see sanitizeOAuthModelAliases).
 func (c *Client) OAuthModelAliases(ctx context.Context) (map[string][]OAuthModelAlias, error) {
 	var stored map[string][]OAuthModelAlias
-	if _, err := c.configValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
 		return nil, err
 	}
 	return sanitizeOAuthModelAliases(stored), nil
+}
+
+// configViewValueAt decodes one path of the v8 view into output, which stays
+// untouched when the path is not set. It reads the whole view because CPA
+// answers a single unset path with 404 and logs a warning, and that answer also
+// makes the client forget the gateway serves v8. Use it for a path that is
+// ordinarily empty and that CPA does not rename when asked for by path.
+func (c *Client) configViewValueAt(ctx context.Context, path []string, output any) error {
+	view, _, err := c.ConfigView(ctx)
+	if err != nil {
+		return err
+	}
+	value, ok := ValueAt(view, path)
+	if !ok || value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, output); err != nil {
+		return fmt.Errorf("decode %s: %w", strings.Join(path, "."), err)
+	}
+	return nil
 }
 
 // ResolveOAuthModelAlias returns the upstream model a credential's call point reaches. Rules are
@@ -389,7 +413,7 @@ func (c *Client) CredentialModelAliases(ctx context.Context, name string) ([]OAu
 func (c *Client) PatchOAuthModelAliases(ctx context.Context, provider string, aliases []OAuthModelAlias) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	var stored map[string]any
-	if _, err := c.configValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
 		return err
 	}
 	path := append(append([]string{}, OAUTH_MODEL_ALIAS_PATH...), provider)
@@ -416,7 +440,7 @@ var OAUTH_EXCLUDED_MODELS_PATH = []string{"oauth", "excluded-models"}
 // (see sanitizeOAuthExcludedModels).
 func (c *Client) OAuthExcludedModels(ctx context.Context) (map[string][]string, error) {
 	var stored map[string][]string
-	if _, err := c.configValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
 		return nil, err
 	}
 	return sanitizeOAuthExcludedModels(stored), nil
@@ -468,7 +492,7 @@ func sanitizeOAuthExcludedModels(stored map[string][]string) map[string][]string
 func (c *Client) PatchOAuthExcludedModels(ctx context.Context, provider string, rules []string) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	var stored map[string]any
-	if _, err := c.configValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
 		return err
 	}
 	path := append(append([]string{}, OAUTH_EXCLUDED_MODELS_PATH...), provider)

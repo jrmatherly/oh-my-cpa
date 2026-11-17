@@ -24,8 +24,8 @@ func TestVertexOAuthAliasOverridesRoundTripAndReadback(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				switch {
-				case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config/oauth/model-alias":
-					_ = json.NewEncoder(w).Encode(state)
+				case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config":
+					_ = json.NewEncoder(w).Encode(map[string]any{"oauth": map[string]any{"model-alias": state}})
 				case r.Method == http.MethodPatch && r.URL.Path == "/v8/management/config":
 					var patch struct {
 						OAuth struct {

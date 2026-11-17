@@ -645,7 +645,13 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v8/management/config') {
-      json(response, 200, configDoc);
+      // As CPA does, the view carries the aliases and exclusions only once some are set.
+      const oauth = { ...configDoc.oauth };
+      for (const [name, value] of [['model-alias', oauthModelAliases], ['excluded-models', oauthExcludedModels]]) {
+        if (Object.keys(value).length > 0) oauth[name] = value;
+        else delete oauth[name];
+      }
+      json(response, 200, { ...configDoc, oauth });
       return;
     }
     // The v8 view and the stored file are the same document here: the fixture's
@@ -679,10 +685,6 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       json(response, 200, groupEntries(settingPath[1], list));
       return;
     }
-    if (settingPath.join('/') === 'oauth/model-alias' && request.method === 'GET') {
-      json(response, 200, oauthModelAliases);
-      return;
-    }
     if (settingPath[0] === 'oauth' && settingPath[1] === 'model-alias' && settingPath.length === 3 && request.method === 'DELETE') {
       if (!(settingPath[2] in oauthModelAliases)) {
         json(response, 404, { error: 'not_found' });
@@ -690,10 +692,6 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       }
       delete oauthModelAliases[settingPath[2]];
       json(response, 200, { status: 'ok', 'config-version': 8 });
-      return;
-    }
-    if (settingPath.join('/') === 'oauth/excluded-models' && request.method === 'GET') {
-      json(response, 200, oauthExcludedModels);
       return;
     }
     if (settingPath[0] === 'oauth' && settingPath[1] === 'excluded-models' && settingPath.length === 3 && request.method === 'DELETE') {

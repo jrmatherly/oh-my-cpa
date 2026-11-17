@@ -62,12 +62,12 @@ func TestOAuthAliasCatalogLocksUpstreamPrices(t *testing.T) {
 					_, _ = writer.Write([]byte(`{"name":"antigravity.json"}`))
 				case request.URL.Path == "/v0/management/openai-compatibility":
 					_, _ = writer.Write([]byte(`{"openai-compatibility":[]}`))
-				case request.URL.Path == "/v8/management/config/oauth/model-alias":
+				case request.URL.Path == "/v8/management/config":
 					if shouldFailAliases.Load() {
 						writer.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
-					_ = json.NewEncoder(writer).Encode(map[string]any{"antigravity": []map[string]any{{"name": OAUTH_UPSTREAM_MODEL, "alias": OAUTH_CALL_MODEL, "fork": isFork}}})
+					_ = json.NewEncoder(writer).Encode(map[string]any{"oauth": map[string]any{"model-alias": map[string]any{"antigravity": []map[string]any{{"name": OAUTH_UPSTREAM_MODEL, "alias": OAUTH_CALL_MODEL, "fork": isFork}}}}})
 				default:
 					if strings.HasPrefix(request.URL.Path, "/v0/management/") {
 						writer.WriteHeader(http.StatusNotFound)

@@ -301,12 +301,12 @@ func newWarmupHandler(t *testing.T, fixture *warmupFixture) *Handler {
 				return
 			}
 			_, _ = writer.Write([]byte(fixture.credentialFile))
-		case "/v8/management/config/oauth/model-alias":
+		case "/v8/management/config":
 			if fixture.globalAliases == "" {
-				writer.WriteHeader(http.StatusNotFound)
+				_, _ = writer.Write([]byte(`{}`))
 				return
 			}
-			_, _ = writer.Write([]byte(fixture.globalAliases))
+			_, _ = writer.Write([]byte(`{"oauth":{"model-alias":` + fixture.globalAliases + `}}`))
 		default:
 			writer.WriteHeader(http.StatusNotFound)
 		}

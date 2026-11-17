@@ -85,10 +85,10 @@ func newQuotaAutoRefreshHandler(t *testing.T, fixture *quotaAutoRefreshFixture) 
 				"plan_type": "pro",
 				"rate_limit": {"primary_window": {"used_percent": %d, "limit_window_seconds": 18000, "reset_after_seconds": 18000}}
 			}}`, usedPercent)
-		case "/v8/management/config/oauth/model-alias":
+		case "/v8/management/config":
 			// One provider-wide rule, so a cooldown stored before CPA resolved it is read as the
 			// upstream model it reaches.
-			_, _ = writer.Write([]byte(`{"codex":[{"name":"gpt-5","alias":"GPT-5-Fast"}]}`))
+			_, _ = writer.Write([]byte(`{"oauth":{"model-alias":{"codex":[{"name":"gpt-5","alias":"GPT-5-Fast"}]}}}`))
 		case "/v8/management/routing/cooldown/reset":
 			var payload struct {
 				AuthIndex string `json:"auth_index"`

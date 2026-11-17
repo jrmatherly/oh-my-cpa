@@ -295,7 +295,7 @@ func TestListAllConfiguredModels(t *testing.T) {
 	server := newV8Server(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/v8/management/config/oauth/model-alias":
+		case "/v8/management/config":
 			_, _ = w.Write([]byte(`{}`))
 		case "/v8/management/credentials":
 			_, _ = w.Write([]byte(`{"files":[{"models":[{"id":"claude-3-7-sonnet"}]}]}`))
