@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -145,10 +146,18 @@ func newProxyRegistry(t *testing.T) *proxyRegistryFixture {
 			isConfig = isConfig || strings.HasSuffix(request.URL.Path, "/blobs/"+configID.String())
 		}
 
-		// Keep the configuration valid so corruption is detected while streaming a layer.
+		// Keep the configuration valid so corruption is detected while streaming a layer. The layer
+		// keeps its length and loses one byte's value, so only the checksum can tell it is wrong.
 		if fixture.corruptLayer && !isConfig && strings.Contains(request.URL.Path, "/blobs/") {
-			writer.WriteHeader(http.StatusOK)
-			_, _ = writer.Write([]byte("corrupted proxy image blob"))
+			recorder := httptest.NewRecorder()
+			registryHandler.ServeHTTP(recorder, request)
+			body := recorder.Body.Bytes()
+			if len(body) > 0 {
+				body[0] ^= 0xff
+			}
+			maps.Copy(writer.Header(), recorder.Header())
+			writer.WriteHeader(recorder.Code)
+			_, _ = writer.Write(body)
 			return
 		}
 
@@ -393,12 +402,13 @@ func TestProxyDownloadsRejectCorruptContent(t *testing.T) {
 		corrupt func(*proxyRegistryFixture)
 		// signed reports whether the pull asks for a digest the registry holds no content for.
 		signed bool
-		stage  string
-		loads  int
+		// stage is text the refusal must carry: the step that refused it, or for a layer the check that did.
+		stage string
+		loads int
 	}{
 		{"manifest", func(r *proxyRegistryFixture) { r.corruptManifest = true }, true, "download the image manifest", 0},
 		{"vouched manifest", func(r *proxyRegistryFixture) { r.vouchedManifest = true }, true, "select the image platform", 0},
-		{"layer", func(r *proxyRegistryFixture) { r.corruptLayer = true }, false, "", 1},
+		{"layer", func(r *proxyRegistryFixture) { r.corruptLayer = true }, false, "error verifying sha256 checksum", 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry := newProxyRegistry(t)

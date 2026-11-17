@@ -2236,3 +2236,46 @@ func TestMigration068To070PreservesCodexAliasPrefix(t *testing.T) {
 		t.Fatalf("QueryUsageClientAgents item = %+v, want unified codex-cli with retained prefix", got)
 	}
 }
+
+// TestMigration070RepairsEveryBatchOfLegacyCodexEvents runs the repair over more request
+// records than one scan batch holds, so a row beyond the first update chunk or the first
+// batch cannot keep its legacy client.
+func TestMigration070RepairsEveryBatchOfLegacyCodexEvents(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, "file:mig069_to_070_codex_batches?mode=memory&cache=shared", withMigrationsUntil(69))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rows := clientBackfillBatchRows + 1
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO cpa_instances
+			(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default', 'Default', 'http://127.0.0.1:8317', '', x'00', x'00', 'unknown', 0, 0);
+		WITH RECURSIVE sequence(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM sequence WHERE n < ?)
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			client_agent, user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		)
+		SELECT 'default', 'legacy-codex-' || n, 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			'codex', 'Codex', 1700006400000 + n, 0, 1, 1, 2, 'unpriced'
+		FROM sequence`, rows); err != nil {
+		t.Fatal(err)
+	}
+
+	db.migrateUntil = 0
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(069->070) failed: %v", err)
+	}
+
+	var repaired, legacy int
+	if err := db.SQL.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(client_agent = ?), 0), COALESCE(SUM(client_agent <> ?), 0) FROM usage_events`,
+		usage.ClientAgentCodexCLI, usage.ClientAgentCodexCLI).Scan(&repaired, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if repaired != rows || legacy != 0 {
+		t.Fatalf("repaired %d of %d request records, %d kept a legacy client", repaired, rows, legacy)
+	}
+}
