@@ -449,7 +449,7 @@ func TestManagementProviderListFallsBackWhenTheViewIsUnavailable(t *testing.T) {
 	state.viewReads = 0
 	state.mu.Unlock()
 
-	resp, payload := getJSON(t, client, baseURL+"/omc/api/v1/management/providers")
+	resp, payload := getJSON(t, client, baseURL+"/omc/api/v1/management/providers?include_keys=true")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get providers status = %d body %s", resp.StatusCode, payload)
 	}
@@ -462,8 +462,16 @@ func TestManagementProviderListFallsBackWhenTheViewIsUnavailable(t *testing.T) {
 	ids := map[string]bool{}
 	for _, provider := range result.Providers {
 		ids[provider.ID] = true
-		if provider.ID == "codex-0" && provider.ConnectionPool != nil && provider.ConnectionPool.Defaults != nil {
+		if provider.ID != "codex-0" {
+			continue
+		}
+		if provider.ConnectionPool != nil && provider.ConnectionPool.Defaults != nil {
 			t.Fatalf("runtime fallback presented an unknown group pool: %s", payload)
+		}
+		for _, key := range provider.KeyEntries {
+			if key.ConnectionPool != nil || key.EffectiveConnectionPool != nil {
+				t.Fatalf("runtime fallback presented effective pool values as key ownership: %s", payload)
+			}
 		}
 	}
 	if !ids["codex-0"] || !ids["openai-compat-0"] {

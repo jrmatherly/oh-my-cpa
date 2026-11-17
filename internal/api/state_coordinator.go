@@ -855,7 +855,7 @@ func (h *Handler) loadUpstreamProjectedState(ctx context.Context) (projectedConf
 	if err != nil {
 		return projectedConfigState{}, err
 	}
-	// Every reader below takes its part from the v8 view; the load reads it once.
+	// The readers below that use the v8 view share one fetch of it. Nothing here writes.
 	ctx = management.WithSharedConfigView(ctx)
 
 	runtimeRevision, err := client.RuntimeConfigRevision(ctx)

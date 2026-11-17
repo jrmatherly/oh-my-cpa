@@ -340,14 +340,15 @@ func TestOAuthExcludedModelsAreReadAsCPAAppliesThem(t *testing.T) {
 	}
 }
 
-// pluginViewGateway knows four plugins: "installed" has no saved settings,
-// "configured" and "scalar" have settings but are not installed ("scalar" in a
-// shape the console cannot show), and "ghost" is neither.
+// pluginViewGateway knows five plugins: "installed" has no saved settings;
+// "configured", "scalar" and "empty" have an entry but are not installed
+// ("scalar" in a shape the console cannot show, "empty" stored as null); and
+// "ghost" is neither.
 func pluginViewGateway() *configGateway {
 	return &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
 		switch {
 		case method == http.MethodGet && path == "/v8/management/config":
-			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"},"scalar":true}}}`
+			return http.StatusOK, `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"},"scalar":true,"empty":null}}}`
 		case path == "/v8/management/plugins":
 			return http.StatusOK, `{"plugins":[{"id":"installed","enabled":false}]}`
 		}
@@ -375,6 +376,10 @@ func TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne(t *testing.T) {
 	if err != nil || config["level"] != "info" {
 		t.Fatalf("configured plugin config = %#v, %v; want its saved settings", config, err)
 	}
+	config, err = client.PluginConfig(context.Background(), "empty")
+	if err != nil || config == nil || len(config) != 0 {
+		t.Fatalf("a plugin stored as null config = %#v, %v; want an empty object", config, err)
+	}
 	var httpErr *HTTPError
 	if _, err := client.PluginConfig(context.Background(), "ghost"); err == nil || !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound || !strings.Contains(httpErr.Body, "plugin_not_found") {
 		t.Fatalf("unknown plugin err = %v, want plugin_not_found", err)
@@ -387,6 +392,9 @@ func TestPluginWritesAcceptAConfiguredPluginThatIsNotInstalled(t *testing.T) {
 	client := newConfigClient(t, gateway)
 	if err := client.SetPluginEnabled(context.Background(), "configured", true); err != nil {
 		t.Fatalf("enable a configured plugin: %v", err)
+	}
+	if err := client.SetPluginConfig(context.Background(), "empty", map[string]any{"level": "debug"}); err != nil {
+		t.Fatalf("a plugin stored as null can be given settings: %v", err)
 	}
 	if err := client.SetPluginEnabled(context.Background(), "scalar", true); err != nil {
 		t.Fatalf("a plugin with settings of any shape is known: %v", err)

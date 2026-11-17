@@ -43,8 +43,9 @@ func providerGroupsView(lists func(family string) *[]map[string]any, stored map[
 
 // serveProviderGroups answers the v8 configuration routes a provider write
 // uses, over the flat per-family lists a fake CPA keeps for its v0 reads, the
-// way CPA itself does: writing groups flattens them back, one entry per key. An entry keeps the auth index of the key it replaces, since CPA
-// derives the index from the key's content. It reports whether it answered.
+// way CPA itself does: writing groups flattens them back, one entry per key.
+// An entry keeps the auth index of the key it replaces, since CPA derives the
+// index from the key's content. It reports whether it answered.
 //
 // If supplied, stored is the authoritative v8 group document, independent of
 // the flattened runtime list.
