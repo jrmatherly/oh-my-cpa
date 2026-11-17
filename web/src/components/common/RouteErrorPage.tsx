@@ -35,7 +35,7 @@ export const RouteErrorPage: React.FC = () => {
     occurredAt: new Date().toISOString(),
   }), [error, version]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!isModuleFailure) return;
     if (isChunkReloadPending() || attemptChunkReload()) {
       setIsReloading(true);

@@ -1982,9 +1982,16 @@ func TestMigration069BackfillsClientPrefixAndPopulatesClientRollups(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range afterReprice.Items {
-		if item.ID == usage.ClientAgentClaudeCode && (item.CostNanos <= 0 || item.PricedRequests != 1 || item.CostedRequests != 1) {
-			t.Fatalf("expected repriced cost propagated to client rollup, got %+v", item)
+	var repriced *UsageClientAgentRow
+	for index := range afterReprice.Items {
+		if afterReprice.Items[index].ID == usage.ClientAgentClaudeCode {
+			repriced = &afterReprice.Items[index]
 		}
+	}
+	if repriced == nil {
+		t.Fatalf("claude-code missing from client rollup after reprice: %+v", afterReprice.Items)
+	}
+	if repriced.Requests != 1 || repriced.CostNanos <= 0 || repriced.PricedRequests != 1 || repriced.CostedRequests != 1 {
+		t.Fatalf("expected repriced cost on one request in client rollup, got %+v", *repriced)
 	}
 }

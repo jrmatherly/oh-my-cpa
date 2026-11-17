@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import {
   attemptChunkReload,
   clearChunkReloadPending,
-  installChunkLoadRecovery,
   isChunkReloadPending,
   isModuleLoadFailure,
 } from '../../src/utils/chunkRecovery.ts';
@@ -226,47 +225,4 @@ test('chunk recovery identifies Safari/Chrome/Firefox module script failures and
     }
   }
   assert.equal(reloads, 3);
-});
-
-test('installChunkLoadRecovery reloads on vite:preloadError only for module-load payloads without cancelling propagation', () => {
-  clearChunkReloadPending();
-  const listeners = new Map<string, Set<EventListener>>();
-  const target = {
-    addEventListener: (type: string, listener: EventListener) => {
-      const group = listeners.get(type) ?? new Set<EventListener>();
-      group.add(listener);
-      listeners.set(type, group);
-    },
-    removeEventListener: (type: string, listener: EventListener) => {
-      listeners.get(type)?.delete(listener);
-    },
-  };
-  let reloads = 0;
-  const dispose = installChunkLoadRecovery(target as unknown as Window, {
-    now: () => 50_000,
-    storage: memoryStorage(),
-    isOnline: () => true,
-    reload: () => {
-      reloads += 1;
-    },
-  });
-
-  const nonChunkEvent = new Event('vite:preloadError', { cancelable: true }) as Event & { payload?: unknown };
-  nonChunkEvent.payload = new Error('bad configuration');
-  for (const listener of listeners.get('vite:preloadError') ?? []) {
-    listener(nonChunkEvent);
-  }
-  assert.equal(reloads, 0);
-  assert.equal(nonChunkEvent.defaultPrevented, false);
-
-  const chunkEvent = new Event('vite:preloadError', { cancelable: true }) as Event & { payload?: unknown };
-  chunkEvent.payload = new TypeError('Importing a module script failed.');
-  for (const listener of listeners.get('vite:preloadError') ?? []) {
-    listener(chunkEvent);
-  }
-  assert.equal(reloads, 1);
-  assert.equal(chunkEvent.defaultPrevented, false);
-
-  dispose();
-  clearChunkReloadPending();
 });

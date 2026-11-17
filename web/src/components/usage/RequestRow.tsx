@@ -585,7 +585,9 @@ export const RequestRow = React.memo<RequestRowProps>(
               <span className="req-client-name">{clientDisplayName(clientId, t)}</span>
             </span>
           ) : (
-            <span className="req-client-name is-empty">—</span>
+            <span className="req-client-name is-empty" data-request-tooltip={userAgent || undefined} data-request-tooltip-overflow="">
+              {userAgent || '—'}
+            </span>
           )}
         </div>
 

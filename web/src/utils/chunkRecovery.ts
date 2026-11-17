@@ -94,20 +94,3 @@ export function attemptChunkReload(options: AttemptChunkReloadOptions = {}): boo
     return false;
   }
 }
-
-export function installChunkLoadRecovery(
-  target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,
-  options: AttemptChunkReloadOptions = {},
-): () => void {
-  const onPreloadError = (event: Event) => {
-    const payload = (event as Event & { payload?: unknown }).payload;
-    if (!isModuleLoadFailure(payload)) return;
-    // Keep the original rejection rather than calling event.preventDefault(), which causes Vite's
-    // preload helper to resolve to undefined and mask chunk failures as property-read TypeErrors.
-    attemptChunkReload(options);
-  };
-  target.addEventListener('vite:preloadError', onPreloadError);
-  return () => {
-    target.removeEventListener('vite:preloadError', onPreloadError);
-  };
-}
