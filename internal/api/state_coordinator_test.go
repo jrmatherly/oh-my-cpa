@@ -915,9 +915,10 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 			t.Run(mode+"/"+family, func(t *testing.T) {
 				upstream := &configFixtureCPA{}
 				var handler *Handler
-				var generation, groupStatus atomic.Int32
+				var generation atomic.Int32
+				var isGroupUnreadable atomic.Bool
 				generation.Store(1)
-				groupStatus.Store(http.StatusServiceUnavailable)
+				isGroupUnreadable.Store(true)
 				var shouldBlock atomic.Bool
 				started, release := make(chan struct{}), make(chan struct{})
 				var releaseOnce sync.Once
@@ -930,7 +931,7 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 				_, _, _ = startDashboardTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
 					switch request.URL.Path {
 					case "/v8/management/config":
-						if request.Method != http.MethodGet || groupStatus.Load() == 0 {
+						if request.Method != http.MethodGet || !isGroupUnreadable.Load() {
 							upstream.serve(writer, request)
 							return
 						}
@@ -972,7 +973,7 @@ func TestStateCoordinatorProviderRecoveryRejectsOlderGeneration(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				groupStatus.Store(0)
+				isGroupUnreadable.Store(false)
 				shouldBlock.Store(true)
 				result := make(chan []ProviderItemDTO, 1)
 				go func() { items, _ := handler.readProviderItemsWithVersion(t.Context(), client); result <- items }()

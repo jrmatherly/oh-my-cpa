@@ -660,7 +660,10 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       );
       const plugins = { ...configDoc.plugins };
       if (pluginConfigs.size > 0) plugins.configs = Object.fromEntries(pluginConfigs);
-      json(response, 200, { ...configDoc, oauth, plugins, ...(Object.keys(groups).length > 0 ? { 'api-keys': groups } : {}) });
+      // The credential lists are the source of truth here, so a document that
+      // carries its own `api-keys` does not speak for them.
+      const { 'api-keys': _documentGroups, ...document } = configDoc;
+      json(response, 200, { ...document, oauth, plugins, ...(Object.keys(groups).length > 0 ? { 'api-keys': groups } : {}) });
       return;
     }
     // The v8 view and the stored file are the same document here: the fixture's
