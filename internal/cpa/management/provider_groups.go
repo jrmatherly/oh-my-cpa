@@ -74,6 +74,30 @@ func (c *Client) configValueAt(ctx context.Context, path []string, output any) (
 	return true, nil
 }
 
+// configViewValueAt decodes one path of the v8 view into output, which stays
+// untouched when the path is not set. It reads the whole view because CPA
+// answers a single unset path with 404, logs a warning for it, and that answer
+// makes the client forget the gateway serves v8. Use it for a path that is
+// ordinarily empty.
+func (c *Client) configViewValueAt(ctx context.Context, path []string, output any) error {
+	view, _, err := c.ConfigView(ctx)
+	if err != nil {
+		return err
+	}
+	value, ok := ValueAt(view, path)
+	if !ok || value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, output); err != nil {
+		return fmt.Errorf("decode %s: %w", strings.Join(path, "."), err)
+	}
+	return nil
+}
+
 func isConfigPathMissing(err error) bool {
 	var httpErr *HTTPError
 	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound && strings.Contains(httpErr.Body, "not_found")

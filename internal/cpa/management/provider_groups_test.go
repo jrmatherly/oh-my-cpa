@@ -165,8 +165,8 @@ func TestEditableOpenAICompatibilityVerifiesIdentityOnCaseFoldFallback(t *testin
 
 func TestOAuthModelAliasesReadAsCPAAppliesThem(t *testing.T) {
 	gateway := &configGateway{answer: func(method, path string) (int, string) {
-		if method == http.MethodGet && path == "/v8/management/config/oauth/model-alias" {
-			return http.StatusOK, `{"Codex":[{"name":" gpt-5 ","alias":"fast"},{"name":"gpt-5.1","alias":"FAST"},{"name":"same","alias":"same"}],"empty":[]}`
+		if method == http.MethodGet && path == "/v8/management/config" {
+			return http.StatusOK, `{"oauth":{"model-alias":{"Codex":[{"name":" gpt-5 ","alias":"fast"},{"name":"gpt-5.1","alias":"FAST"},{"name":"same","alias":"same"}],"empty":[]}}}`
 		}
 		return 0, ""
 	}}
@@ -180,10 +180,48 @@ func TestOAuthModelAliasesReadAsCPAAppliesThem(t *testing.T) {
 	}
 }
 
+// CPA answers an unset configuration path with 404, so the alias and exclusion
+// reads ask for the whole view and never the path: a gateway with neither set
+// is not an error in its own log.
+func TestOAuthMapsReadTheViewNotThePath(t *testing.T) {
+	gateway := &configGateway{answer: func(method, path string) (int, string) {
+		if method == http.MethodGet && path == "/v8/management/config" {
+			return http.StatusOK, `{"access":{"api-keys":[]}}`
+		}
+		return http.StatusNotFound, `{"error":"not_found"}`
+	}}
+	aliases, err := newConfigClient(t, gateway).OAuthModelAliases(context.Background())
+	if err != nil || len(aliases) != 0 {
+		t.Fatalf("aliases = %#v, err = %v", aliases, err)
+	}
+	excluded, err := newConfigClient(t, gateway).OAuthExcludedModels(context.Background())
+	if err != nil || len(excluded) != 0 {
+		t.Fatalf("excluded = %#v, err = %v", excluded, err)
+	}
+	sent := gateway.sent()
+	if len(sent) != 2 {
+		t.Fatalf("requests = %v", sent)
+	}
+	for _, request := range sent {
+		if request != "GET /v8/management/config" {
+			t.Fatalf("requests = %v", sent)
+		}
+	}
+}
+
+func TestOAuthModelAliasesRefuseAMapOfTheWrongShape(t *testing.T) {
+	gateway := &configGateway{answer: func(method, path string) (int, string) {
+		return http.StatusOK, `{"oauth":{"model-alias":["not","a","map"]}}`
+	}}
+	if _, err := newConfigClient(t, gateway).OAuthModelAliases(context.Background()); err == nil || !strings.Contains(err.Error(), "oauth.model-alias") {
+		t.Fatalf("err = %v, want a decode error naming the path", err)
+	}
+}
+
 func TestPatchOAuthModelAliasesReplacesEverySpellingOfTheProvider(t *testing.T) {
 	gateway := &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
-		if method == http.MethodGet && path == "/v8/management/config/oauth/model-alias" {
-			return http.StatusOK, `{"Codex":[{"name":"a","alias":"b"}],"claude":[{"name":"c","alias":"d"}]}`
+		if method == http.MethodGet && path == "/v8/management/config" {
+			return http.StatusOK, `{"oauth":{"model-alias":{"Codex":[{"name":"a","alias":"b"}],"claude":[{"name":"c","alias":"d"}]}}}`
 		}
 		return 0, ""
 	}}
@@ -202,8 +240,8 @@ func TestPatchOAuthModelAliasesReplacesEverySpellingOfTheProvider(t *testing.T) 
 
 func TestPatchOAuthExcludedModelsReplacesEverySpellingOfTheProvider(t *testing.T) {
 	gateway := &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
-		if method == http.MethodGet && path == "/v8/management/config/oauth/excluded-models" {
-			return http.StatusOK, `{"Codex":["gpt-5-mini"],"claude":["claude-3-haiku"]}`
+		if method == http.MethodGet && path == "/v8/management/config" {
+			return http.StatusOK, `{"oauth":{"excluded-models":{"Codex":["gpt-5-mini"],"claude":["claude-3-haiku"]}}}`
 		}
 		return 0, ""
 	}}
@@ -222,8 +260,8 @@ func TestPatchOAuthExcludedModelsReplacesEverySpellingOfTheProvider(t *testing.T
 
 func TestPatchOAuthExcludedModelsWritesNothingForAProviderWithoutRules(t *testing.T) {
 	gateway := &configGateway{stored: "config-version: 8\n", answer: func(method, path string) (int, string) {
-		if method == http.MethodGet && path == "/v8/management/config/oauth/excluded-models" {
-			return http.StatusOK, `{"claude":["claude-3-haiku"]}`
+		if method == http.MethodGet && path == "/v8/management/config" {
+			return http.StatusOK, `{"oauth":{"excluded-models":{"claude":["claude-3-haiku"]}}}`
 		}
 		return 0, ""
 	}}

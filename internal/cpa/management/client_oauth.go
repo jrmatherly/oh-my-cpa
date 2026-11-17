@@ -295,7 +295,7 @@ var OAUTH_MODEL_ALIAS_PATH = []string{"oauth", "model-alias"}
 // them (see sanitizeOAuthModelAliases).
 func (c *Client) OAuthModelAliases(ctx context.Context) (map[string][]OAuthModelAlias, error) {
 	var stored map[string][]OAuthModelAlias
-	if _, err := c.configValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
 		return nil, err
 	}
 	return sanitizeOAuthModelAliases(stored), nil
@@ -389,7 +389,7 @@ func (c *Client) CredentialModelAliases(ctx context.Context, name string) ([]OAu
 func (c *Client) PatchOAuthModelAliases(ctx context.Context, provider string, aliases []OAuthModelAlias) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	var stored map[string]any
-	if _, err := c.configValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_MODEL_ALIAS_PATH, &stored); err != nil {
 		return err
 	}
 	path := append(append([]string{}, OAUTH_MODEL_ALIAS_PATH...), provider)
@@ -416,7 +416,7 @@ var OAUTH_EXCLUDED_MODELS_PATH = []string{"oauth", "excluded-models"}
 // (see sanitizeOAuthExcludedModels).
 func (c *Client) OAuthExcludedModels(ctx context.Context) (map[string][]string, error) {
 	var stored map[string][]string
-	if _, err := c.configValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
 		return nil, err
 	}
 	return sanitizeOAuthExcludedModels(stored), nil
@@ -468,7 +468,7 @@ func sanitizeOAuthExcludedModels(stored map[string][]string) map[string][]string
 func (c *Client) PatchOAuthExcludedModels(ctx context.Context, provider string, rules []string) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	var stored map[string]any
-	if _, err := c.configValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
+	if err := c.configViewValueAt(ctx, OAUTH_EXCLUDED_MODELS_PATH, &stored); err != nil {
 		return err
 	}
 	path := append(append([]string{}, OAUTH_EXCLUDED_MODELS_PATH...), provider)

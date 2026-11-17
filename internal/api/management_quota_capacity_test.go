@@ -31,7 +31,7 @@ func capacityTestHandler(t *testing.T) *Handler {
 		switch request.URL.Path {
 		case "/v8/management/credentials":
 			_, _ = writer.Write([]byte(`{"files":[{"id":"f-1","name":"codex-1.json","auth_index":"codex-1","type":"codex","provider":"codex"}]}`))
-		case "/v8/management/config/oauth/model-alias":
+		case "/v8/management/config":
 			_, _ = writer.Write([]byte(`{}`))
 		default:
 			writer.WriteHeader(http.StatusNotFound)

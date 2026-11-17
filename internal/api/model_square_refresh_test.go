@@ -36,7 +36,7 @@ func TestModelCatalogRefreshHTTP(t *testing.T) {
 				switch {
 				case request.URL.Path == "/v8/management/credentials":
 					io.WriteString(writer, `{"files":[]}`)
-				case request.URL.Path == "/v8/management/config/oauth/model-alias",
+				case request.URL.Path == "/v8/management/config",
 					request.URL.Path == "/v0/management/openai-compatibility",
 					strings.HasPrefix(request.URL.Path, "/v0/management/") && strings.HasSuffix(request.URL.Path, "-api-key"):
 					io.WriteString(writer, `{}`)

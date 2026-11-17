@@ -50,8 +50,6 @@ func TestModelSquareHTTPUsesDefaultKeyAndSafeProvenance(t *testing.T) {
 			} else {
 				io.WriteString(writer, `{"data":[{"id":"team/fast","account":"private-account","secret":"private-secret"},{"id":"runtime-only"}]}`)
 			}
-		case "/v8/management/config/oauth/model-alias":
-			io.WriteString(writer, `{}`)
 		case "/v8/management/credentials":
 			io.WriteString(writer, `{"files":[]}`)
 		case "/v0/management/openai-compatibility":
@@ -189,20 +187,24 @@ func TestModelSquareLiveDirectorySurvivesEnrichmentFailure(t *testing.T) {
 			fixture := newProviderTestFixture(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			var shouldCancel atomic.Bool
+			var shouldCancel, isSweepOver atomic.Bool
 			upstream := newFakeCPA(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				switch request.URL.Path {
-				case "/v8/management/config":
-					io.WriteString(writer, `{"access":{"api-keys":["directory-cancel-fixture"]}}`)
 				case "/v1/models":
 					io.WriteString(writer, `{"data":[{"id":"scale-alias"},{"id":"scale-unresolved"}]}`)
 				case "/v8/management/credentials":
 					io.WriteString(writer, `{"files":[{"provider":"claude","models":[{"id":"scale-alias"}]},{"provider":"grok","models":[{"id":"scale-alias"}]},{"provider":"codex","name":"slow.json"}]}`)
-				case "/v8/management/config/oauth/model-alias":
+				case "/v8/management/config":
+					// After the sweep the page reads only its keys from this view. No aliases are offered
+					// then, so a page that read them again would publish a different directory.
+					if isSweepOver.Load() {
+						io.WriteString(writer, `{"access":{"api-keys":["directory-cancel-fixture"]}}`)
+						return
+					}
 					if shouldCancel.Load() && !hasAliases {
 						writer.WriteHeader(http.StatusServiceUnavailable)
 					}
-					io.WriteString(writer, `{"claude":[{"name":"scale-first","alias":"scale-alias"}],"grok":[{"name":"scale-second","alias":"scale-alias"}]}`)
+					io.WriteString(writer, `{"access":{"api-keys":["directory-cancel-fixture"]},"oauth":{"model-alias":{"claude":[{"name":"scale-first","alias":"scale-alias"}],"grok":[{"name":"scale-second","alias":"scale-alias"}]}}}`)
 				case "/v8/management/credentials/models":
 					// Cancel a later sweep after it has observed different membership.
 					if shouldCancel.Load() {
@@ -223,10 +225,14 @@ func TestModelSquareLiveDirectorySurvivesEnrichmentFailure(t *testing.T) {
 			if beforeResponse.StatusCode != http.StatusOK {
 				t.Fatalf("primed directory: %d %s", beforeResponse.StatusCode, before)
 			}
+			if !strings.Contains(string(before), "scale-first") {
+				t.Fatalf("primed directory carries no alias target: %s", before)
+			}
 			shouldCancel.Store(true)
 			if err := fixture.handler.RefreshModelSquareProvenance(ctx); !errors.Is(err, context.Canceled) {
 				t.Fatalf("cancelled refresh error = %v", err)
 			}
+			isSweepOver.Store(true)
 			recorder := httptest.NewRecorder()
 			fixture.handler.listModelSquare(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 			if recorder.Code != http.StatusOK {
@@ -265,8 +271,6 @@ func TestModelSquareCachesEveryCredentialWithoutPageEnrichment(t *testing.T) {
 			} else {
 				io.WriteString(writer, `{"models":[{"id":"scale-free"}]}`)
 			}
-		case "/v8/management/config/oauth/model-alias":
-			io.WriteString(writer, `{}`)
 		case "/v0/management/openai-compatibility":
 			io.WriteString(writer, `{"openai-compatibility":[{"name":"relay","prefix":"team","models":[{"name":"scale-upstream","alias":"scale-native"}]}]}`)
 		default:
@@ -324,8 +328,6 @@ func TestModelSquareNativeDefaultsRespectPrefixAndExclusions(t *testing.T) {
 			io.WriteString(writer, `{"access":{"api-keys":["directory-defaults-fixture"]}}`)
 		case "/v1/models":
 			io.WriteString(writer, `{"data":[{"id":"team/gpt-5"},{"id":"team/gpt-5-mini"}]}`)
-		case "/v8/management/config/oauth/model-alias":
-			io.WriteString(writer, `{}`)
 		case "/v8/management/credentials":
 			io.WriteString(writer, `{"files":[]}`)
 		case "/v0/management/codex-api-key":
