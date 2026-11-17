@@ -577,7 +577,12 @@ test('no retired input-wrapper slot selectors remain and alignment invariants ho
   assert.match(dashboardCss, /\.heatmap-head,\s*\.quota-head\s*\{\s*min-height:\s*28px;/);
   assert.match(
     dashboardCss,
-    /\.model-trend-card:has\(\.model-view-toggle\)\s*\[data-slot="panel-head"\],\s*\.model-usage-card\s*\[data-slot="panel-head"\]\s*\{[^}]*padding-block:\s*8px;/,
+    /\.model-trend-card:has\(\.model-view-toggle\)\s*\[data-slot="panel-head"\]\s*\{[^}]*padding-block:\s*8px;/,
+  );
+  // With the tabs in its head too, the trend card must not keep that padding: the tabs ride the rule.
+  assert.match(
+    dashboardCss,
+    /\.model-trend-card\.has-lens:has\(\.model-view-toggle\)\s*\[data-slot="panel-head"\]\s*\{[^}]*padding-block:\s*0;/,
   );
 });
 
