@@ -31,9 +31,13 @@ func seedQuotaObservations(ctx context.Context, repo *repository.Repository, now
 		switch credential.provider {
 		case "codex":
 			plan, windows, _, err = quota.ParseCodexUsage(raw, now.UnixMilli())
+			if err != nil {
+				break
+			}
 			// The credits come from their own endpoint, as the quota service reads them.
-			if creditsRaw, marshalErr := json.Marshal(payloads[codexResetCreditsURL]); marshalErr == nil {
-				credits, _ = quota.ParseCodexResetCreditsPayload(creditsRaw)
+			var creditsRaw []byte
+			if creditsRaw, err = json.Marshal(payloads[codexResetCreditsURL]); err == nil {
+				credits, err = quota.ParseCodexResetCreditsPayload(creditsRaw)
 			}
 		case "claude":
 			windows, _, err = quota.ParseClaudeUsage(raw, now.UnixMilli())
