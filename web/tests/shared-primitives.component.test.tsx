@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider, useRouteError } from 'react-router-dom';
 import { DeferredMount } from '../src/components/common/DeferredMount';
+import { RouteErrorPage } from '../src/components/common/RouteErrorPage';
+import * as chunkRecovery from '../src/utils/chunkRecovery';
 import { Tooltip } from '../src/components/common/Tooltip';
 import { progressTasks } from '../src/utils/progressTasks';
 import { AppDrawer } from '../src/components/common/AppDrawer';
@@ -530,6 +532,68 @@ describe('DeferredMount', () => {
 
     expect((await screen.findByRole('alert')).textContent).toBe('Editor render failed');
     expect(screen.queryByTestId('optional-surface-failure')).toBeNull();
+  });
+
+  it('recovers a route module-script error with a guarded reload and shows diagnostics if throttled', async () => {
+    const attemptSpy = vi.spyOn(chunkRecovery, 'attemptChunkReload');
+    function ThrowingRoute(): React.ReactNode {
+      throw new TypeError('Importing a module script failed.');
+    }
+
+    try {
+      attemptSpy.mockReturnValueOnce(true);
+      const reloadingRouter = createMemoryRouter([{ path: '/', element: <ThrowingRoute />, errorElement: <RouteErrorPage /> }]);
+      const reloadingView = renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={reloadingRouter} />
+        </ThemeProvider>,
+      );
+      await waitFor(() => expect(attemptSpy).toHaveBeenCalledTimes(1));
+      expect(screen.queryByTestId('route-error-message')).toBeNull();
+      reloadingView.unmount();
+
+      // A reload that never happens gives way to the diagnostics.
+      vi.useFakeTimers();
+      attemptSpy.mockReturnValueOnce(true);
+      const stalledRouter = createMemoryRouter([{ path: '/', element: <ThrowingRoute />, errorElement: <RouteErrorPage /> }]);
+      const stalledView = renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={stalledRouter} />
+        </ThemeProvider>,
+      );
+      expect(screen.queryByTestId('route-error-message')).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(4000));
+      expect(screen.getByTestId('route-error-message').textContent).toBe('Importing a module script failed.');
+      vi.useRealTimers();
+      stalledView.unmount();
+
+      attemptSpy.mockReturnValueOnce(false);
+      const throttledRouter = createMemoryRouter([{ path: '/', element: <ThrowingRoute />, errorElement: <RouteErrorPage /> }]);
+      const throttledView = renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={throttledRouter} />
+        </ThemeProvider>,
+      );
+      expect((await screen.findByTestId('route-error-message')).textContent).toBe('Importing a module script failed.');
+      throttledView.unmount();
+
+      // An ordinary render error is shown, never answered with a reload.
+      function BrokenRoute(): React.ReactNode {
+        throw new Error('boom');
+      }
+      const brokenRouter = createMemoryRouter([{ path: '/', element: <BrokenRoute />, errorElement: <RouteErrorPage /> }]);
+      renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={brokenRouter} />
+        </ThemeProvider>,
+      );
+      expect((await screen.findByTestId('route-error-message')).textContent).toBe('boom');
+      expect(attemptSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+      attemptSpy.mockRestore();
+      chunkRecovery.clearChunkReloadPending();
+    }
   });
 });
 

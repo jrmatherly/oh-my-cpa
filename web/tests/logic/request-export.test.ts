@@ -105,6 +105,7 @@ test('request export', () => {
     cost_usd: 0.0123,
     tokens: { total: 200, input: 150, output: 50, reasoning: 0, cached: 0, cache_read: 0, cache_creation: 0 },
     user_agent: 'codex-cli/1.0',
+    client_agent: 'codex-cli',
   } as unknown as UsageEvent;
   const events = [
     { ...base, id: 2, request_id: 'req-oauth', provider: 'claude', model: 'claude-opus', auth_type: 'oauth', auth_index: 'oauth-a', source: 'someone.json', api_group_label: 'api_key', api_key_alias: 'laptop key' },
@@ -128,6 +129,13 @@ test('request export', () => {
     ).join('\n');
 
   const open = build(effectiveMasks([], []));
+  assert.ok(open.includes('Codex'), 'the sheet names the client as the list does');
+  const unrecognised = sheetStrings(buildRequestSheet({
+    rows: [{ ...events[0], client_agent: 'unknown', user_agent: 'weird/1.0' }],
+    masks: effectiveMasks([], []), colWidths: {}, caption: 'caption', t: (key) => key,
+    tokenStyle: 'en-compact', tpsMode: 'exclude_ttft', credentials,
+  }));
+  assert.ok(unrecognised.includes('weird/1.0'), 'an unrecognised client shows its User-Agent on the sheet');
   for (const value of [ACCOUNT, PROVIDER_KEY, 'laptop key', 'req-oauth', 'claude-opus']) {
     assert.ok(open.includes(value), `an unredacted sheet draws ${value}`);
   }
@@ -284,6 +292,7 @@ test('request export', () => {
     tokens: { total: 200, input: 150, output: 50, reasoning: 0, cached: 0, cache_read: 0, cache_creation: 0 },
     cost_usd: 0.0123,
     api_key_alias: 'laptop key',
+    client_agent: 'codex-cli',
     user_agent: 'codex-cli/1.0',
   });
   assert.ok(!JSON.stringify(openDocument).includes('fingerprint-of-a-secret'), "a key's fingerprint is never exported");
@@ -297,6 +306,10 @@ test('request export', () => {
   assert.equal(redactedDocument.requests[0].auth_index, 'oauth-a', 'requests still group by the account that answered');
   assert.equal(redactedDocument.requests[1].source, 'relay', 'a key provider keeps its source');
   assert.deepEqual(redactedDocument.requests[0].tokens, { total: 200, input: 150, output: 50, reasoning: 0 });
+  // Withholding the client column takes the client and the User-Agent it was read from.
+  const clientless = exportJson(effectiveMasks([], ['client']));
+  assert.deepEqual(clientless.redacted, ['client']);
+  assert.ok(!JSON.stringify(clientless).includes('codex-cli'), 'a withheld client leaves no trace of its User-Agent');
 
 
   const outboundEvent: UsageEvent = { ...events[1], service_tier: 'auto', effective_service_tier: 'priority', response_service_tier: 'default', resolved_service_tier: 'priority', resolved_service_tier_source: 'outbound' };

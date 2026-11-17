@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
+  attemptChunkReload,
+  clearChunkReloadPending,
+  isChunkReloadPending,
+  isModuleLoadFailure,
+} from '../../src/utils/chunkRecovery.ts';
+import {
   createRouteErrorDiagnostics,
   formatRouteErrorReport,
   redactDiagnosticText,
@@ -119,4 +125,104 @@ test('large messages are bounded after redaction and control bytes are removed',
   assert.ok(!sanitized.includes('private-key'));
   assert.equal(redactDiagnosticText('Error\u0000\n  at render\u0007'), 'Error\n  at render');
   assert.equal(redactDiagnosticText('at /console/assets/page.js?key=private-key#secret\n at ./page.js?query=hidden'), 'at /console/assets/page.js\n at ./page.js');
+});
+
+function memoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+  };
+}
+
+test('chunk recovery identifies Safari/Chrome/Firefox module script failures and reloads at most once per cooldown', () => {
+  clearChunkReloadPending();
+  assert.equal(isModuleLoadFailure(new TypeError('Importing a module script failed.')), true);
+  assert.equal(isModuleLoadFailure(new TypeError('Failed to fetch dynamically imported module: https://omc.junze.dev/demo/assets/DashboardPage.js')), true);
+  assert.equal(isModuleLoadFailure(new TypeError('error loading dynamically imported module: https://omc.junze.dev/demo/assets/DashboardPage.js')), true);
+  assert.equal(isModuleLoadFailure(new Error('Unable to preload CSS for ./assets/index.css')), true);
+  assert.equal(isModuleLoadFailure(new TypeError('Cannot read properties of undefined')), false);
+
+  const storage = memoryStorage();
+  let clock = 100_000;
+  let reloads = 0;
+  const options = {
+    now: () => clock,
+    storage,
+    isOnline: () => true,
+    reload: () => {
+      reloads += 1;
+    },
+  };
+
+  assert.equal(attemptChunkReload(options), true);
+  assert.equal(reloads, 1);
+  assert.equal(isChunkReloadPending(), true);
+
+  // If the page stays loaded past the cooldown (e.g. reload cancelled by beforeunload), pending state expires.
+  clock += 30_000;
+  assert.equal(isChunkReloadPending(), false);
+  assert.equal(attemptChunkReload(options), true);
+  assert.equal(reloads, 2);
+  clearChunkReloadPending();
+
+  // Within cooldown after clearing pending state, a second failure refuses to loop.
+  clock += 5_000;
+  assert.equal(attemptChunkReload(options), false);
+  assert.equal(reloads, 2);
+  assert.equal(isChunkReloadPending(), false);
+
+  // After cooldown expires, a later deployment can trigger recovery once more.
+  clock += 30_000;
+  assert.equal(attemptChunkReload(options), true);
+  assert.equal(reloads, 3);
+  clearChunkReloadPending();
+
+  // Offline, throwing storage methods, or a throwing sessionStorage getter fail closed without reloading.
+  assert.equal(attemptChunkReload({ ...options, now: () => clock + 60_000, isOnline: () => false }), false);
+  assert.equal(
+    attemptChunkReload({
+      ...options,
+      now: () => clock + 60_000,
+      storage: {
+        getItem: () => {
+          throw new Error('blocked');
+        },
+        setItem: () => {
+          throw new Error('blocked');
+        },
+      },
+    }),
+    false,
+  );
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      get sessionStorage() {
+        throw new DOMException('Access denied', 'SecurityError');
+      },
+    },
+  });
+  try {
+    assert.equal(
+      attemptChunkReload({
+        now: () => clock + 60_000,
+        isOnline: () => true,
+        reload: () => {
+          reloads += 1;
+        },
+      }),
+      false,
+    );
+  } finally {
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  }
+  assert.equal(reloads, 3);
 });

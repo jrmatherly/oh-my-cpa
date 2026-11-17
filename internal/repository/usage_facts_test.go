@@ -25,6 +25,7 @@ func seedFactEvents(t *testing.T, repo *Repository, baseMS, spanMS int64, count 
 	providers := []string{"codex", "", "claude"}
 	authTypes := []string{"oauth", "apikey"}
 	statuses := []string{"priced", "unpriced", "invalid_price"}
+	clients := []string{"claude-code", "codex-cli", "pi", ""}
 	for index := 0; index < count; index++ {
 		status := statuses[random.Intn(len(statuses))]
 		var cost any
@@ -36,11 +37,11 @@ func seedFactEvents(t *testing.T, repo *Repository, baseMS, spanMS int64, count 
 			ttft = random.Int63n(900)
 		}
 		_, err := repo.SQL().Exec(`
-			INSERT INTO usage_events (instance_id, event_key, api_group_key, provider, auth_type, model, model_alias,
+			INSERT INTO usage_events (instance_id, event_key, client_agent, api_group_key, provider, auth_type, model, model_alias,
 				auth_index, timestamp_ms, failed, latency_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens,
 				cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, cost_nanos, pricing_status, created_at_ms)
-			VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			fmt.Sprintf("event-%d-%d", seed, index), fmt.Sprintf("key-%d", random.Intn(2)),
+			VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			fmt.Sprintf("event-%d-%d", seed, index), clients[index%len(clients)], fmt.Sprintf("key-%d", random.Intn(2)),
 			providers[random.Intn(len(providers))], authTypes[random.Intn(len(authTypes))],
 			models[random.Intn(len(models))], aliases[random.Intn(len(aliases))], fmt.Sprintf("auth-%d", random.Intn(3)),
 			baseMS+random.Int63n(spanMS), random.Intn(2), random.Int63n(4000), ttft,
@@ -166,6 +167,54 @@ func recordFacts(t *testing.T, repo *Repository, query UsageFactQuery) []UsageFa
 	return result
 }
 
+// clientTotals is what a client attribution read reports per client.
+type clientTotals struct{ Requests, Failures, CostNanos int64 }
+
+// recordClients answers a client attribution read from request records alone.
+func recordClients(t *testing.T, repo *Repository, fromMS, toMS int64) (map[string]clientTotals, int64) {
+	t.Helper()
+	rows, err := repo.SQL().Query(`
+		SELECT CASE WHEN client_agent = '' THEN 'unknown' ELSE client_agent END, COUNT(1), SUM(failed), SUM(COALESCE(cost_nanos, 0))
+		FROM usage_events WHERE instance_id = 'default' AND timestamp_ms >= ? AND timestamp_ms <= ? GROUP BY 1`, fromMS, toMS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	clients := map[string]clientTotals{}
+	var retained int64
+	for rows.Next() {
+		var id string
+		var totals clientTotals
+		if err := rows.Scan(&id, &totals.Requests, &totals.Failures, &totals.CostNanos); err != nil {
+			t.Fatal(err)
+		}
+		clients[id] = totals
+		retained += totals.Requests
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return clients, retained
+}
+
+// compareClients checks a client attribution read against the request records it summarizes.
+func compareClients(t *testing.T, repo *Repository, stage string, fromMS, toMS, recordsFromMS int64) {
+	t.Helper()
+	result, err := repo.QueryUsageClientAgents(context.Background(), "default", fromMS, toMS, nil)
+	if err != nil {
+		t.Fatalf("%s clients [%d, %d]: %v", stage, fromMS, toMS, err)
+	}
+	got := map[string]clientTotals{}
+	for _, item := range result.Items {
+		got[item.ID] = clientTotals{Requests: item.Requests, Failures: item.Failures, CostNanos: item.CostNanos}
+	}
+	want, retained := recordClients(t, repo, recordsFromMS, toMS)
+	if !reflect.DeepEqual(got, want) || result.RetainedRequests != retained {
+		t.Fatalf("%s: clients disagree with request records for [%d, %d]\n got %d retained %+v\nwant %d retained %+v",
+			stage, fromMS, toMS, result.RetainedRequests, got, retained, want)
+	}
+}
+
 // calendarBucketStart is the local hour, day or Monday-first week holding an instant.
 func calendarBucketStart(timestampMS int64, calendar UsageCalendar) int64 {
 	local := time.UnixMilli(timestampMS).In(calendar.Location)
@@ -188,15 +237,19 @@ var factTestPartitions = [][]UsageDimension{
 	{UsageDimensionKey, UsageDimensionCallPoint, UsageDimensionModel, UsageDimensionProvider, UsageDimensionCredential, UsageDimensionAuthType},
 }
 
-func factTestQueries(baseMS int64) []UsageFactQuery {
-	queries := []UsageFactQuery{}
-	windows := [][2]int64{
+func factTestWindows(baseMS int64) [][2]int64 {
+	return [][2]int64{
 		{baseMS, baseMS + 4*DayBucketMS},                                       // whole days
 		{baseMS + 7*60_000 + 13, baseMS + 3*DayBucketMS + 11*HourBucketMS + 5}, // every edge unaligned
 		{baseMS + DayBucketMS + 3*HourBucketMS, baseMS + DayBucketMS + 9*HourBucketMS},
-		{baseMS + 2*60_000, baseMS + 9*60_000}, // inside one fact bucket
+		{baseMS + 2*60_000, baseMS + 9*60_000},                                      // inside one fact bucket
+		{baseMS + DayBucketMS, baseMS + 3*DayBucketMS + 11*HourBucketMS + 8*60_000}, // ends minutes into a bucket
 	}
-	for _, window := range windows {
+}
+
+func factTestQueries(baseMS int64) []UsageFactQuery {
+	queries := []UsageFactQuery{}
+	for _, window := range factTestWindows(baseMS) {
 		for _, bucketMS := range []int64{0, 60_000, QuarterHourBucketMS, HourBucketMS, DayBucketMS, 2 * DayBucketMS} {
 			for _, dimensions := range factTestPartitions {
 				queries = append(queries, UsageFactQuery{InstanceID: "default", FromMS: window[0], ToMS: window[1], BucketMS: bucketMS, Dimensions: dimensions})
@@ -234,6 +287,9 @@ func TestUsageFactsMatchRequestRecordsAtEveryFoldDepth(t *testing.T) {
 			if total := got.Totals().Requests; got.FactRequests+got.DetailRequests != total {
 				t.Fatalf("%s: coverage %d+%d does not add up to %d", stage, got.FactRequests, got.DetailRequests, total)
 			}
+		}
+		for _, window := range factTestWindows(baseMS) {
+			compareClients(t, repo, stage, window[0], window[1], window[0])
 		}
 	}
 
@@ -332,6 +388,32 @@ func TestUsageSurvivesTheDeletionOfItsRequestRecords(t *testing.T) {
 	first, err := repo.FirstUsageRecordMS(ctx, "default")
 	if err != nil || first == nil || *first >= horizonMS {
 		t.Fatalf("first usage %v must still reach behind the deleted records: %v", first, err)
+	}
+
+	// Client attribution lives only as long as the records: a cutoff inside a
+	// bucket leaves that bucket to the surviving records, and no rollup behind it.
+	for _, cutoffMS := range []int64{horizonMS, horizonMS + 7*60_000 + 13} {
+		for pass := 0; pass < 2; pass++ {
+			if _, err := repo.RunLifecycle(ctx, map[string]int64{LifecycleUsageDetail: cutoffMS}, 100); err != nil {
+				t.Fatal(err)
+			}
+		}
+		published, err := repo.LifecycleHorizonMS(ctx, LifecycleUsageDetail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, window := range factTestWindows(baseMS) {
+			compareClients(t, repo, fmt.Sprintf("cutoff %d", cutoffMS), window[0], window[1], max(window[0], published))
+		}
+		for _, table := range []string{"usage_client_facts_15m", "usage_client_facts_daily"} {
+			var stale int64
+			if err := repo.SQL().QueryRow(`SELECT COUNT(1) FROM `+table+` WHERE bucket_start_ms < ?`, published).Scan(&stale); err != nil {
+				t.Fatal(err)
+			}
+			if stale != 0 {
+				t.Fatalf("%s keeps %d rollup rows behind the horizon %d", table, stale, published)
+			}
+		}
 	}
 }
 
