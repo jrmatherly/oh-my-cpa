@@ -124,6 +124,9 @@ func TestManagementOAuthModelAliasesRequireReadback(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"oauth":{"model-alias":{"codex":[{"name":"gpt-5","alias":"old-alias"}]}}}`))
 	}
 	client, baseURL, _ := startAuthFilesTestServer(t, "management-secret-value", handler)
+	if _, listed := doJSON(t, client, http.MethodGet, baseURL+"/omc/api/v1/management/auth-files/model-aliases", ""); !strings.Contains(string(listed), "old-alias") {
+		t.Fatalf("the gateway's stored alias is not what the console reads: %s", listed)
+	}
 	response, raw := doJSON(t, client, http.MethodPatch,
 		baseURL+"/omc/api/v1/management/auth-files/model-aliases",
 		`{"provider":"codex","aliases":[{"name":"gpt-5","alias":"new-alias"}]}`)
@@ -138,7 +141,7 @@ func TestManagementOAuthModelAliasesRequireReadback(t *testing.T) {
 func TestManagementOAuthModelAliasesGuardrails(t *testing.T) {
 	client, baseURL, _ := startAuthFilesTestServer(t, "management-secret-value", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"codex":[{"name":"gpt-5","alias":"fast"}]}`))
+		_, _ = writer.Write([]byte(`{}`))
 	})
 	base := baseURL + "/omc/api/v1/management/auth-files/model-aliases"
 	for _, probe := range []struct {

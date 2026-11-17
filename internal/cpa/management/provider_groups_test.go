@@ -198,10 +198,23 @@ func TestOAuthMapsReadTheViewNotThePath(t *testing.T) {
 	if err != nil || len(excluded) != 0 {
 		t.Fatalf("excluded = %#v, err = %v", excluded, err)
 	}
-	for _, request := range gateway.sent() {
+	sent := gateway.sent()
+	if len(sent) != 2 {
+		t.Fatalf("requests = %v", sent)
+	}
+	for _, request := range sent {
 		if request != "GET /v8/management/config" {
-			t.Fatalf("requests = %v", gateway.sent())
+			t.Fatalf("requests = %v", sent)
 		}
+	}
+}
+
+func TestOAuthModelAliasesRefuseAMapOfTheWrongShape(t *testing.T) {
+	gateway := &configGateway{answer: func(method, path string) (int, string) {
+		return http.StatusOK, `{"oauth":{"model-alias":["not","a","map"]}}`
+	}}
+	if _, err := newConfigClient(t, gateway).OAuthModelAliases(context.Background()); err == nil || !strings.Contains(err.Error(), "oauth.model-alias") {
+		t.Fatalf("err = %v, want a decode error naming the path", err)
 	}
 }
 

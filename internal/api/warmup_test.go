@@ -624,6 +624,36 @@ func TestWarmupAutoModelRanksOAuthAliasesByTheirUpstream(t *testing.T) {
 	}
 }
 
+// Only the provider-wide rule can make "zeta" the mini model here; no credential rule names it.
+func TestWarmupAutoModelReadsProviderWideAliases(t *testing.T) {
+	for _, test := range []struct{ globalAliases, want string }{
+		{`{"codex":[{"name":"gpt-5.4-mini","alias":"zeta"}]}`, "zeta"},
+		{"", "gpt-5.2"},
+	} {
+		fixture := &warmupFixture{provider: "codex", models: []string{"gpt-5.2", "zeta"}, globalAliases: test.globalAliases}
+		handler := newWarmupHandler(t, fixture)
+		caller, baseURL := warmupHTTPClient(t, handler)
+		resp, err := caller.Get(baseURL + "/api/v1/management/quota/warmup/settings")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var state warmup.StateView
+		_ = json.NewDecoder(resp.Body).Decode(&state)
+		_ = resp.Body.Close()
+		var autoModel string
+		for _, group := range state.Catalog.Providers {
+			for _, account := range group.Accounts {
+				if account.AuthIndex == "exact-codex" {
+					autoModel = account.AutoModel
+				}
+			}
+		}
+		if autoModel != test.want {
+			t.Fatalf("aliases %q: auto model = %q, want %q", test.globalAliases, autoModel, test.want)
+		}
+	}
+}
+
 func TestWarmupCatalogExcludesImageGenerationModels(t *testing.T) {
 	fixture := &warmupFixture{provider: "codex", models: []string{"gpt-image-1", "gpt-5.4"}}
 	handler := newWarmupHandler(t, fixture)

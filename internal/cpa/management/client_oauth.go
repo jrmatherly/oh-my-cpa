@@ -301,30 +301,6 @@ func (c *Client) OAuthModelAliases(ctx context.Context) (map[string][]OAuthModel
 	return sanitizeOAuthModelAliases(stored), nil
 }
 
-// configViewValueAt decodes one path of the v8 view into output, which stays
-// untouched when the path is not set. It reads the whole view because CPA
-// answers a single unset path with 404 and logs a warning, and that answer also
-// makes the client forget the gateway serves v8. Use it for a path that is
-// ordinarily empty and that CPA does not rename when asked for by path.
-func (c *Client) configViewValueAt(ctx context.Context, path []string, output any) error {
-	view, _, err := c.ConfigView(ctx)
-	if err != nil {
-		return err
-	}
-	value, ok := ValueAt(view, path)
-	if !ok || value == nil {
-		return nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, output); err != nil {
-		return fmt.Errorf("decode %s: %w", strings.Join(path, "."), err)
-	}
-	return nil
-}
-
 // ResolveOAuthModelAlias returns the upstream model a credential's call point reaches. Rules are
 // ordered as CPA resolves them: the credential's own before its provider's, first match wins.
 // A call point no rule renames is its own upstream.

@@ -195,8 +195,8 @@ func TestModelSquareLiveDirectorySurvivesEnrichmentFailure(t *testing.T) {
 				case "/v8/management/credentials":
 					io.WriteString(writer, `{"files":[{"provider":"claude","models":[{"id":"scale-alias"}]},{"provider":"grok","models":[{"id":"scale-alias"}]},{"provider":"codex","name":"slow.json"}]}`)
 				case "/v8/management/config":
-					// The page reads its keys from this view after the sweep. It must not read aliases
-					// again, so none are offered then: a second read would change what it publishes.
+					// After the sweep the page reads only its keys from this view. No aliases are offered
+					// then, so a page that read them again would publish a different directory.
 					if isSweepOver.Load() {
 						io.WriteString(writer, `{"access":{"api-keys":["directory-cancel-fixture"]}}`)
 						return
@@ -224,6 +224,9 @@ func TestModelSquareLiveDirectorySurvivesEnrichmentFailure(t *testing.T) {
 			beforeResponse, before := getJSON(t, fixture.client, path)
 			if beforeResponse.StatusCode != http.StatusOK {
 				t.Fatalf("primed directory: %d %s", beforeResponse.StatusCode, before)
+			}
+			if !strings.Contains(string(before), "scale-first") {
+				t.Fatalf("primed directory carries no alias target: %s", before)
 			}
 			shouldCancel.Store(true)
 			if err := fixture.handler.RefreshModelSquareProvenance(ctx); !errors.Is(err, context.Canceled) {

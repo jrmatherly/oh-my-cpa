@@ -134,6 +134,9 @@ func TestManagementOAuthExcludedModelsRequireReadback(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"status":"ok"}`))
 	}
 	client, baseURL, _ := startAuthFilesTestServer(t, "management-secret-value", handler)
+	if _, listed := doJSON(t, client, http.MethodGet, baseURL+"/omc/api/v1/management/auth-files/excluded-models", ""); !strings.Contains(string(listed), "something-else") {
+		t.Fatalf("the gateway's stored rule is not what the console reads: %s", listed)
+	}
 	response, raw := doJSON(t, client, http.MethodPatch, baseURL+"/omc/api/v1/management/auth-files/excluded-models", `{"provider":"codex","models":["gpt-5"]}`)
 	if response.StatusCode != http.StatusBadGateway {
 		t.Fatalf("unverified write = %d body = %s, want 502", response.StatusCode, raw)
