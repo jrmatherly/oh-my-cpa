@@ -129,6 +129,13 @@ test('request export', () => {
     ).join('\n');
 
   const open = build(effectiveMasks([], []));
+  assert.ok(open.includes('Codex'), 'the sheet names the client as the list does');
+  const unrecognised = sheetStrings(buildRequestSheet({
+    rows: [{ ...events[0], client_agent: 'unknown', user_agent: 'weird/1.0' }],
+    masks: effectiveMasks([], []), colWidths: {}, caption: 'caption', t: (key) => key,
+    tokenStyle: 'en-compact', tpsMode: 'exclude_ttft', credentials,
+  }));
+  assert.ok(unrecognised.includes('weird/1.0'), 'an unrecognised client shows its User-Agent on the sheet');
   for (const value of [ACCOUNT, PROVIDER_KEY, 'laptop key', 'req-oauth', 'claude-opus']) {
     assert.ok(open.includes(value), `an unredacted sheet draws ${value}`);
   }

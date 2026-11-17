@@ -130,7 +130,7 @@ export default {
   'events.not_captured': 'Not captured',
   'events.unknown_provider': 'Provider not recorded',
   'events.unknown_credential': 'Credential not recorded',
-  'events.unknown_ua': 'Client not recorded',
+  'events.unknown_ua': 'Client not recognised',
   'events.no_request_id': 'No Request ID',
   'events.preflight': 'No generation',
   'events.oauth_badge': 'OAuth account',

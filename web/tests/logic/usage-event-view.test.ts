@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { eventClientId } from '../../src/types/clientAgents';
+import { eventClientId, unrecognisedClientText } from '../../src/types/clientAgents';
 import {
   readEventQuery,
   readFilterParams,
@@ -904,6 +904,11 @@ test('usage event view', () => {
   assert.equal(eventClientId({ client_agent: 'claude-code' }), 'claude-code');
   for (const absent of [undefined, '', '  ', 'unknown']) {
     assert.equal(eventClientId({ client_agent: absent }), undefined);
+  }
+  // An unrecognised client still shows the User-Agent the record carries.
+  assert.equal(unrecognisedClientText({ user_agent: ' weird/1.0 ' }), 'weird/1.0');
+  for (const absent of [undefined, null, '', '  ']) {
+    assert.equal(unrecognisedClientText({ user_agent: absent }), '—');
   }
 
 

@@ -38,7 +38,7 @@ import {
   eventKeyLabel,
   eventResultLabelKey,
 } from '../../types/usageEventLabels';
-import { clientDisplayName, eventClientId } from '../../types/clientAgents';
+import { clientDisplayName, eventClientId, unrecognisedClientText } from '../../types/clientAgents';
 import { ClientMark } from '../common/ClientMark';
 import { requestColumnAlignClass } from './requestColumns';
 import { ModelMark } from '../ModelMark';
@@ -573,8 +573,8 @@ export const RequestRow = React.memo<RequestRowProps>(
           </span>
         </div>
 
-        {/* Column 12: the client program, by its mark and name; the User-Agent
-            it was recognised from is the exact value behind it */}
+        {/* Column 12: the client program by its mark and name, with the stored User-Agent as the
+            tooltip; a record whose client was not recognised shows that User-Agent instead */}
         <div className={`req-col req-col-client ${requestColumnAlignClass('client')}`}>
           <span className="req-mobile-label">{t('events.col_client')}</span>
           {clientId ? (
@@ -586,7 +586,7 @@ export const RequestRow = React.memo<RequestRowProps>(
             </span>
           ) : (
             <span className="req-client-name is-empty" data-request-tooltip={userAgent || undefined} data-request-tooltip-overflow="">
-              {userAgent || '—'}
+              {unrecognisedClientText(event)}
             </span>
           )}
         </div>

@@ -16,7 +16,7 @@ interface OptionalSurfaceBoundaryState {
 }
 
 /** A failed optional module belongs to its surface, not the page that opened it. */
-class OptionalSurfaceBoundary extends React.Component<OptionalSurfaceBoundaryProps, OptionalSurfaceBoundaryState> {
+export class OptionalSurfaceBoundary extends React.Component<OptionalSurfaceBoundaryProps, OptionalSurfaceBoundaryState> {
   state: OptionalSurfaceBoundaryState = { error: undefined, hasError: false };
 
   static getDerivedStateFromError(error: unknown): OptionalSurfaceBoundaryState {

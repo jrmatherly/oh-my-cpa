@@ -665,7 +665,7 @@
   white-space: nowrap;
   max-width: 100%;
 }
-/* Column 10: the client, a mark before its name, read like the caller key beside it */
+/* Client: a mark before its name, read like the caller key beside it */
 .req-col-client {
   align-items: flex-start;
 }

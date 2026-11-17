@@ -1024,15 +1024,12 @@ func (r *Repository) AggregateUsageFacts(ctx context.Context, batchSize int) (in
 	if err := resetUsageStageBuffer(ctx, tx); err != nil {
 		return 0, err
 	}
-	defer func() { _, _ = tx.ExecContext(ctx, `DELETE FROM temp._omc_usage_stage_15m`) }()
 	if err := resetUsageFoldBuffer(ctx, tx); err != nil {
 		return 0, err
 	}
-	defer func() { _, _ = tx.ExecContext(ctx, `DELETE FROM temp._omc_usage_fold_15m`) }()
 	if err := resetClientUsageFoldBuffer(ctx, tx); err != nil {
 		return 0, err
 	}
-	defer func() { _, _ = tx.ExecContext(ctx, `DELETE FROM temp._omc_usage_client_fold_15m`) }()
 
 	_, err = tx.ExecContext(ctx, `
 		WITH s1 AS MATERIALIZED (

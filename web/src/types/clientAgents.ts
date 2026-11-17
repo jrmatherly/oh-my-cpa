@@ -247,6 +247,11 @@ export function eventClientId(event: Pick<UsageEvent, 'client_agent'>): string |
   return id && id !== 'unknown' ? id : undefined;
 }
 
+/** What a record shows where its client was not recognised: the User-Agent it sent, or a dash. */
+export function unrecognisedClientText(event: Pick<UsageEvent, 'user_agent'>): string {
+  return event.user_agent?.trim() || '—';
+}
+
 export function clientIconId(id: string): string | undefined {
   return hasOwn(CLIENT_ICONS, id) ? CLIENT_ICONS[id] : undefined;
 }

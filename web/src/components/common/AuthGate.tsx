@@ -23,6 +23,7 @@ import type { SignInStageState } from './SignInStage';
 import { clearMirroredCPAMCCredential } from '../plugins/pluginHostCredential';
 import { readKeepSignedIn, writeKeepSignedIn } from './keepSignedIn';
 import { createNamedLoader, lazyRoute } from '../../utils/routeLoader';
+import { OptionalSurfaceBoundary } from './DeferredMount';
 import { currentConsolePathname, preloadBootChunks, warmRouteIntent } from '../../routePreload';
 import { parseTimeZone, primeTimeZone } from '../../utils/time';
 import styles from './AuthGate.module.css';
@@ -284,9 +285,12 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
         </main>
       </div>
       {isStaged && (
-        <React.Suspense fallback={null}>
-          <LazySignInStage state={stageState} failures={failures} />
-        </React.Suspense>
+        // No route boundary sits above the gate: a stage that fails to load leaves the form usable.
+        <OptionalSurfaceBoundary fallback={null}>
+          <React.Suspense fallback={null}>
+            <LazySignInStage state={stageState} failures={failures} />
+          </React.Suspense>
+        </OptionalSurfaceBoundary>
       )}
     </div>
   );

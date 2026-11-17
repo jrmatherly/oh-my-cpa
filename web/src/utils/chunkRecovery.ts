@@ -45,8 +45,9 @@ export interface AttemptChunkReloadOptions {
 
 /**
  * Reloads the document once within `cooldownMs` when a stale HTML shell requests a retired chunk.
- * Returns `true` only when a reload is initiated so offline or persistently missing chunks fall
- * back to the error screen rather than looping.
+ * Returns `true` when a reload was started now or is still pending from this document; `false`
+ * when offline, inside the cooldown or without storage, so the caller shows the error screen
+ * rather than looping.
  */
 export function attemptChunkReload(options: AttemptChunkReloadOptions = {}): boolean {
   const now = options.now ?? (() => Date.now());

@@ -46,8 +46,10 @@ type LifecycleRule struct {
 	// absorbed it. The facts are the only thing left once the record is gone, so
 	// deleting first would lose its usage for good.
 	IsGatedByUsageFacts bool
-	// IsDerivedRollup marks rolling summary tables pruned alongside the policy's
-	// primary detail rows without adding rollup row counts to DeletedRows.
+	// IsDerivedRollup marks a summary table pruned to the same horizon as the
+	// policy's request records. Its deletions are reported in
+	// LifecycleReport.DeletedRollups and left out of Deleted and of the policy's
+	// stored deleted_rows.
 	IsDerivedRollup bool
 }
 

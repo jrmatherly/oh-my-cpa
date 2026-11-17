@@ -173,8 +173,8 @@ export const REQUEST_COLUMNS: readonly RequestColumnDefinition[] = [
     foldOrder: 2,
   },
   {
-    // The client program named by its mark and product name; the User-Agent it was read from is
-    // the cell's tooltip.
+    // The client program by its mark and product name, with the stored User-Agent as the tooltip;
+    // an unrecognised client shows the User-Agent itself.
     id: 'client',
     labelKey: 'events.col_client',
     align: 'left',

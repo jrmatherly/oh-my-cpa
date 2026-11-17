@@ -552,15 +552,45 @@ describe('DeferredMount', () => {
       expect(screen.queryByTestId('route-error-message')).toBeNull();
       reloadingView.unmount();
 
+      // A reload that never happens gives way to the diagnostics.
+      vi.useFakeTimers();
+      attemptSpy.mockReturnValueOnce(true);
+      const stalledRouter = createMemoryRouter([{ path: '/', element: <ThrowingRoute />, errorElement: <RouteErrorPage /> }]);
+      const stalledView = renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={stalledRouter} />
+        </ThemeProvider>,
+      );
+      expect(screen.queryByTestId('route-error-message')).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(4000));
+      expect(screen.getByTestId('route-error-message').textContent).toBe('Importing a module script failed.');
+      vi.useRealTimers();
+      stalledView.unmount();
+
       attemptSpy.mockReturnValueOnce(false);
       const throttledRouter = createMemoryRouter([{ path: '/', element: <ThrowingRoute />, errorElement: <RouteErrorPage /> }]);
-      renderWithOmc(
+      const throttledView = renderWithOmc(
         <ThemeProvider>
           <RouterProvider router={throttledRouter} />
         </ThemeProvider>,
       );
       expect((await screen.findByTestId('route-error-message')).textContent).toBe('Importing a module script failed.');
+      throttledView.unmount();
+
+      // An ordinary render error is shown, never answered with a reload.
+      function BrokenRoute(): React.ReactNode {
+        throw new Error('boom');
+      }
+      const brokenRouter = createMemoryRouter([{ path: '/', element: <BrokenRoute />, errorElement: <RouteErrorPage /> }]);
+      renderWithOmc(
+        <ThemeProvider>
+          <RouterProvider router={brokenRouter} />
+        </ThemeProvider>,
+      );
+      expect((await screen.findByTestId('route-error-message')).textContent).toBe('boom');
+      expect(attemptSpy).toHaveBeenCalledTimes(3);
     } finally {
+      vi.useRealTimers();
       attemptSpy.mockRestore();
       chunkRecovery.clearChunkReloadPending();
     }
