@@ -1995,3 +1995,287 @@ func TestMigration069BackfillsClientPrefixAndPopulatesClientRollups(t *testing.T
 		t.Fatalf("expected repriced cost on one request in client rollup, got %+v", *repriced)
 	}
 }
+
+func TestMigration070RepairsCodexDesktopClientAgentAndMergesRollups(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, "file:mig070_codex_desktop?mode=memory&cache=shared", withMigrationsUntil(69))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.SQL.ExecContext(ctx, `INSERT INTO cpa_instances
+		(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default', 'Default', 'http://127.0.0.1:8317', '', x'00', x'00', 'unknown', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dayStart := int64(1700006400000) // UTC midnight
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			client_agent, client_prefix, user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		) VALUES
+			('default', 'folded-desktop-fallback', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex', 'Codex', 'Codex', ?, 0, 100, 50, 150, 'unpriced'),
+			('default', 'folded-codex-versioned', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex-cli', 'Codex', 'Codex/0.150.0', ?, 0, 200, 80, 280, 'unpriced'),
+			('default', 'folded-chatgpt-desktop', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex_chatgpt_desktop', 'codex_chatgpt_desktop', 'codex_chatgpt_desktop/1.0.0', ?, 0, 50, 10, 60, 'unpriced'),
+			('default', 'folded-codex-cli-rs', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex-cli', 'codex_cli_rs', 'codex_cli_rs/0.47.0', ?, 0, 300, 100, 400, 'unpriced')`,
+		dayStart+1000, dayStart+2000, dayStart+3000, dayStart+4000); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := New(db)
+	if folded, err := repo.AggregateUsageFacts(ctx, 100); err != nil || folded != 4 {
+		t.Fatalf("AggregateUsageFacts pre-070 = %d err=%v", folded, err)
+	}
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			client_agent, client_prefix, user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		) VALUES
+			('default', 'tail-desktop-fallback', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex', 'Codex', 'Codex', ?, 0, 40, 20, 60, 'unpriced')`,
+		dayStart+DayBucketMS+1000); err != nil {
+		t.Fatal(err)
+	}
+
+	db.migrateUntil = 0
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(070) failed: %v", err)
+	}
+
+	var leftoverEvents, leftoverFine, leftoverDaily int
+	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events WHERE client_agent <> ?`, usage.ClientAgentCodexCLI).Scan(&leftoverEvents); err != nil || leftoverEvents != 0 {
+		t.Fatalf("expected 0 non-codex-cli usage_events rows, got %d (err=%v)", leftoverEvents, err)
+	}
+	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_client_facts_15m WHERE client_agent <> ?`, usage.ClientAgentCodexCLI).Scan(&leftoverFine); err != nil || leftoverFine != 0 {
+		t.Fatalf("expected 0 non-codex-cli 15m rows, got %d (err=%v)", leftoverFine, err)
+	}
+	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_client_facts_daily WHERE client_agent <> ?`, usage.ClientAgentCodexCLI).Scan(&leftoverDaily); err != nil || leftoverDaily != 0 {
+		t.Fatalf("expected 0 non-codex-cli daily rows, got %d (err=%v)", leftoverDaily, err)
+	}
+
+	var mergedReqs, mergedPrompt, mergedComp, mergedTotal int64
+	if err := db.SQL.QueryRowContext(ctx, `
+		SELECT requests, prompt_tokens, completion_tokens, effective_total_tokens
+		FROM usage_client_facts_daily
+		WHERE instance_id = 'default' AND client_agent = ? AND client_prefix = 'Codex'`,
+		usage.ClientAgentCodexCLI,
+	).Scan(&mergedReqs, &mergedPrompt, &mergedComp, &mergedTotal); err != nil {
+		t.Fatalf("query merged daily row: %v", err)
+	}
+	if mergedReqs != 2 || mergedPrompt != 300 || mergedComp != 130 || mergedTotal != 430 {
+		t.Fatalf("merged daily row = (reqs=%d, prompt=%d, comp=%d, total=%d), want (2, 300, 130, 430)",
+			mergedReqs, mergedPrompt, mergedComp, mergedTotal)
+	}
+
+	res, err := repo.QueryUsageClientAgents(ctx, "default", dayStart, dayStart+2*DayBucketMS-1, nil)
+	if err != nil {
+		t.Fatalf("QueryUsageClientAgents failed: %v", err)
+	}
+	if res.RetainedRequests != 5 || len(res.Items) != 1 {
+		t.Fatalf("QueryUsageClientAgents = %+v, want RetainedRequests=5 and 1 unified item", res)
+	}
+	if got := res.Items[0]; got.ID != usage.ClientAgentCodexCLI || got.Category != string(usage.ClientAgentCategoryAgent) || got.Requests != 5 || got.TotalTokens != 950 || got.RawPrefix != "Codex" {
+		t.Fatalf("unified codex client item = %+v", got)
+	}
+
+	eventsPage, err := repo.ListUsageEvents(ctx, UsageEventFilter{
+		InstanceID:   "default",
+		FromMS:       dayStart,
+		ToMS:         dayStart + 2*DayBucketMS - 1,
+		ClientAgents: []string{usage.ClientAgentCodexCLI},
+		Limit:        10,
+	})
+	if err != nil || len(eventsPage.Items) != 5 {
+		t.Fatalf("ListUsageEvents(client_agent=codex-cli) = %d items (err=%v), want 5", len(eventsPage.Items), err)
+	}
+
+	// Verify tail folding and re-running the repair hook after 070 remain clean and idempotent.
+	if foldedTail, err := repo.AggregateUsageFacts(ctx, 100); err != nil || foldedTail != 1 {
+		t.Fatalf("AggregateUsageFacts post-070 = %d err=%v", foldedTail, err)
+	}
+	postFold, err := repo.QueryUsageClientAgents(ctx, "default", dayStart, dayStart+2*DayBucketMS-1, nil)
+	if err != nil || postFold.RetainedRequests != 5 || len(postFold.Items) != 1 || postFold.Items[0].Requests != 5 {
+		t.Fatalf("QueryUsageClientAgents post-fold = %+v (err=%v)", postFold, err)
+	}
+}
+
+func TestMigration066To070PreservesMinimizedCodexDesktopAttribution(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, "file:mig066_to_070_codex?mode=memory&cache=shared", withMigrationsUntil(66))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.SQL.ExecContext(ctx, `INSERT INTO cpa_instances
+		(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default', 'Default', 'http://127.0.0.1:8317', '', x'00', x'00', 'unknown', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dayStart := int64(1700006400000) // UTC midnight
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		) VALUES
+			('default', 'hist-066-desktop', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'Codex', ?, 0, 120, 30, 150, 'unpriced'),
+			('default', 'hist-066-cli', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex_cli_rs/0.47.0', ?, 0, 80, 20, 100, 'unpriced');
+		INSERT INTO usage_facts_15m (
+			instance_id, bucket_start_ms, api_group_key, model, provider,
+			requests, input_tokens, output_tokens, total_tokens
+		) VALUES ('default', ?, 'hmac:k1', 'gpt-5', 'codex', 1, 120, 30, 150);
+		INSERT INTO usage_facts_daily (
+			instance_id, bucket_start_ms, api_group_key, model, provider,
+			requests, input_tokens, output_tokens, total_tokens
+		) VALUES ('default', ?, 'hmac:k1', 'gpt-5', 'codex', 1, 120, 30, 150);
+		UPDATE usage_aggregation_checkpoints SET last_usage_event_id = 1 WHERE name = 'facts'`,
+		dayStart+1000, dayStart+2000, dayStart, dayStart); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := New(db)
+	db.migrateUntil = 0
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(066->070) failed: %v", err)
+	}
+
+	var storedAgent, storedPrefix string
+	if err := db.SQL.QueryRowContext(ctx, `SELECT client_agent, client_prefix FROM usage_events WHERE event_key = 'hist-066-desktop'`).Scan(&storedAgent, &storedPrefix); err != nil {
+		t.Fatal(err)
+	}
+	if storedAgent != usage.ClientAgentCodexCLI || storedPrefix != "Codex" {
+		t.Fatalf("hist-066-desktop = (%q, %q), want (%q, %q)", storedAgent, storedPrefix, usage.ClientAgentCodexCLI, "Codex")
+	}
+
+	res, err := repo.QueryUsageClientAgents(ctx, "default", dayStart, dayStart+DayBucketMS-1, nil)
+	if err != nil {
+		t.Fatalf("QueryUsageClientAgents failed: %v", err)
+	}
+	if res.RetainedRequests != 2 || len(res.Items) != 1 {
+		t.Fatalf("QueryUsageClientAgents = %+v, want RetainedRequests=2 and 1 unified item", res)
+	}
+	if got := res.Items[0]; got.ID != usage.ClientAgentCodexCLI || got.Category != string(usage.ClientAgentCategoryAgent) || got.Requests != 2 || got.TotalTokens != 250 {
+		t.Fatalf("QueryUsageClientAgents item = %+v, want unified codex-cli with 2 requests and 250 tokens", got)
+	}
+
+	eventsPage, err := repo.ListUsageEvents(ctx, UsageEventFilter{
+		InstanceID:   "default",
+		FromMS:       dayStart,
+		ToMS:         dayStart + DayBucketMS - 1,
+		ClientAgents: []string{usage.ClientAgentCodexCLI},
+		Limit:        10,
+	})
+	if err != nil || len(eventsPage.Items) != 2 {
+		t.Fatalf("ListUsageEvents(client_agent=codex-cli) = %d items (err=%v), want 2", len(eventsPage.Items), err)
+	}
+}
+
+func TestMigration068To070PreservesCodexAliasPrefix(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, "file:mig068_to_070_codex_alias?mode=memory&cache=shared", withMigrationsUntil(68))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.SQL.ExecContext(ctx, `INSERT INTO cpa_instances
+		(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default', 'Default', 'http://127.0.0.1:8317', '', x'00', x'00', 'unknown', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dayStart := int64(1700006400000) // UTC midnight
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			client_agent, user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		) VALUES
+			('default', 'hist-068-chatgpt-desktop', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex_chatgpt_desktop', 'codex_chatgpt_desktop/1.0.0', ?, 0, 100, 25, 125, 'unpriced'),
+			('default', 'hist-068-tail', 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			 'codex', 'Codex', ?, 0, 60, 15, 75, 'unpriced');
+		UPDATE usage_aggregation_checkpoints SET last_usage_event_id = 1 WHERE name = 'facts'`,
+		dayStart+1000, dayStart+2000); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := New(db)
+	db.migrateUntil = 0
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(068->070) failed: %v", err)
+	}
+
+	var storedAgent, storedPrefix string
+	if err := db.SQL.QueryRowContext(ctx, `SELECT client_agent, client_prefix FROM usage_events WHERE event_key = 'hist-068-chatgpt-desktop'`).Scan(&storedAgent, &storedPrefix); err != nil {
+		t.Fatal(err)
+	}
+	if storedAgent != usage.ClientAgentCodexCLI || storedPrefix != "codex_chatgpt_desktop" {
+		t.Fatalf("hist-068-chatgpt-desktop = (%q, %q), want (%q, %q)", storedAgent, storedPrefix, usage.ClientAgentCodexCLI, "codex_chatgpt_desktop")
+	}
+	if err := db.SQL.QueryRowContext(ctx, `SELECT client_agent, client_prefix FROM usage_events WHERE event_key = 'hist-068-tail'`).Scan(&storedAgent, &storedPrefix); err != nil {
+		t.Fatal(err)
+	}
+	if storedAgent != usage.ClientAgentCodexCLI || storedPrefix != "Codex" {
+		t.Fatalf("hist-068-tail = (%q, %q), want (%q, %q)", storedAgent, storedPrefix, usage.ClientAgentCodexCLI, "Codex")
+	}
+
+	res, err := repo.QueryUsageClientAgents(ctx, "default", dayStart, dayStart+DayBucketMS-1, nil)
+	if err != nil {
+		t.Fatalf("QueryUsageClientAgents failed: %v", err)
+	}
+	if res.RetainedRequests != 2 || len(res.Items) != 1 {
+		t.Fatalf("QueryUsageClientAgents = %+v, want RetainedRequests=2 and 1 unified item", res)
+	}
+	if got := res.Items[0]; got.ID != usage.ClientAgentCodexCLI || got.Requests != 2 || got.TotalTokens != 200 || got.RawPrefix == "" {
+		t.Fatalf("QueryUsageClientAgents item = %+v, want unified codex-cli with retained prefix", got)
+	}
+}
+
+// TestMigration070RepairsEveryBatchOfLegacyCodexEvents runs the repair over more request
+// records than one scan batch holds, so a row beyond the first update chunk or the first
+// batch cannot keep its legacy client.
+func TestMigration070RepairsEveryBatchOfLegacyCodexEvents(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, "file:mig069_to_070_codex_batches?mode=memory&cache=shared", withMigrationsUntil(69))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rows := clientBackfillBatchRows + 1
+	if _, err := db.SQL.ExecContext(ctx, `
+		INSERT INTO cpa_instances
+			(id, name, base_url, usage_addr, management_key_ciphertext, management_key_nonce, status, created_at, updated_at)
+		VALUES ('default', 'Default', 'http://127.0.0.1:8317', '', x'00', x'00', 'unknown', 0, 0);
+		WITH RECURSIVE sequence(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM sequence WHERE n < ?)
+		INSERT INTO usage_events (
+			instance_id, event_key, api_group_key, provider, endpoint, model, generate,
+			client_agent, user_agent, timestamp_ms, created_at_ms, input_tokens, output_tokens, total_tokens, pricing_status
+		)
+		SELECT 'default', 'legacy-codex-' || n, 'hmac:k1', 'codex', 'POST /v1/responses', 'gpt-5', 1,
+			'codex', 'Codex', 1700006400000 + n, 0, 1, 1, 2, 'unpriced'
+		FROM sequence`, rows); err != nil {
+		t.Fatal(err)
+	}
+
+	db.migrateUntil = 0
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(069->070) failed: %v", err)
+	}
+
+	var repaired, legacy int
+	if err := db.SQL.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(client_agent = ?), 0), COALESCE(SUM(client_agent <> ?), 0) FROM usage_events`,
+		usage.ClientAgentCodexCLI, usage.ClientAgentCodexCLI).Scan(&repaired, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if repaired != rows || legacy != 0 {
+		t.Fatalf("repaired %d of %d request records, %d kept a legacy client", repaired, rows, legacy)
+	}
+}

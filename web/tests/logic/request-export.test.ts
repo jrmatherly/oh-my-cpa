@@ -128,8 +128,22 @@ test('request export', () => {
       }),
     ).join('\n');
 
-  const open = build(effectiveMasks([], []));
-  assert.ok(open.includes('Codex'), 'the sheet names the client as the list does');
+  const openSheet = buildRequestSheet({
+    rows: events,
+    masks: effectiveMasks([], []),
+    colWidths: {},
+    caption: 'caption',
+    t: (key) => key,
+    tokenStyle: 'en-compact',
+    tpsMode: 'exclude_ttft',
+    credentials,
+  });
+  assert.deepEqual(openSheet.rows[0].cells.client.lines, [[
+    { kind: 'mark', mark: { iconId: 'Codex' } },
+    { kind: 'text', text: 'Codex', tone: 'fg2', size: 12, weight: 500, isMono: false },
+  ]], 'a Codex client draws its brand mark before the Codex label');
+
+  const open = sheetStrings(openSheet).join('\n');
   const unrecognised = sheetStrings(buildRequestSheet({
     rows: [{ ...events[0], client_agent: 'unknown', user_agent: 'weird/1.0' }],
     masks: effectiveMasks([], []), colWidths: {}, caption: 'caption', t: (key) => key,
