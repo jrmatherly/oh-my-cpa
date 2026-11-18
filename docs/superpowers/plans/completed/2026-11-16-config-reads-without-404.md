@@ -10,6 +10,8 @@
 
 **Spec:** None. The findings below are the specification; they were measured on 2026-11-16 against `eceasy/cli-proxy-api:v8.0.76` (digest `sha256:d205abff…`, the image home-cluster runs) and read in CPA's source at tag `v8.0.76`.
 
+**Status:** Completed. All four tasks merged in PR 19 on 2026-11-17 and shipped in v1.1.0. The body below is kept as it was written.
+
 ## Findings this plan rests on
 
 | # | Finding | Evidence |
@@ -91,7 +93,7 @@ Not in scope, by decision: a plugin page's own request to `/v8/management/config
 - Produces: `storedKeyGroups(ctx, path) ([]map[string]any, error)`, signature unchanged, now view-backed. `configValueAt` is still used by Task 2's files until that task.
 - Produces, test-only, in `internal/api/cpa_v8_groups_test.go`: `func providerGroupsView(families []string, lists func(family string) *[]map[string]any, stored map[string][]map[string]any) map[string][]map[string]any`. It returns the value a fake puts under `"api-keys"` in its view reply, built the way `serveProviderGroups` builds a path reply (stored groups when present, otherwise `groupFlatList`), and omits a family with no entries. Fakes in `internal/api` call it so the view and the write routes read one state.
 
-- [ ] **Step 1: Write the failing tests** in `provider_groups_test.go`. Add a `pathReads int` counter to `groupsGateway`, incremented in its `GET /v8/management/config/api-keys/<family>` case.
+- [x] **Step 1: Write the failing tests** in `provider_groups_test.go`. Add a `pathReads int` counter to `groupsGateway`, incremented in its `GET /v8/management/config/api-keys/<family>` case.
 
 ```go
 func TestStoredKeyGroupsReadFromTheViewWithoutAskingForThePath(t *testing.T) {
@@ -109,30 +111,30 @@ func TestStoredKeyGroupsRefuseAFamilyOfTheWrongShape(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and confirm they fail**
+- [x] **Step 2: Run them and confirm they fail**
 
 Run: `go test ./internal/cpa/management -run 'TestStoredKeyGroups' -count=1`
 Expected: FAIL. The first two fail on `pathReads` (1, want 0); the third fails because the fixture has no view route yet.
 
-- [ ] **Step 3: Serve the groups in the fixture's view.** In `groupsGateway.handler`, add `GET /v8/management/config` answering `{"config-version":8}` when `g.stored == ""` and `{"config-version":8,"api-keys":{"<family>":<g.stored>}}` otherwise. Keep the path case for one more step so the counter can prove it is unused.
+- [x] **Step 3: Serve the groups in the fixture's view.** In `groupsGateway.handler`, add `GET /v8/management/config` answering `{"config-version":8}` when `g.stored == ""` and `{"config-version":8,"api-keys":{"<family>":<g.stored>}}` otherwise. Keep the path case for one more step so the counter can prove it is unused.
 
-- [ ] **Step 4: Change `storedKeyGroups`** to call `c.configViewValueAt(ctx, path, &groups)`. Update the `configViewValueAt` comment: drop the sentence "Use it for a path that is ordinarily empty"; it is now the only config reader.
+- [x] **Step 4: Change `storedKeyGroups`** to call `c.configViewValueAt(ctx, path, &groups)`. Update the `configViewValueAt` comment: drop the sentence "Use it for a path that is ordinarily empty"; it is now the only config reader.
 
-- [ ] **Step 5: Run the package**
+- [x] **Step 5: Run the package**
 
 Run: `go test -short ./internal/cpa/management -count=1`
 Expected: the three new tests PASS. Other tests in the package that serve groups by path now FAIL; that is the list to fix in step 6.
 
-- [ ] **Step 6: Move every remaining fixture.** For each file in both Fixtures lists, make the fake's `GET /v8/management/config` reply carry `"api-keys": {"<family>": [...]}` with the data its `GET .../config/api-keys/<family>` case served, then delete that GET case (in `serveProviderGroups`, narrow the first case to `DELETE`). Leave `DELETE` and `PATCH` cases alone: writes still address the path. Where a fixture already answers `/v8/management/config` for aliases or scalars, merge the key into that reply. `TestManagementProviderListFallsBackWhenStoredGroupsFail` simulates a failed stored-group read by failing the path; make it fail the view read instead, and keep its assertion that the family stays visible from the runtime list. Do not touch `internal/api/management_plugin_host_test.go` or `client_plugin_host_test.go`: those exercise a plugin page's own proxied request.
+- [x] **Step 6: Move every remaining fixture.** For each file in both Fixtures lists, make the fake's `GET /v8/management/config` reply carry `"api-keys": {"<family>": [...]}` with the data its `GET .../config/api-keys/<family>` case served, then delete that GET case (in `serveProviderGroups`, narrow the first case to `DELETE`). Leave `DELETE` and `PATCH` cases alone: writes still address the path. Where a fixture already answers `/v8/management/config` for aliases or scalars, merge the key into that reply. `TestManagementProviderListFallsBackWhenStoredGroupsFail` simulates a failed stored-group read by failing the path; make it fail the view read instead, and keep its assertion that the family stays visible from the runtime list. Do not touch `internal/api/management_plugin_host_test.go` or `client_plugin_host_test.go`: those exercise a plugin page's own proxied request.
 
-- [ ] **Step 7: Prove each moved fixture is load-bearing.** For each fixture, blank the `api-keys` value once, run the tests in that file, confirm at least one fails, restore it. For the three silent-pass files, a blanked value that fails nothing means no test there depends on stored groups: say so in the PR and leave the fixture serving the view, rather than inventing a test.
+- [x] **Step 7: Prove each moved fixture is load-bearing.** For each fixture, blank the `api-keys` value once, run the tests in that file, confirm at least one fails, restore it. For the three silent-pass files, a blanked value that fails nothing means no test there depends on stored groups: say so in the PR and leave the fixture serving the view, rather than inventing a test.
 
-- [ ] **Step 8: Run both packages**
+- [x] **Step 8: Run both packages**
 
 Run: `go test -short ./internal/cpa/... ./internal/api/... -count=1`
 Expected: PASS.
 
-- [ ] **Step 9: Commit** (ask first)
+- [x] **Step 9: Commit** (ask first)
 
 ```bash
 git add internal/cpa/management internal/api
@@ -151,7 +153,7 @@ git commit -m "fix(cpa): read stored key groups without a 404"
 - Consumes: `configViewValueAt` (exists).
 - Produces: `PluginConfig`, `SetPluginEnabled`, `SetPluginConfig` with unchanged signatures and unchanged results. `configValueAt` and `isConfigPathMissing` no longer exist.
 
-- [ ] **Step 1: Tighten the existing test and add the write-side one.** In `TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne`, replace the fixture's path case with `/v8/management/config` answering `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"}}}}`, and assert:
+- [x] **Step 1: Tighten the existing test and add the write-side one.** In `TestPluginConfigTellsAnUnconfiguredPluginFromAnUnknownOne`, replace the fixture's path case with `/v8/management/config` answering `{"plugins":{"enabled":false,"configs":{"configured":{"level":"info"}}}}`, and assert:
 
 ```go
 // "installed" (in /plugins, absent from configs): config is empty map, err == nil
@@ -162,25 +164,25 @@ git commit -m "fix(cpa): read stored key groups without a 404"
 
 Add `TestPluginWritesAcceptAConfiguredPluginThatIsNotInstalled`: with the same view, `SetPluginEnabled(ctx, "configured", true)` succeeds and `SetPluginEnabled(ctx, "ghost", true)` returns `plugin_not_found`, again with no path GET.
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `go test ./internal/cpa/management -run 'TestPlugin' -count=1`
 Expected: FAIL on the "no path GET" assertion.
 
-- [ ] **Step 3: Change the two readers.** In both `requireKnownPlugin` and `PluginConfig`, decode through `configViewValueAt` into a `map[string]any` and take `configured := config != nil`. A plugin whose stored settings are the empty object `{}` decodes to a non-nil map and stays "configured", as today.
+- [x] **Step 3: Change the two readers.** In both `requireKnownPlugin` and `PluginConfig`, decode through `configViewValueAt` into a `map[string]any` and take `configured := config != nil`. A plugin whose stored settings are the empty object `{}` decodes to a non-nil map and stays "configured", as today.
 
-- [ ] **Step 4: Delete `configValueAt` and `isConfigPathMissing`** from `provider_groups.go` and drop the imports they alone used (`net/http` if nothing else in the file needs it). Confirm: `grep -rn "configValueAt\|isConfigPathMissing" internal` prints nothing.
+- [x] **Step 4: Delete `configValueAt` and `isConfigPathMissing`** from `provider_groups.go` and drop the imports they alone used (`net/http` if nothing else in the file needs it). Confirm: `grep -rn "configValueAt\|isConfigPathMissing" internal` prints nothing.
 
-- [ ] **Step 5: Move the plugin fixtures.** In `internal/api/management_plugins_test.go`, serve the settings the `pluginConfigsPath` GET case served inside the `/v8/management/config` reply under `plugins.configs`, and delete that GET case (keep `PUT`). `TestPluginsLifecycle` is the test that fails until this is done (F10). In `internal/demo/demo_test.go`, remove `managementPrefix + "/config/plugins/configs/usage-exporter"` from the list of endpoints the console reads. That test does not fail either way; the entry is removed because the console no longer makes that request. `internal/demo/upstream.go` serves a path by walking the whole view, so the demo needs no other change.
+- [x] **Step 5: Move the plugin fixtures.** In `internal/api/management_plugins_test.go`, serve the settings the `pluginConfigsPath` GET case served inside the `/v8/management/config` reply under `plugins.configs`, and delete that GET case (keep `PUT`). `TestPluginsLifecycle` is the test that fails until this is done (F10). In `internal/demo/demo_test.go`, remove `managementPrefix + "/config/plugins/configs/usage-exporter"` from the list of endpoints the console reads. That test does not fail either way; the entry is removed because the console no longer makes that request. `internal/demo/upstream.go` serves a path by walking the whole view, so the demo needs no other change.
 
-- [ ] **Step 6: Prove the fixtures are load-bearing**, as in Task 1 step 7, by blanking `plugins.configs` once per fixture.
+- [x] **Step 6: Prove the fixtures are load-bearing**, as in Task 1 step 7, by blanking `plugins.configs` once per fixture.
 
-- [ ] **Step 7: Run**
+- [x] **Step 7: Run**
 
 Run: `go test -short ./internal/cpa/... ./internal/api/... ./internal/demo/... -count=1`
 Expected: PASS.
 
-- [ ] **Step 8: Commit** (ask first)
+- [x] **Step 8: Commit** (ask first)
 
 ```bash
 git add internal/cpa/management internal/api internal/demo
@@ -208,7 +210,7 @@ func WithSharedConfigView(ctx context.Context) context.Context
 
 `ConfigView(ctx)` keeps its signature. On a context from `WithSharedConfigView` it fetches once (`sync.Once`) and returns the same view, `ResponseMeta` and error to every caller; on any other context it fetches every time. The memo lives on the context, in the style of `WithBackupReason` (`config_backup.go:60`). Every existing caller treats the view as read-only (`ValueAt`, or a JSON round trip in `configViewValueAt`), which is what makes sharing the map safe; say so in the comment.
 
-- [ ] **Step 1: Write the failing tests** in `client_config_test.go`, using `configGateway.requests` to count `GET /v8/management/config`:
+- [x] **Step 1: Write the failing tests** in `client_config_test.go`, using `configGateway.requests` to count `GET /v8/management/config`:
 
 ```go
 func TestSharedConfigViewFetchesOncePerContext(t *testing.T) {
@@ -231,31 +233,31 @@ func TestSharedConfigViewsDoNotLeakBetweenContexts(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `go test ./internal/cpa/management -run 'ConfigView' -count=1`
 Expected: FAIL to compile, `undefined: WithSharedConfigView`.
 
-- [ ] **Step 3: Implement** `WithSharedConfigView` and the memo check at the top of `ConfigView`.
+- [x] **Step 3: Implement** `WithSharedConfigView` and the memo check at the top of `ConfigView`.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./internal/cpa/management -run 'ConfigView' -count=1 -race`
 Expected: PASS, no race.
 
-- [ ] **Step 5: Write the loader test** in `state_coordinator_test.go`: `TestProjectedStateLoadReadsTheConfigViewOnce` builds a handler over a fake gateway that counts `GET /v8/management/config`, runs `loadUpstreamProjectedState`, and asserts the count is 1 and that no request path has the prefix `/v8/management/config/api-keys/` or `/v8/management/config/oauth/`.
+- [x] **Step 5: Write the loader test** in `state_coordinator_test.go`: `TestProjectedStateLoadReadsTheConfigViewOnce` builds a handler over a fake gateway that counts `GET /v8/management/config`, runs `loadUpstreamProjectedState`, and asserts the count is 1 and that no request path has the prefix `/v8/management/config/api-keys/` or `/v8/management/config/oauth/`.
 
 Run: `go test ./internal/api -run TestProjectedStateLoadReadsTheConfigViewOnce -count=1`
 Expected: FAIL, the count is greater than 1 (11 against a real gateway, F6).
 
-- [ ] **Step 6: Opt the two loaders in.** First statement after the client is resolved in `loadUpstreamProjectedState` and in `readProviderItemsUpstreamWithStatus`: `ctx = management.WithSharedConfigView(ctx)`. Nowhere else. In particular not in any `Flush` in `registerCoordinatorDomains`, `management_provider_list_mutation.go`, `provider_family_move.go` or `management_plugins.go`: those write.
+- [x] **Step 6: Opt the two loaders in.** First statement after the client is resolved in `loadUpstreamProjectedState` and in `readProviderItemsUpstreamWithStatus`: `ctx = management.WithSharedConfigView(ctx)`. Nowhere else. In particular not in any `Flush` in `registerCoordinatorDomains`, `management_provider_list_mutation.go`, `provider_family_move.go` or `management_plugins.go`: those write.
 
-- [ ] **Step 7: Run**
+- [x] **Step 7: Run**
 
 Run: `go test -short ./internal/cpa/... ./internal/api/... -count=1 -race`
 Expected: PASS.
 
-- [ ] **Step 8: Commit** (ask first)
+- [x] **Step 8: Commit** (ask first)
 
 ```bash
 git add internal/cpa/management internal/api
@@ -272,21 +274,21 @@ git commit -m "perf(cpa): share one config view across a state load"
 **Interfaces:**
 - Consumes: everything above.
 
-- [ ] **Step 1: Make the fake's whole view carry what the console now reads there.** In the `GET /v8/management/config` case, add `'api-keys'` built the way the `api-keys` path case builds it (`groupEntries(family, list.get())` per family in `providerLists`), omitting a family whose list is empty and omitting the key when none is set, and add `plugins: {...configDoc.plugins, configs: Object.fromEntries(pluginConfigs)}`, omitting `configs` when the map is empty. Delete the two `GET` branches for `api-keys/<family>` and `plugins/configs/<id>`; keep their `DELETE` and `PUT` branches and the bare `api-keys` GET that the plugin host test page calls.
+- [x] **Step 1: Make the fake's whole view carry what the console now reads there.** In the `GET /v8/management/config` case, add `'api-keys'` built the way the `api-keys` path case builds it (`groupEntries(family, list.get())` per family in `providerLists`), omitting a family whose list is empty and omitting the key when none is set, and add `plugins: {...configDoc.plugins, configs: Object.fromEntries(pluginConfigs)}`, omitting `configs` when the map is empty. Delete the two `GET` branches for `api-keys/<family>` and `plugins/configs/<id>`; keep their `DELETE` and `PUT` branches and the bare `api-keys` GET that the plugin host test page calls.
 
-- [ ] **Step 2: Add the deviations row** in `.claude/skills/upstream-review/SKILL.md`, same four columns as the row above it: what upstream does (`storedKeyGroups`, `PluginConfig` and `requireKnownPlugin` fetch one path each, 404 while unset, the 404 drops the cached v8 answer), what the fork does (all read the view through `configViewValueAt`; `configValueAt` is deleted; `WithSharedConfigView` gives a state load one fetch), `landed <date>`, and the merge rule (ADAPT: keep the view read; an upstream test that adds a per-path GET case needs its data moved into the view reply; an upstream call to `configValueAt` will not compile, which is the prompt to move it). Also edit the PR 18 row's last sentence, which says `PluginConfig` and `storedKeyGroups` "still read by path".
+- [x] **Step 2: Add the deviations row** in `.claude/skills/upstream-review/SKILL.md`, same four columns as the row above it: what upstream does (`storedKeyGroups`, `PluginConfig` and `requireKnownPlugin` fetch one path each, 404 while unset, the 404 drops the cached v8 answer), what the fork does (all read the view through `configViewValueAt`; `configValueAt` is deleted; `WithSharedConfigView` gives a state load one fetch), `landed <date>`, and the merge rule (ADAPT: keep the view read; an upstream test that adds a per-path GET case needs its data moved into the view reply; an upstream call to `configValueAt` will not compile, which is the prompt to move it). Also edit the PR 18 row's last sentence, which says `PluginConfig` and `storedKeyGroups` "still read by path".
 
-- [ ] **Step 3: Static and fast checks**
+- [x] **Step 3: Static and fast checks**
 
 Run: `gofmt -l internal && golangci-lint run ./internal/cpa/... ./internal/api/... && pnpm test:fast && pnpm check:openapi && pnpm check:english`
 Expected: no output from `gofmt`, every command exits 0, `swagger.json` unchanged.
 
-- [ ] **Step 4: Browser smoke on the built artifact**
+- [x] **Step 4: Browser smoke on the built artifact**
 
 Run: `pnpm build && pnpm verify:browser:smoke`
 Expected: PASS. A failure on the providers or plugins page here means step 1 left data out of the view.
 
-- [ ] **Step 5: Prove it on the real gateway.** This repeats the F6 measurement on the finished code.
+- [x] **Step 5: Prove it on the real gateway.** This repeats the F6 measurement on the finished code.
 
 Start the gateway with the starter configuration, so every key family and every plugin is unset:
 
@@ -304,11 +306,11 @@ Expected: `2`, one for the shared load and one for the plugin read.
 
 Delete the test file, run `git status --short` to confirm it is gone, and `docker rm -f omc-cpa-probe`.
 
-- [ ] **Step 6: Commit** (ask first)
+- [x] **Step 6: Commit** (ask first)
 
 ```bash
 git add scripts/fake-cpa.mjs .claude/skills/upstream-review/SKILL.md
 git commit -m "test(acceptance): serve key groups and plugin settings in the fake gateway's view"
 ```
 
-- [ ] **Step 7: Open the PR** with the repo template, `## Why` opening with the goal above, and the F6 table as the evidence. Dispatch `ci.yml` by hand if the `pull_request` trigger stays silent.
+- [x] **Step 7: Open the PR** with the repo template, `## Why` opening with the goal above, and the F6 table as the evidence. Dispatch `ci.yml` by hand if the `pull_request` trigger stays silent.
