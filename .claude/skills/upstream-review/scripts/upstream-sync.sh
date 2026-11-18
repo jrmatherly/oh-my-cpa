@@ -84,10 +84,13 @@ fi
 # A draft nobody touched is stale once the watermark or main has passed it without it.
 retire_draft() {
   if [ -n "$pr" ] && [ "$branch" = bot ]; then
-    gh pr close "$pr" --repo "$REPO" --comment "$1" >/dev/null
-    # Under the lease, so a commit pushed since the branch was read keeps its branch.
-    git push -q --force-with-lease="refs/heads/$BRANCH:$seen" origin ":refs/heads/$BRANCH" \
-      || echo "left $BRANCH in place: it moved after it was read" >&2
+    # Delete under the lease first: a commit pushed since the branch was read keeps both its
+    # branch and its pull request. Deleting the head branch is what closes the pull request.
+    if git push -q --force-with-lease="refs/heads/$BRANCH:$seen" origin ":refs/heads/$BRANCH"; then
+      gh pr comment "$pr" --repo "$REPO" --body "$1" >/dev/null
+    else
+      echo "left $BRANCH and its pull request: the branch moved after it was read" >&2
+    fi
   fi
 }
 
