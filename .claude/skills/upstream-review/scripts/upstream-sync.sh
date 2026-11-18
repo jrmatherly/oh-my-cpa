@@ -85,9 +85,11 @@ fi
 retire_draft() {
   if [ -n "$pr" ] && [ "$branch" = bot ]; then
     # Delete under the lease first: a commit pushed since the branch was read keeps both its
-    # branch and its pull request. Deleting the head branch is what closes the pull request.
+    # branch and its pull request. GitHub may already have closed the pull request with its
+    # branch; `gh pr close` then does nothing, which is why the comment is posted on its own.
     if git push -q --force-with-lease="refs/heads/$BRANCH:$seen" origin ":refs/heads/$BRANCH"; then
       gh pr comment "$pr" --repo "$REPO" --body "$1" >/dev/null
+      gh pr close "$pr" --repo "$REPO" >/dev/null
     else
       echo "left $BRANCH and its pull request: the branch moved after it was read" >&2
     fi
