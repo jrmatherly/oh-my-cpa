@@ -45,6 +45,13 @@ short="$(git rev-parse --short "$end")"
 commits="$count commits"; [ "$count" -eq 1 ] && commits="1 commit"
 base="$(git rev-parse HEAD)"
 
+# Once upstream is merged, the tree is upstream's to write: a file it adds beside these helpers
+# would be run or imported with them. Run copies taken from main, outside the tree, with no token.
+trusted="$(mktemp -d)"
+trap 'rm -rf "$trusted"' EXIT
+cp "$SCRIPTS/english-only.sh" "$SCRIPTS/english-strings.py" "$trusted/"
+helper() { env -u GH_TOKEN -u GITHUB_TOKEN "$@"; }
+
 # The rolling branch as the remote holds it: absent, bot (every commit on it past main is this
 # script's) or foreign. $seen is its tip, for the push lease.
 branch=absent seen="" issue="" pr=""
@@ -79,7 +86,7 @@ fi
 
 # Sets $draft to one paragraph for the issue: where the draft is, or why there is none.
 draft_pull_request() {
-  local title body gate conflicts log took
+  local title body gate conflicts log took workflows
   title="chore(upstream): merge $short ($commits)"
 
   if git merge-base --is-ancestor "$end" "$base"; then
@@ -91,6 +98,13 @@ draft_pull_request() {
     draft="No new draft: \`$BRANCH\` carries commits that are not this workflow's, so it was left as it is. Once its pull request is merged with a merge commit, or the branch is deleted, the next run rebuilds it."
     return 0
   fi
+  # A pushed branch runs its own copy of a workflow, with this repository's secrets, before
+  # anyone has read it. A window that changes one is merged by a person.
+  workflows="$(git diff --name-only "$base...$end" -- .github/workflows)"
+  if [ -n "$workflows" ]; then
+    draft="No draft: the window changes workflow files, which run with this repository's secrets from any branch that holds them. Read them and merge in a session.$(fenced "$workflows")"
+    return 0
+  fi
   # No open pull request means an earlier run could not open one: rebuild so this run tries again.
   if [ -n "$pr" ] && git merge-base --is-ancestor "$end" "$seen" && git merge-base --is-ancestor "$base" "$seen"; then
     draft="Draft pull request: #$pr. It already merges \`$short\` into the current \`main\`."
@@ -99,7 +113,7 @@ draft_pull_request() {
 
   git checkout -q -B "$BRANCH" "$base"
   git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" merge -q --no-ff --no-commit "$end" >/dev/null 2>&1 || true
-  if ! log="$("$SCRIPTS/english-only.sh" 2>&1)"; then
+  if ! log="$(helper bash "$trusted/english-only.sh" 2>&1)"; then
     git merge --abort
     git checkout -q --detach "$base"
     draft="No draft: \`english-only.sh\` failed on the merge.$(fenced "$(tail -5 <<<"$log")")"
@@ -113,10 +127,10 @@ draft_pull_request() {
     draft="No draft: the merge conflicts in files the English-only script does not settle. Resolve them per the deviations table in a session.$(fenced "$(head -50 <<<"$conflicts")")"
     return 0
   fi
-  python3 "$SCRIPTS/english-strings.py" >/dev/null 2>&1 || true
+  helper python3 -I "$trusted/english-strings.py" >/dev/null 2>&1 || true
   git add -A
   gate="passes"
-  python3 "$SCRIPTS/english-strings.py" --check >/dev/null 2>&1 || gate="FAILS (\`pnpm check:english\` says why)"
+  helper python3 -I "$trusted/english-strings.py" --check >/dev/null 2>&1 || gate="FAILS (\`pnpm check:english\` says why)"
   git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" commit -q --no-verify -m "$title"
   [ -z "$took" ] || took="
 - \`english-only.sh\` took upstream's whole side of these English catalog files, so a sentence the fork added or reworded there needs re-applying by hand:$(fenced "$took")"

@@ -33,6 +33,6 @@ jobs:
           fetch-depth: 0
       - name: List, merge and draft
         env:
-          # The workflow's own token cannot push a merge that changes a file under .github/workflows/.
+          # Optional: with it the draft opens without the repository setting and its CI starts unapproved.
           GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
         run: .claude/skills/upstream-review/scripts/upstream-sync.sh
