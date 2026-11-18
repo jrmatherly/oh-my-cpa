@@ -33,6 +33,7 @@ A window runs from `lastReviewedSha` to the **newest upstream release tag past i
 | Check picker | `.claude/skills/verify-change/scripts/pick-checks.sh <sha-before-merge> --run` runs the repo checks the merged files reach |
 | Backend phrase translator | `.claude/skills/upstream-review/scripts/english-strings.py` rewrites upstream's hardcoded Chinese phrases to this fork's English in Go source, tests, golden files and acceptance fixtures, and lists the files whose Chinese it has no phrase for; `--check` changes nothing and exits 1 if it would; run it after every merge |
 | English-only converger | `.claude/skills/upstream-review/scripts/english-only.sh` removes the catalogs this fork does not ship and makes the English files the typed source again; run it after every merge, conflicts and all |
+| Daily unattended run | `.claude/skills/upstream-review/scripts/upstream-sync.sh`, run by `.github/workflows/upstream-sync.yml`; see "The daily draft" below |
 
 ```bash
 S=.claude/skills/upstream-review/scripts/upstream-review.sh
@@ -58,6 +59,26 @@ Tags on a listed commit: `[merge]`, `[picked]`, `[merged]` (already an ancestor 
 | `x` | we removed it | check the table |
 | `+` | new upstream file | created |
 | `bin` | binary | inspect by hand |
+
+## The daily draft
+
+The `Upstream sync` workflow runs `upstream-sync.sh` once a day (its cron comment says when and why) and on demand with `gh workflow run upstream-sync.yml`. It does the Method steps that need no judgment and stops there:
+
+- **One issue**, labelled `upstream-sync`, holds the `--stat --tip` listing (cut when very long) and is rewritten on every run. It closes itself when the watermark reaches upstream's tip. The script finds it by that label alone, so the label goes on no other issue.
+- **One draft pull request** from the rolling branch `sync/upstream-auto`: `main` merged with upstream's tip, then `english-only.sh` and `english-strings.py`. The script rebuilds and force-pushes the branch when upstream or `main` has moved, while every commit on it is its own, judged by committer email. A commit from anyone else makes the branch yours: later runs leave it alone, and say so in the issue while there are commits to review, until its pull request is merged with a merge commit or the branch is deleted. Closing the draft without deleting the branch does not stop it: the next run opens another.
+- **No draft** when the window changes a file under `.github/workflows/`, when the merge fails or conflicts outside what `english-only.sh` settles, when that script fails, when the push is refused, or when `main` already carries the tip. The issue says which, with the files or the last lines of the error. A workflow file is refused because a branch that holds one runs it with this repository's secrets before anyone has read it. An upstream `chore(release)` commit conflicts on the three `version` lines (see the release rule below), so a window that holds one is merged in a session.
+- **A draft nobody touched is closed** and its branch deleted once the watermark or `main` has passed it some other way.
+
+It never merges into `main`, never marks the pull request ready and never advances the watermark. The window ends at the tip, so a review that starts from the draft runs the method's steps 1 to 6 on `main` with `--tip`, then checks out `sync/upstream-auto` for step 7 onward. Step 7's merge and two scripts have already run there: the pull request says whether the English gate passes, quotes what it reported, and names any English catalog file where upstream's side was taken. The script's header says what `DRY_RUN=1` does in a scratch clone.
+
+Which token the workflow holds decides how much of this is hands-off:
+
+| | `UPSTREAM_SYNC_TOKEN` secret set | the workflow's own token |
+| --- | --- | --- |
+| Opening the draft | works | needs the repository setting "Allow GitHub Actions to create and approve pull requests"; with it off the branch is pushed and the issue links the compare page |
+| CI on the draft | starts by itself | waits for "Approve workflows to run" in the merge box |
+
+The secret is optional and unset. If you set it, make it a fine-grained token for this repository alone with Contents, Issues and Pull requests write, and no Workflows permission. CI then runs the merged upstream code before a person has read it, on `ci.yml` as `main` holds it, which reads no repository secret; one step hands the read-only workflow token to `pnpm check:bundle`.
 
 ## Method
 
@@ -171,6 +192,7 @@ A new deviation gets a row; a SKIP revert gets a row with the upstream SHA.
 | --- | --- | --- | --- |
 | no `.claude/` directory | `.claude/settings.json`, `hooks/`, `rules/`, `skills/`, `agents/` (tracked; only `settings.local.json` is ignored) | landed 2026-11-09 | Fork harness. KEEP; an upstream file arriving at the same path is ADAPT. |
 | no `.upstream-review/` | `watermark.json`, `reviews/` | landed 2026-11-09 | Fork-only. KEEP. |
+| no upstream-tracking workflow | `.github/workflows/upstream-sync.yml` and `scripts/upstream-sync.sh` in this skill | landed 2026-11-17 | Fork-only. KEEP. The job is guarded to `jrmatherly/oh-my-cpa`. |
 | `.gitignore` ends at upstream's last rule | a tail block ignoring `.claude/settings.local.json` and `private/` | landed 2026-11-09 | Upstream hunks above the block merge cleanly; a conflict keeps both, our block stays last. |
 | `AGENTS.md` names `internal/repository/migrations/` | names `migrations/`, where the files are | landed 2026-11-09 | ADAPT. One token; if upstream corrects it differently, take theirs. |
 | `AGENTS.md` and `docs/dev/testing.md` say `pnpm verify:browser:smoke` builds the embedded SPA | say it compiles the Go binary around the SPA that `pnpm build` last wrote, and name `pnpm build && pnpm verify:browser:smoke` | landed 2026-11-09 | ADAPT. Keep ours while `scripts/browser-acceptance.mjs` runs no web build; if upstream makes the smoke build the SPA, take theirs. |
