@@ -1,11 +1,11 @@
 name: Upstream sync
 
 # Fork only. Once a day, list what upstream landed past the review watermark and leave it as
-# one tracking issue and one draft pull request. Nothing here merges; see
+# one tracking issue and one draft pull request for review; see
 # .claude/skills/upstream-review/SKILL.md.
 on:
   schedule:
-    # 02:17 UTC sits in upstream's quiet hours (00:00 to 05:00 UTC), after its day's last landing.
+    # 02:17 UTC sits in the hours upstream lands almost nothing (00:00 to 05:00 UTC).
     - cron: '17 2 * * *'
   workflow_dispatch:
 
@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write # push the rolling sync branch
-      issues: write # the tracking issue
+      contents: write # push and delete the rolling sync branch
+      issues: write # the tracking issue and its label
       pull-requests: write # the draft pull request
     steps:
       - name: Checkout main with full history
@@ -33,6 +33,7 @@ jobs:
           fetch-depth: 0
       - name: List, merge and draft
         env:
-          # Optional: with it the draft opens without the repository setting and its CI starts unapproved.
+          # UPSTREAM_SYNC_TOKEN is optional: with it the draft opens without the repository
+          # setting and its CI starts without an approval click.
           GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
         run: .claude/skills/upstream-review/scripts/upstream-sync.sh

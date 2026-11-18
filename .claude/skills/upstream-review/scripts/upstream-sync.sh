@@ -11,13 +11,16 @@
 # The window always ends at upstream's tip (--tip), so a daily run carries everything landed
 # so far and not only what upstream has tagged.
 #
-# The draft lives on one rolling branch that the script rebuilds from main and force-pushes.
-# Once anyone else commits to that branch the script leaves it alone and says so in the issue.
+# The draft lives on one rolling branch that the script rebuilds from the checked-out commit
+# (main in the workflow) and force-pushes. Once anyone else commits to that branch the script
+# leaves it alone, and says so in the issue while there are commits to review.
 #
 # USAGE
 #   GITHUB_REPOSITORY=owner/repo GH_TOKEN=... upstream-sync.sh
-#   DRY_RUN=1 upstream-sync.sh    merge locally, print the issue and pull request text, write
-#                                 nothing to GitHub. Leaves the checkout on the sync branch.
+#   DRY_RUN=1 upstream-sync.sh    merge locally and print the issue text, plus the pull request
+#                                 text when the merge commits; write nothing to GitHub. Resets a
+#                                 local sync/upstream-auto: a clean merge leaves the checkout on
+#                                 it, a failed one leaves HEAD detached at the start commit.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -30,7 +33,8 @@ BOT_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 live() { [ "$DRY_RUN" != 1 ]; }
-# Upstream's subjects and paths are untrusted text: fence them, and keep them from closing the fence.
+# Text from upstream or from a tool's error output is untrusted: fence it, and keep it from
+# closing the fence.
 # shellcheck disable=SC2016
 fenced() { printf '\n\n```text\n%s\n```' "${1//\`/\'}"; }
 live && : "${GITHUB_REPOSITORY:?set GITHUB_REPOSITORY, or DRY_RUN=1}"
@@ -46,29 +50,38 @@ commits="$count commits"; [ "$count" -eq 1 ] && commits="1 commit"
 base="$(git rev-parse HEAD)"
 
 # Once upstream is merged, the tree is upstream's to write: a file it adds beside these helpers
-# would be run or imported with them. Run copies taken from main, outside the tree, with no token.
+# would be run or imported with them. Run copies taken before the merge, outside the tree, with
+# no token and Python in isolated mode.
 trusted="$(mktemp -d)"
 trap 'rm -rf "$trusted"' EXIT
 cp "$SCRIPTS/english-only.sh" "$SCRIPTS/english-strings.py" "$trusted/"
 helper() { env -u GH_TOKEN -u GITHUB_TOKEN "$@"; }
 
-# The rolling branch as the remote holds it: absent, bot (every commit on it past main is this
-# script's) or foreign. $seen is its tip, for the push lease.
+# The rolling branch as the remote holds it: absent, bot (every first-parent commit past the
+# start commit has the bot's committer email) or foreign. Always absent in a dry run. $seen is
+# its tip.
 branch=absent seen="" issue="" pr=""
 if live; then
+  gh auth setup-git
   gh label create "$LABEL" --repo "$REPO" --color 1d76db --force \
     --description "Upstream commits waiting for review" >/dev/null
   issue="$(gh issue list --repo "$REPO" --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
-  pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
-  if git fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null; then
+  # --head matches a branch name in any fork, so keep only a pull request from this repository.
+  pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,isCrossRepository \
+    --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')"
+  # A failed read must not pass for "absent": the run would report a refused push over a good draft.
+  if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null; then
+    git fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
     seen="$(git rev-parse "origin/$BRANCH")"
     committers="$(git log --first-parent --format=%ce "$base..$seen")"
     branch=bot
     if [ -n "$committers" ] && grep -qvxF "$BOT_EMAIL" <<<"$committers"; then branch=foreign; fi
+  elif [ $? -ne 2 ]; then
+    die "could not read $BRANCH on origin"
   fi
 fi
 
-# A draft nobody touched is stale once main carries the window some other way.
+# A draft nobody touched is stale once the watermark or main has passed it without it.
 retire_draft() {
   if [ -n "$pr" ] && [ "$branch" = bot ]; then
     gh pr close "$pr" --repo "$REPO" --delete-branch --comment "$1" >/dev/null
@@ -86,7 +99,7 @@ fi
 
 # Sets $draft to one paragraph for the issue: where the draft is, or why there is none.
 draft_pull_request() {
-  local title body gate conflicts log took workflows
+  local title body gate gate_detail="" conflicts log took workflows
   title="chore(upstream): merge $short ($commits)"
 
   if git merge-base --is-ancestor "$end" "$base"; then
@@ -98,21 +111,29 @@ draft_pull_request() {
     draft="No new draft: \`$BRANCH\` carries commits that are not this workflow's, so it was left as it is. Once its pull request is merged with a merge commit, or the branch is deleted, the next run rebuilds it."
     return 0
   fi
-  # A pushed branch runs its own copy of a workflow, with this repository's secrets, before
-  # anyone has read it. A window that changes one is merged by a person.
+  # Neither token this job is meant to hold can push a workflow change, and one that could
+  # would start that workflow from the branch, with this repository's secrets, before anyone
+  # had read it. Either way a person merges this window.
   workflows="$(git diff --name-only "$base...$end" -- .github/workflows)"
   if [ -n "$workflows" ]; then
-    draft="No draft: the window changes workflow files, which run with this repository's secrets from any branch that holds them. Read them and merge in a session.$(fenced "$workflows")"
+    draft="No draft: the window changes workflow files. A branch that holds them runs them with this repository's secrets, so read them and merge in a session.$(fenced "$workflows")"
     return 0
   fi
-  # No open pull request means an earlier run could not open one: rebuild so this run tries again.
+  # Without an open pull request (an earlier run could not open one, or someone closed it),
+  # rebuild so this run opens one.
   if [ -n "$pr" ] && git merge-base --is-ancestor "$end" "$seen" && git merge-base --is-ancestor "$base" "$seen"; then
     draft="Draft pull request: #$pr. It already merges \`$short\` into the current \`main\`."
     return 0
   fi
 
   git checkout -q -B "$BRANCH" "$base"
-  git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" merge -q --no-ff --no-commit "$end" >/dev/null 2>&1 || true
+  # A conflict exits non-zero and is settled below. A merge that never started is a failure.
+  log="$(git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" merge -q --no-ff --no-commit "$end" 2>&1)" || true
+  if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    git checkout -q --detach "$base"
+    draft="No draft: \`git merge\` failed before it started.$(fenced "$(tail -5 <<<"$log")")"
+    return 0
+  fi
   if ! log="$(helper bash "$trusted/english-only.sh" 2>&1)"; then
     git merge --abort
     git checkout -q --detach "$base"
@@ -127,10 +148,14 @@ draft_pull_request() {
     draft="No draft: the merge conflicts in files the English-only script does not settle. Resolve them per the deviations table in a session.$(fenced "$(head -50 <<<"$conflicts")")"
     return 0
   fi
+  # The rewrite exits 1 while Chinese it has no phrase for remains; the check below reports it.
   helper python3 -I "$trusted/english-strings.py" >/dev/null 2>&1 || true
   git add -A
   gate="passes"
-  helper python3 -I "$trusted/english-strings.py" --check >/dev/null 2>&1 || gate="FAILS (\`pnpm check:english\` says why)"
+  if ! log="$(helper python3 -I "$trusted/english-strings.py" --check 2>&1)"; then
+    gate="FAILS"
+    gate_detail="$(fenced "$(tail -15 <<<"$log")")"
+  fi
   git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" commit -q --no-verify -m "$title"
   [ -z "$took" ] || took="
 - \`english-only.sh\` took upstream's whole side of these English catalog files, so a sentence the fork added or reworded there needs re-applying by hand:$(fenced "$took")"
@@ -143,7 +168,7 @@ Still to do before this merges, per \`.claude/skills/upstream-review/SKILL.md\`:
 
 ## Validation
 
-- \`english-only.sh\` and \`english-strings.py\` ran after the merge. The English gate $gate.$took
+- \`english-only.sh\` and \`english-strings.py\` ran after the merge. The English gate $gate.$gate_detail$took
 - Nothing else ran before this opened. CI runs on the pull request; GitHub may ask for the run to be approved in the merge box first.
 
 ## Safety
@@ -159,19 +184,22 @@ Still to do before this merges, per \`.claude/skills/upstream-review/SKILL.md\`:
     return 0
   fi
 
-  gh auth setup-git
   # The lease refuses the push if the branch moved since it was read; an empty one requires it absent.
   if ! log="$(git push --force-with-lease="refs/heads/$BRANCH:$seen" origin "HEAD:refs/heads/$BRANCH" 2>&1)"; then
     draft="No draft: the merge is clean but the push was refused.$(fenced "$(tail -5 <<<"$log")")"
     return 0
   fi
   if [ -n "$pr" ]; then
-    gh pr edit "$pr" --repo "$REPO" --title "$title" --body "$body" >/dev/null
-  elif ! log="$(gh pr create --repo "$REPO" --draft --base main --head "$BRANCH" --title "$title" --body "$body" 2>&1)"; then
+    if ! log="$(gh pr edit "$pr" --repo "$REPO" --title "$title" --body "$body" 2>&1)"; then
+      draft="Draft pull request: #$pr. Its branch is pushed but its description could not be updated and is stale.$(fenced "$(tail -3 <<<"$log")")"
+      return 0
+    fi
+  elif log="$(gh pr create --repo "$REPO" --draft --base main --head "$BRANCH" --title "$title" --body "$body" 2>&1)" \
+    && [[ "${log##*/}" =~ ^[0-9]+$ ]]; then
+    pr="${log##*/}"
+  else
     draft="The merge is pushed to \`$BRANCH\` but the pull request could not be opened. Open it from https://github.com/$REPO/compare/main...$BRANCH?expand=1$(fenced "$(tail -3 <<<"$log")")"
     return 0
-  else
-    pr="${log##*/}"
   fi
   draft="Draft pull request: #$pr. The English gate $gate."
 }

@@ -62,14 +62,14 @@ Tags on a listed commit: `[merge]`, `[picked]`, `[merged]` (already an ancestor 
 
 ## The daily draft
 
-The `Upstream sync` workflow runs `upstream-sync.sh` once a day at 02:17 UTC, inside the hours upstream lands almost nothing (00:00 to 05:00 UTC), and on demand with `gh workflow run upstream-sync.yml`. It does the steps below that need no judgment and stops there:
+The `Upstream sync` workflow runs `upstream-sync.sh` once a day (its cron comment says when and why) and on demand with `gh workflow run upstream-sync.yml`. It does the Method steps that need no judgment and stops there:
 
-- **One issue**, labelled `upstream-sync`, holds the `--stat --tip` listing and is rewritten on every run. It closes itself when the watermark reaches upstream's tip.
-- **One draft pull request** from the rolling branch `sync/upstream-auto`: `main` merged with upstream's tip, then `english-only.sh` and `english-strings.py`. The script rebuilds and force-pushes the branch when upstream or `main` has moved, while every commit on it is its own. A commit from anyone else makes the branch yours, and later runs leave it alone and say so in the issue until its pull request is merged with a merge commit or the branch is deleted.
-- **No draft** when the window changes a file under `.github/workflows/`, when the merge conflicts outside what `english-only.sh` settles, when that script fails, when the push is refused, or when `main` already carries the tip. The issue names the files or quotes the refusal. A workflow file is refused because a pushed branch runs its own copy with this repository's secrets before anyone has read it. Upstream changed one on 13 days between 2026-10-01 and 2026-11-17. An upstream `chore(release)` commit always conflicts on the three `version` lines, so a window that holds one is merged in a session.
-- **A draft nobody touched is closed** and its branch deleted once `main` carries the window some other way.
+- **One issue**, labelled `upstream-sync`, holds the `--stat --tip` listing (cut when very long) and is rewritten on every run. It closes itself when the watermark reaches upstream's tip. The script finds it by that label alone, so the label goes on no other issue.
+- **One draft pull request** from the rolling branch `sync/upstream-auto`: `main` merged with upstream's tip, then `english-only.sh` and `english-strings.py`. The script rebuilds and force-pushes the branch when upstream or `main` has moved, while every commit on it is its own, judged by committer email. A commit from anyone else makes the branch yours: later runs leave it alone, and say so in the issue while there are commits to review, until its pull request is merged with a merge commit or the branch is deleted. Closing the draft without deleting the branch does not stop it: the next run opens another.
+- **No draft** when the window changes a file under `.github/workflows/`, when the merge fails or conflicts outside what `english-only.sh` settles, when that script fails, when the push is refused, or when `main` already carries the tip. The issue says which, with the files or the last lines of the error. A workflow file is refused because a branch that holds one runs it with this repository's secrets before anyone has read it. An upstream `chore(release)` commit conflicts on the three `version` lines (see the release rule below), so a window that holds one is merged in a session.
+- **A draft nobody touched is closed** and its branch deleted once the watermark or `main` has passed it some other way.
 
-It never merges, never marks the pull request ready and never advances the watermark. The window ends at the tip, so a review that starts from the draft runs the method's steps 1 to 6 on `main` with `--tip` (the issue already holds that listing), then checks out `sync/upstream-auto` for step 7 onward. Step 7's merge and two scripts have already run there: the pull request says whether the English gate passes and names any English catalog file where upstream's side was taken. `DRY_RUN=1 upstream-sync.sh` in a scratch clone prints the issue and pull request text, writes nothing to GitHub, and leaves the clone on the sync branch.
+It never merges into `main`, never marks the pull request ready and never advances the watermark. The window ends at the tip, so a review that starts from the draft runs the method's steps 1 to 6 on `main` with `--tip`, then checks out `sync/upstream-auto` for step 7 onward. Step 7's merge and two scripts have already run there: the pull request says whether the English gate passes, quotes what it reported, and names any English catalog file where upstream's side was taken. The script's header says what `DRY_RUN=1` does in a scratch clone.
 
 Which token the workflow holds decides how much of this is hands-off:
 
@@ -78,9 +78,7 @@ Which token the workflow holds decides how much of this is hands-off:
 | Opening the draft | works | needs the repository setting "Allow GitHub Actions to create and approve pull requests"; with it off the branch is pushed and the issue links the compare page |
 | CI on the draft | starts by itself | waits for "Approve workflows to run" in the merge box |
 
-The secret is a fine-grained token for this repository alone with Contents, Issues and Pull requests write, and no Workflows permission. With it, CI runs the merged upstream code before a person has read it, on `ci.yml` as `main` holds it, which reads no secret.
-
-The script runs its two helpers from copies taken before the merge, outside the tree and without the token, because the merged tree is upstream's to write.
+The secret is optional and unset. If you set it, make it a fine-grained token for this repository alone with Contents, Issues and Pull requests write, and no Workflows permission. CI then runs the merged upstream code before a person has read it, on `ci.yml` as `main` holds it, which reads no repository secret; one step hands the read-only workflow token to `pnpm check:bundle`.
 
 ## Method
 
