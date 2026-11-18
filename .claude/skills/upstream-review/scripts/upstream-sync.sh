@@ -66,9 +66,9 @@ if live; then
   gh label create "$LABEL" --repo "$REPO" --color 1d76db --force \
     --description "Upstream commits waiting for review" >/dev/null
   issue="$(gh issue list --repo "$REPO" --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
-  # --head matches a branch name in any fork, so keep only a pull request from this repository.
-  pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,isCrossRepository \
-    --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')"
+  # --head matches a branch name in any fork, so keep only this repository's pull request into main.
+  pr="$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,isCrossRepository,baseRefName \
+    --jq '[.[] | select((.isCrossRepository | not) and .baseRefName == "main")][0].number // empty')"
   # A failed read must not pass for "absent": the run would report a refused push over a good draft.
   if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null; then
     git fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
@@ -84,7 +84,10 @@ fi
 # A draft nobody touched is stale once the watermark or main has passed it without it.
 retire_draft() {
   if [ -n "$pr" ] && [ "$branch" = bot ]; then
-    gh pr close "$pr" --repo "$REPO" --delete-branch --comment "$1" >/dev/null
+    gh pr close "$pr" --repo "$REPO" --comment "$1" >/dev/null
+    # Under the lease, so a commit pushed since the branch was read keeps its branch.
+    git push -q --force-with-lease="refs/heads/$BRANCH:$seen" origin ":refs/heads/$BRANCH" \
+      || echo "left $BRANCH in place: it moved after it was read" >&2
   fi
 }
 
