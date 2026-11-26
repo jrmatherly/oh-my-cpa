@@ -771,7 +771,7 @@ func configDocument() map[string]any {
 	}
 	return map[string]any{
 		"config-version": 8,
-		"server":         map[string]any{"host": "0.0.0.0", "port": 8317},
+		"server":         map[string]any{"server-id": fixtureCPAServerID, "host": "0.0.0.0", "port": 8317},
 		"management":     map[string]any{"allow-remote": false, "disable-control-panel": false},
 		"access":         map[string]any{"api-keys": gatewayKeyValues()},
 		"requests":       map[string]any{"proxy-url": ""},
@@ -788,9 +788,10 @@ func configDocument() map[string]any {
 			"usage": map[string]any{"usage-statistics-enabled": true},
 		},
 		"oauth": map[string]any{
-			"providers":       map[string]any{"aistudio": map[string]any{"ws-auth": false}},
-			"model-alias":     oauthModelAliases(),
-			"excluded-models": oauthExcludedModels(),
+			"providers":             map[string]any{"aistudio": map[string]any{"ws-auth": false}},
+			"model-alias":           oauthModelAliases(),
+			"excluded-models":       oauthExcludedModels(),
+			"request-scoped-errors": oauthRequestScopedErrors(),
 		},
 		"api-keys": upstreamGroups,
 		"plugins":  pluginsSection(),
@@ -858,6 +859,25 @@ func oauthExcludedModels() map[string]any {
 	}
 }
 
+func oauthRequestScopedErrors() map[string]any {
+	return map[string]any{
+		"codex": []map[string]any{
+			{
+				"status": 400,
+				"match":  []string{"context_window_exceeded"},
+				"action": "stop",
+			},
+		},
+		"claude": []map[string]any{
+			{
+				"status": 400,
+				"match":  []string{"prompt is too long"},
+				"action": "stop",
+			},
+		},
+	}
+}
+
 // quotaPayloads answers the quota page's upstream reads. The quota service calls
 // these provider URLs through CPA's api-call proxy; the fixture answers them
 // locally, which is what keeps a deployed demo from reaching chatgpt.com or
@@ -894,7 +914,7 @@ func quotaPayloads(now time.Time) map[string]any {
 		},
 		codexSubscriptionURL: map[string]any{
 			"plan_type":     "pro",
-			"active_start":  now.Add(-21 * 24 * time.Hour).UTC().Format(time.RFC3339),
+			"active_start":  now.Add(21*24*time.Hour).AddDate(0, -1, 0).UTC().Format(time.RFC3339),
 			"active_until":  now.Add(21 * 24 * time.Hour).UTC().Format(time.RFC3339),
 			"will_renew":    true,
 			"is_delinquent": false,

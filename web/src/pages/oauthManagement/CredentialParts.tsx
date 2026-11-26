@@ -38,6 +38,7 @@ import {
   NoteOutlined,
   PlusOutlined,
   ProfileOutlined,
+  RightOutlined,
   RenameOutlined,
   RollbackOutlined,
   StopOutlined,
@@ -48,7 +49,7 @@ import {
 import { useT, type TFunc } from '../../i18n';
 import { maskAccount } from '../../utils/maskAccount';
 import { formatGatewayTimestamp } from '../../utils/time';
-import { formatObservedAgo } from '../quota/quotaFormat';
+import { formatObservedAgo, quotaPlanLabel } from '../quota/quotaFormat';
 import { Switch } from '../../components/common/Switch';
 import { Tag } from '../../components/common/Tag';
 import { outlivedResetLine, refreshFailureLine } from '../quota/quotaAttempt';
@@ -239,15 +240,16 @@ export function CredentialName({ record, facts, isRenaming, onRename, onRenamed,
 export function CredentialTraits({ record, facts, actions }: { record: OAuthWorkspaceRecord; facts: CredentialFacts; actions: CredentialActions }) {
   const t = useT();
   const plan = record.quota?.plan;
-  const hasTraits = Boolean(plan?.plan_label) || record.file.priority !== undefined || (record.file.weight ?? 1) !== 1
+  const planLabel = quotaPlanLabel(plan, t);
+  const hasTraits = Boolean(planLabel) || record.file.priority !== undefined || (record.file.weight ?? 1) !== 1
     || plan?.subscription_active === false || facts.credits > 0;
   if (!hasTraits) return null;
   return (
     <div className={styles.traits}>
       {/* The plan says what the account can do, so it leads what is said about it. */}
-      {plan?.plan_label && <Tag size="small">{plan.plan_label}</Tag>}
+      {planLabel && <Tag size="small">{planLabel}</Tag>}
       {plan?.subscription_active === false && (
-        <Tag size="small" tone="warn" data-subscription-inactive="true">{t('quota.subscription_inactive')}</Tag>
+        <StatusLabel size="small" tone="warn" data-subscription-inactive="true">{t('quota.subscription_inactive')}</StatusLabel>
       )}
       <PriorityBadge priority={record.file.priority} weight={record.file.weight} />
       {facts.credits > 0 && (
@@ -324,7 +326,7 @@ export function CredentialState({ record, facts, actions, nowMS, hasSIWC = true,
               aria-label={`${t('omc.reauthenticate')}: ${t(status.labelKey)}`}
               data-status-explained={explanation ? 'true' : undefined}
             >
-              <StatusLabel tone={status.tone}>{t(status.labelKey)}</StatusLabel>
+              <StatusLabel tone={status.tone} trailing={<RightOutlined />}>{t(status.labelKey)}</StatusLabel>
             </button>
           ) : (
             <StatusLabel tone={status.tone} tabIndex={0} data-status-explained={explanation ? 'true' : undefined}>{t(status.labelKey)}</StatusLabel>

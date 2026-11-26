@@ -1,0 +1,55 @@
+.status-heading {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.input-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.token-input {
+  flex: 1 1 auto;
+  width: min(292px, 100%);
+  min-width: 0;
+}
+
+.masked-token {
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  letter-spacing: 0.01em;
+  word-break: break-all;
+}
+
+.toast-quota {
+  color: inherit;
+}
+
+@media (max-width: 640px) {
+  .status-actions {
+    justify-content: flex-start;
+  }
+
+  .input-control {
+    width: 100%;
+  }
+
+  .token-input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}

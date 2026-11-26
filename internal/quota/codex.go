@@ -176,6 +176,13 @@ func parseWindowDurationHours(seconds float64) float64 {
 	if seconds <= 0 {
 		return 0
 	}
+	return seconds / 3600.0
+}
+
+func formatWindowDurationHours(seconds float64) float64 {
+	if seconds <= 0 {
+		return 0
+	}
 	return math.Round((seconds/3600.0)*10) / 10
 }
 
@@ -185,7 +192,8 @@ func parseWindowDurationHours(seconds float64) float64 {
 // usual five-hour one is described by the limit it actually has rather than by the slot the
 // payload delivered it in. The id follows the period for the same reason: it keys the cycle
 // calculations, and a monthly window filed under the five-hour id would have its cycles read as
-// five-hour cycles. A duration that names no known period keeps the slot's own name.
+// five-hour cycles. An unrecognised positive duration uses a period-keyed custom id, while an
+// absent duration keeps the slot's own name.
 func standardWindowIdentity(winSec float64, slotID, slotLabel string) (id, label, kind string) {
 	switch {
 	case winSec >= FiveHourSeconds-600 && winSec <= FiveHourSeconds+600:
@@ -196,6 +204,10 @@ func standardWindowIdentity(winSec float64, slotID, slotLabel string) (id, label
 		return "weekly", "Weekly usage limit", "weekly"
 	case winSec >= MonthlySeconds-86400 && winSec <= MonthlySeconds+86400:
 		return "monthly", "Monthly usage limit", "monthly"
+	case winSec > 0:
+		period := windowPeriodName(winSec)
+		hours := formatWindowDurationHours(winSec)
+		return fmt.Sprintf("custom_%gh", hours), fmt.Sprintf("%s usage limit (%gh)", period, hours), "custom"
 	default:
 		return slotID, slotLabel, "custom"
 	}
@@ -222,7 +234,7 @@ func windowPeriodName(seconds float64) string {
 		// provider that meters a short window would have it described as no window at all.
 		return fmt.Sprintf("%g-minute", math.Round(seconds/60))
 	default:
-		return fmt.Sprintf("%g-hour", parseWindowDurationHours(seconds))
+		return fmt.Sprintf("%g-hour", formatWindowDurationHours(seconds))
 	}
 }
 
@@ -277,20 +289,36 @@ type RawCodexSubscriptionPayload struct {
 	ShouldRenew *bool  `json:"will_renew"`
 }
 
+// CodexSubscription is the parsed billing window from Codex's live subscription
+// endpoint. StartAtMS is omitted when absent or not strictly before UntilAtMS.
+type CodexSubscription struct {
+	StartAtMS   *int64
+	UntilAtMS   int64
+	ShouldRenew *bool
+}
+
 // ParseCodexSubscription reads the authoritative subscription window. Only
-// active_until is consumed: upstream's separate entitlement payload also carries
-// an expires_at that trails the renewal instant, and conflating the two would
-// report a different date than the plan's own renewal.
-func ParseCodexSubscription(raw []byte) (untilMS int64, shouldRenew *bool, ok bool) {
+// active_start and active_until are consumed: upstream's separate entitlement
+// payload also carries an expires_at that trails the renewal instant, and
+// conflating the two would report a different date than the plan's own renewal.
+func ParseCodexSubscription(raw []byte) (CodexSubscription, bool) {
 	var payload RawCodexSubscriptionPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return 0, nil, false
+		return CodexSubscription{}, false
 	}
 	until, parsed := parseCreditInstantToMS(payload.ActiveUntil)
 	if !parsed || until <= 0 {
-		return 0, nil, false
+		return CodexSubscription{}, false
 	}
-	return until, payload.ShouldRenew, true
+	var startAtMS *int64
+	if start, ok := parseCreditInstantToMS(payload.ActiveStart); ok && start > 0 && start < until {
+		startAtMS = &start
+	}
+	return CodexSubscription{
+		StartAtMS:   startAtMS,
+		UntilAtMS:   until,
+		ShouldRenew: payload.ShouldRenew,
+	}, true
 }
 
 func resolveCodexPlanTier(planType string) (tier string, label string) {

@@ -2,6 +2,7 @@ import type { OAuthRecoveryTarget } from '../../types/oauth';
 import { Notice } from '../../components/feedback';
 import type { MessageKey } from '../../i18n/catalog';
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
@@ -21,14 +22,16 @@ import { useT } from '../../i18n';
 import { isDemoMode } from '../../types/demoMode';
 import { copyText } from '../../utils/clipboard';
 import { ProviderBrandIcon } from '../../components/LobeIcon';
-import { oauthProviderGroups, type OAuthProviderChoice, type OAuthProviderGroup } from '../oauthProviderLogic';
+import { oauthProviderGroups, resolveClaudeOAuthScope, type OAuthProviderChoice, type OAuthProviderGroup } from '../oauthProviderLogic';
 import type { OAuthSessionsController } from './useOAuthSessions';
 import styles from './OAuthConnectPanel.module.css';
 import { useToast } from '../../components/feedback';
 import { AppDrawer } from '../../components/common/AppDrawer';
+import { FactList } from '../../components/common/FactList';
 import { SearchSelect } from '../../components/common/SearchSelect';
 import { SectionHeading } from '../../components/common/SectionHeading';
 import { SecretInput } from '../../components/common/SecretInput';
+import { StatusLabel } from '../../components/common/StatusLabel';
 import { Tag } from '../../components/common/Tag';
 import { PluginOriginBadge } from '../../components/plugins/PluginParts';
 
@@ -87,6 +90,17 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
   const isSuccess = session?.status === 'success';
   const isError = session?.status === 'error';
   const hasStarted = Boolean(session?.url || isWaiting || isSuccess || isError);
+  const isClaude = choice?.id === 'anthropic';
+  const claudeConfigQuery = useQuery({
+    queryKey: ['management-config'],
+    queryFn: () => api.getConfigScalars(),
+    enabled: open && isClaude,
+    staleTime: 60000,
+  });
+  const claudeScope = React.useMemo(
+    () => (isClaude ? resolveClaudeOAuthScope(claudeConfigQuery.data?.safe_yaml, session?.url) : undefined),
+    [isClaude, claudeConfigQuery.data?.safe_yaml, session?.url],
+  );
 
   const target = session?.recoveryTarget ?? recoveryTarget;
   const [shouldVerify, setShouldVerify] = React.useState(false);
@@ -164,7 +178,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
       >
         {!choice ? (
           <>
-            <div className={styles['selector-wrap']}>
+            <div className={styles['field']}>
               <label className={styles['field-label']} htmlFor="oauth-connect-provider">
                 {t('omc.connect_provider')}
               </label>
@@ -223,7 +237,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
           </>
         ) : (
           <>
-            <div className={styles['selector-wrap']}>
+            <div className={styles['field']}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label className={styles['field-label']} htmlFor="oauth-connect-provider">
                   {t('omc.connect_provider')}
@@ -264,6 +278,24 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
               </div>
             </div>
 
+            {claudeScope && (
+              <div className={styles['scope-summary']} data-testid="claude-oauth-scope">
+                <FactList
+                  emphasis="quiet"
+                  facts={[
+                    {
+                      key: 'scope',
+                      label: t('oauth.anthropic_scope_label'),
+                      value: claudeScope.includesCreateApiKey
+                        ? t('oauth.anthropic_scope_with_create_key')
+                        : t('oauth.anthropic_scope_user_only'),
+                    },
+                  ]}
+                />
+                <code className={styles['scope-list']}>{claudeScope.scopeText}</code>
+              </div>
+            )}
+
             {target && <>
               <Notice tone="info" title={t('recovery.target', { name: target.name })} description={t('recovery.target_hint')} />
               {!isRecoverySupported && <Notice tone="warning" title={t('recovery.upgrade_required')} />}
@@ -272,7 +304,7 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
               </Checkbox>
             </>}
             {!isWaiting && !session?.starting && (
-              <div>
+              <div className={styles['field']}>
                 <label className={styles['field-label']} htmlFor="oauth-connect-proxy">{t('oauth.session_proxy')}</label>
                 <SecretInput
                   key={choice.id}
@@ -407,12 +439,12 @@ export const OAuthConnectPanel: React.FC<OAuthConnectPanelProps> = ({
                           {t('oauth.submit_callback_btn')}
                         </Button>
                         {session?.callbackStatus === 'success' && (
-                          <Tag tone="success" icon={<CheckCircleOutlined />}>{t('oauth.callback_submitted')}</Tag>
+                          <StatusLabel tone="success">{t('oauth.callback_submitted')}</StatusLabel>
                         )}
                         {session?.callbackStatus === 'error' && (
-                          <Tag tone="danger" icon={<CloseCircleOutlined />}>
+                          <StatusLabel tone="danger">
                             {session.callbackError || t('oauth.callback_failed', { msg: '' })}
-                          </Tag>
+                          </StatusLabel>
                         )}
                       </div>
                     </div>

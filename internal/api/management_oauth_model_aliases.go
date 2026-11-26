@@ -155,6 +155,7 @@ func (h *Handler) applyManagementOAuthModelAliases(ctx context.Context, client *
 // @Success 200 {object} OAuthModelAliasesPatchResponseDTO
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 500 {object} ErrorResponseDTO
 // @Failure 502 {object} ErrorResponseDTO
 // @Router /v1/management/auth-files/model-aliases [patch]
@@ -331,7 +332,7 @@ func normalizeManagementOAuthModelAliases(entries []managementOAuthModelAlias) (
 		if len([]rune(name)) > managementOAuthModelAliasFieldLimit || len([]rune(alias)) > managementOAuthModelAliasFieldLimit || len([]rune(displayName)) > managementOAuthModelAliasFieldLimit {
 			return nil, errors.New("model alias fields are too long")
 		}
-		if strings.EqualFold(name, alias) {
+		if name == alias {
 			return nil, errors.New("model alias must differ from the upstream model name")
 		}
 		aliasKey := strings.ToLower(alias)

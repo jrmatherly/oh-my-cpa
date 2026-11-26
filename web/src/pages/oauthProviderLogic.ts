@@ -1,6 +1,9 @@
+import { parseDocument } from 'yaml';
+import { getFieldSemanticValue } from '../components/config/configDirty';
 import { collectPluginPages } from '../components/plugins/pluginPages';
 import { installedPluginOrigin } from '../components/plugins/pluginStoreLogic';
 import { resolveCredentialMark, type BrandMark } from '../types/brandMark';
+import { ALL_CONFIG_FIELDS } from '../types/configSchema';
 import type { MessageKey, TFunc } from '../i18n';
 import type { PluginItem, StorePluginItem } from '../types/plugin';
 import { BUILTIN_OAUTH_IDS, pluginOAuthProviderIds, pluginOAuthProviderLogos, pluginPortalTitles } from '../types/pluginOAuthProviders';
@@ -51,7 +54,7 @@ export interface OAuthCallbackRules {
  * They are written out rather than composed from `keyBase` so that renaming a provider's copy is a
  * compile error in this table instead of a card that renders an id.
  */
-export type BuiltinOAuthKeyBase = 'kimi' | 'kimi_ai' | 'codex' | 'anthropic' | 'antigravity' | 'xai' | 'devin' | 'meta';
+export type BuiltinOAuthKeyBase = 'kimi' | 'kimi_ai' | 'codex' | 'anthropic' | 'antigravity' | 'xai' | 'devin' | 'meta' | 'copilot';
 
 const OAUTH_COPY: Record<BuiltinOAuthKeyBase, { title: MessageKey; hint: MessageKey; login: MessageKey }> = {
   kimi: { title: 'oauth.kimi_title', hint: 'oauth.kimi_hint', login: 'oauth.kimi_login' },
@@ -62,6 +65,7 @@ const OAUTH_COPY: Record<BuiltinOAuthKeyBase, { title: MessageKey; hint: Message
   xai: { title: 'oauth.xai_title', hint: 'oauth.xai_hint', login: 'oauth.xai_login' },
   devin: { title: 'oauth.devin_title', hint: 'oauth.devin_hint', login: 'oauth.devin_login' },
   meta: { title: 'oauth.meta_title', hint: 'oauth.meta_hint', login: 'oauth.meta_login' },
+  copilot: { title: 'oauth.copilot_title', hint: 'oauth.copilot_hint', login: 'oauth.copilot_login' },
 };
 
 export interface OAuthProviderDefinition {
@@ -223,8 +227,8 @@ export function validateDevinCallback(input: string, expectedState?: string): OA
 /**
  * The built-in authorizations, in the order the cards are rendered.
  *
- * The device flows (Kimi, Kimi International, Meta Muse) confirm a short code on the vendor's own
- * page and are polled; the redirect flows land on a callback the operator may
+ * The device flows (Kimi, Kimi International, Meta Muse, GitHub Copilot) confirm a short code on
+ * the vendor's own page and are polled; the redirect flows land on a callback the operator may
  * have to submit by hand.
  */
 export const BUILTIN_OAUTH_PROVIDERS: OAuthProviderDefinition[] = [
@@ -313,6 +317,12 @@ export const BUILTIN_OAUTH_PROVIDERS: OAuthProviderDefinition[] = [
     id: 'meta',
     iconId: 'Meta',
     keyBase: 'meta',
+    flow: 'device',
+  },
+  {
+    id: 'copilot',
+    iconId: 'GithubCopilot',
+    keyBase: 'copilot',
     flow: 'device',
   },
 ];
@@ -456,4 +466,55 @@ export function oauthProviderChoices(
   catalog?: ReadonlyMap<string, StorePluginItem>,
 ): OAuthProviderChoice[] {
   return [...builtinOAuthProviderChoices(t), ...pluginOAuthProviderChoices(plugins, t, catalog)];
+}
+
+export const CLAUDE_OAUTH_USER_SCOPES =
+  'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
+export const CLAUDE_OAUTH_DEFAULT_SCOPES = `org:create_api_key ${CLAUDE_OAUTH_USER_SCOPES}`;
+
+export interface ClaudeOAuthScopeSummary {
+  includesCreateApiKey: boolean;
+  scopeText: string;
+}
+
+const CLAUDE_OAUTH_CREATE_API_KEY_FIELD = ALL_CONFIG_FIELDS.find(
+  (field) => field.id === 'claudeOAuthIncludeCreateAPIKey',
+);
+
+/**
+ * Resolves the authorization scope CPA requests for a Claude OAuth login.
+ * When CPA has already generated an authorization URL with a `scope` parameter,
+ * that live parameter is authoritative; otherwise the current configuration YAML
+ * determines whether `org:create_api_key` is included alongside the five `user:*` scopes.
+ */
+export function resolveClaudeOAuthScope(
+  safeYaml: string | undefined,
+  authorizationUrl?: string,
+): ClaudeOAuthScopeSummary | undefined {
+  if (authorizationUrl) {
+    try {
+      const rawScope = new URL(authorizationUrl).searchParams.get('scope')?.trim();
+      if (rawScope) {
+        const scopes = rawScope.split(/\s+/).filter(Boolean);
+        return {
+          includesCreateApiKey: scopes.includes('org:create_api_key'),
+          scopeText: scopes.join(' '),
+        };
+      }
+    } catch {
+      // Fall back to configured scope when the URL cannot be parsed.
+    }
+  }
+  if (safeYaml === undefined || !CLAUDE_OAUTH_CREATE_API_KEY_FIELD) return undefined;
+  try {
+    const doc = parseDocument(safeYaml);
+    if (doc.errors.length > 0) return undefined;
+    const includesCreateApiKey = Boolean(getFieldSemanticValue(doc, CLAUDE_OAUTH_CREATE_API_KEY_FIELD));
+    return {
+      includesCreateApiKey,
+      scopeText: includesCreateApiKey ? CLAUDE_OAUTH_DEFAULT_SCOPES : CLAUDE_OAUTH_USER_SCOPES,
+    };
+  } catch {
+    return undefined;
+  }
 }

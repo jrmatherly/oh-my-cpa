@@ -190,6 +190,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodPost, "/api/v1/pricing/price-unpriced", demoAllow, ""},
 	{http.MethodPut, "/api/v1/pricing/channels/{channel}", demoAllow, ""},
 	{http.MethodDelete, "/api/v1/pricing/channels/{channel}", demoAllow, ""},
+	{http.MethodGet, "/api/v1/pricing/sync-schedule", demoAllow, ""},
 	{http.MethodPut, "/api/v1/pricing/sync-schedule", demoAllow, ""},
 
 	// Observation of the fixture: the dashboard, the request records and the log
@@ -204,6 +205,9 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodGet, "/api/v1/management/insights/cube", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/insights/rhythm", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/insights/clients", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/trends/quota", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/trends/usage", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/trends/telemetry", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/logs", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/logs/status", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/service-logs", demoAllow, ""},
@@ -255,6 +259,7 @@ var demoPolicy = []demoPolicyRule{
 	// Configuration and capability reads. The console renders them; nothing here
 	// writes to the gateway.
 	{http.MethodGet, "/api/v1/management/outbound-proxy", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/github-token", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config/source", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/config/backups", demoAllow, ""},
@@ -270,6 +275,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodGet, "/api/v1/management/auth-files/safe-fields", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/auth-files/model-aliases", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/auth-files/excluded-models", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/auth-files/request-scoped-errors", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/auth-files/provider-models", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/auth-files/models", demoAllow, ""},
 	{http.MethodPatch, "/api/v1/management/auth-files/status", demoAllow, ""},
@@ -285,6 +291,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodGet, "/api/v1/management/quota", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/quota/{authIndex}", demoAllow, ""},
 	{http.MethodGet, "/api/v1/management/quota/{authIndex}/capacity", demoAllow, ""},
+	{http.MethodGet, "/api/v1/management/quota/{authIndex}/subscription-cycle", demoAllow, ""},
 	{http.MethodPost, "/api/v1/management/quota/refresh", demoAllow, ""},
 
 	// A manual capture pass is answered locally: it reports a pass that found an
@@ -328,6 +335,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodPost, "/api/v1/management/providers/pull-models", demoRefuse, "reading models from a provider is disabled: it would call the provider"},
 	{http.MethodPost, "/api/v1/management/providers/probe", demoRefuse, "probing a provider is disabled: it would call the provider"},
 	{http.MethodPost, "/api/v1/pricing/sync", demoRefuse, "syncing the price catalogue is disabled: it would call openrouter.ai"},
+	{http.MethodPost, "/api/v1/management/github-token/test", demoRefuse, "testing a GitHub token is disabled: it would call api.github.com"},
 	{http.MethodGet, "/api/v1/management/system/diagnostics", demoRefuse, "generating a diagnostic bundle is disabled"},
 
 	// Plugin execution.
@@ -358,6 +366,7 @@ var demoPolicy = []demoPolicyRule{
 
 	// Gateway configuration and credential state.
 	{http.MethodPut, "/api/v1/management/outbound-proxy", demoRefuse, "writing the gateway configuration is disabled"},
+	{http.MethodPut, "/api/v1/management/github-token", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPatch, "/api/v1/management/config", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodPatch, "/api/v1/management/routing", demoRefuse, "writing the gateway configuration is disabled"},
 	{http.MethodGet, "/api/v1/management/config/backups/{id}", demoRefuse, "configuration backups hold the gateway's secrets"},
@@ -376,6 +385,7 @@ var demoPolicy = []demoPolicyRule{
 	{http.MethodPatch, "/api/v1/management/providers/status", demoRefuse, "changing provider configuration is disabled"},
 	{http.MethodPatch, "/api/v1/management/auth-files/model-aliases", demoRefuse, "changing a credential's model aliases is disabled"},
 	{http.MethodPatch, "/api/v1/management/auth-files/excluded-models", demoRefuse, "changing a provider's excluded models is disabled"},
+	{http.MethodPatch, "/api/v1/management/auth-files/request-scoped-errors", demoRefuse, "changing a provider's request-scoped error rules is disabled"},
 	{http.MethodPost, "/api/v1/management/quota/reset", demoRefuse, "resetting a credential's quota is disabled"},
 	{http.MethodPost, "/api/v1/management/quota/clear-cooldown", demoRefuse, "changing a credential's cooldown is disabled"},
 	{http.MethodGet, "/api/v1/management/quota/warmup/settings", demoAllow, "read warmup settings"},

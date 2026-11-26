@@ -1,8 +1,8 @@
 import type { MarkArtwork } from '../../types/brandMark';
-import { mixOklch } from '../../theme/colorMath';
+import { mixOklch, mixSrgb, oklchLightness } from '../../theme/colorMath';
 import type { TwoStopMix } from '../../theme/twoStopMix';
 import { brandDataUri, brandDrawing } from '../../assets/brand/markup';
-import type { ThemePalette } from '../../theme/palette';
+import { STATUS_INK_SHARE, type ThemePalette } from '../../theme/palette';
 import { exportPixelRatio } from './requestSelection';
 import { RADIUS } from '../../theme/radius';
 import {
@@ -34,7 +34,7 @@ const GLYPH_GAP = 3;
 const GLYPH_SIZE = 12;
 /** The reasoning count's bulb is the list's `text-2xs` glyph. */
 const SMALL_GLYPH_SIZE = 10;
-const GLYPH_BOX = 18;
+const GLYPH_BOX = 20;
 /** The list's washes: a neutral mark is a wash of the ink, a hued one a tint of its hue. */
 const INK_WASH = 0.06;
 const HUE_TINT = 0.12;
@@ -282,7 +282,7 @@ export async function paintRequestSheet(
     if (segment.kind === 'mark') return INLINE_MARK_SIZE;
     context.font = segmentFont(segment);
     const textWidth = context.measureText(segment.text).width;
-    if (segment.kind === 'tag') return textWidth + (segment.effortStep !== undefined ? 14 : 12);
+    if (segment.kind === 'tag') return textWidth + 14;
     if (segment.kind === 'dot') return textWidth + 12 + (segment.isWashed ? 16 : 0);
     return textWidth;
   };
@@ -295,6 +295,11 @@ export async function paintRequestSheet(
     const share = Math.min(100, Math.max(0, 100 - segment.cacheRate));
     context.fillStyle = `color-mix(in oklch, ${palette.cacheRateYellow} ${share}%, ${palette.cacheRateGreen})`;
     return String(context.fillStyle);
+  };
+
+  const statusInk = (hue: string): string => {
+    const share = oklchLightness(palette.bg) < 0.5 ? STATUS_INK_SHARE.dark : STATUS_INK_SHARE.light;
+    return mixSrgb(hue, palette.fg, (100 - share) / 100);
   };
 
   const drawSegment = (segment: SheetSegment, x: number, centreY: number, width: number) => {
@@ -351,22 +356,26 @@ export async function paintRequestSheet(
     if (segment.kind === 'dot') {
       const hue = dotColor(segment);
       const inset = segment.isWashed ? 8 : 0;
-      if (segment.isWashed) wash(hue, 0.1, x, centreY - 10, width, 20, RADIUS.sm);
+      if (segment.isWashed) wash(hue, HUE_TINT, x, centreY - 11, width, 22, RADIUS.sm);
       context.fillStyle = hue;
       context.beginPath();
       context.arc(x + inset + 3, centreY, 3, 0, Math.PI * 2);
       context.fill();
-      context.fillStyle = segment.textTone ? toneColor(palette, segment.textTone) : hue;
+      context.fillStyle = segment.textTone
+        ? toneColor(palette, segment.textTone)
+        : segment.isWashed
+          ? statusInk(hue)
+          : hue;
       context.fillText(segment.text, x + inset + 12, centreY + 0.5);
       return;
     }
     // An effort step below 1 is `none`, which the list also leaves at the tag's own neutral tone.
     const hue = (segment.effortStep && palette.effort[segment.effortStep - 1]) || null;
     const ink = hue ?? toneColor(palette, segment.tone);
-    const boxHeight = segment.effortStep !== undefined ? 18 : 16;
+    const boxHeight = 20;
     wash(hue ?? palette.fg, hue ? HUE_TINT : INK_WASH, x, centreY - boxHeight / 2, width, boxHeight, RADIUS.sm);
     context.fillStyle = ink;
-    context.fillText(segment.text, x + (segment.effortStep !== undefined ? 7 : 6), centreY + 0.5);
+    context.fillText(segment.text, x + 7, centreY + 0.5);
   };
 
   const drawCell = (cell: SheetCell, column: SheetColumn, top: number, rowHeight: number) => {

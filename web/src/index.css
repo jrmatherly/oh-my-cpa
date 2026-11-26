@@ -64,6 +64,9 @@
 
   --color-destructive: var(--danger);
   --color-destructive-foreground: #ffffff;
+  --color-danger-ink: color-mix(in srgb, var(--danger) 65%, var(--fg));
+  --color-danger-wash: color-mix(in srgb, var(--danger) 12%, transparent);
+  --color-danger-wash-active: color-mix(in srgb, var(--danger) 16%, transparent);
   --color-success: var(--success);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
@@ -96,6 +99,8 @@
   --shadow-field-focus: var(--shadow-field-focus);
   --shadow-field-invalid: var(--shadow-field-invalid);
   --shadow-field-invalid-focus: var(--shadow-field-invalid-focus);
+  --shadow-field-warning: var(--shadow-field-warning);
+  --shadow-field-warning-focus: var(--shadow-field-warning-focus);
   --shadow-focus: var(--shadow-focus);
 
   --text-*: initial;
@@ -151,6 +156,9 @@
   --success: #10b981;
   --warn: #f59e0b;
   --danger: #ef4444;
+  /* Semantic share mixed with `--fg` for `StatusLabel` text (`STATUS_INK_SHARE` in `palette.ts`),
+     keeping every toned chip above WCAG AA (4.5:1) on its tinted wash across all palettes. */
+  --status-ink-share: 80%;
   /* The request duration ramp's two stops, mixed in OKLCH by the browser: green at an instant,
      orange from a minute on, every wait in between on the way. Red is deliberately absent - a slow
      request is slow, not broken, and the danger hue belongs to failures. The stops are solved as a
@@ -342,6 +350,8 @@
   --shadow-field-focus: inset 0 0 0 1px var(--select-ring), 0 0 0 3px var(--select-halo);
   --shadow-field-invalid: inset 0 0 0 1px var(--danger), var(--well-drop);
   --shadow-field-invalid-focus: inset 0 0 0 1px var(--danger), 0 0 0 2px color-mix(in srgb, var(--danger) 16%, transparent);
+  --shadow-field-warning: inset 0 0 0 1px var(--warn), var(--well-drop);
+  --shadow-field-warning-focus: inset 0 0 0 1px var(--warn), 0 0 0 2px color-mix(in srgb, var(--warn) 16%, transparent);
   --shadow-focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   --tooltip-bg: var(--surface);
   --tooltip-fg: var(--fg);
@@ -463,6 +473,7 @@
   --success: #059669;
   --warn: #b45309;
   --danger: #dc2626;
+  --status-ink-share: 65%;
   --timing-green: #057451;
   --timing-orange: #952e02;
   /* The same two hues read as their darker steps on a light page; a saturated
@@ -521,6 +532,7 @@
   }
   ::selection { background: var(--accent); color: var(--accent-on); }
   button, input, textarea, select { font: inherit; color: inherit; }
+  code, kbd, samp, pre { font-family: var(--font-mono); }
   a { color: inherit; }
   [hidden]:where(:not([hidden='until-found'])) { display: none !important; }
 }
@@ -894,11 +906,9 @@ h1, h2, h3, h4 { font-family: inherit; }
    keeps its edge where the drop has nothing to fall on. Its icon is the notice's size,
    so a failure reads at the same weight whether it floats or sits in the page. */
 .omc-toast-detail { margin-bottom: 6px; }
-/* A report's per-target list scrolls inside the toast, so forty failures cannot push it past the
-   viewport. */
+/* The toast body (`components/ui/toast.tsx`) owns vertical scrolling; the report lays out its
+   groups without creating a second clipping scroll box. */
 .omc-toast-report {
-  max-height: min(320px, 50vh);
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -918,17 +928,20 @@ h1, h2, h3, h4 { font-family: inherit; }
   font-weight: 400;
   color: var(--muted);
 }
+/* Nested inside a floating toast (`--elevated`), the item list recedes one step into its host
+   using an inset well shadow so scrolling never clips an outset ring or drop shadow. */
 .omc-toast-items {
   border: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  box-shadow: var(--shadow-edge);
+  background: var(--surface);
+  box-shadow: var(--shadow-well);
   border-radius: var(--radius-lg);
 }
 .omc-toast-items li {
-  padding: 6px 10px;
-  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  border-top: 1px solid var(--float-rule);
 }
 .omc-toast-items li:first-child { border-top: 0; }
 .omc-toast-item-name {
@@ -992,8 +1005,8 @@ h1, h2, h3, h4 { font-family: inherit; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 18px;
-  padding: 0 6px;
+  height: 20px;
+  padding: 0 7px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--notice-tone) 12%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--notice-tone) 10%, transparent);
@@ -1003,7 +1016,7 @@ h1, h2, h3, h4 { font-family: inherit; }
   line-height: 1;
   white-space: nowrap;
 }
-.omc-notice-icon { display: inline-flex; font-size: var(--text-sm); }
+.omc-notice-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: var(--text-sm); }
 .omc-notice-body { flex: 1 1 0; min-width: 0; }
 .omc-notice-title { overflow-wrap: anywhere; }
 .omc-notice-detail {
@@ -1093,28 +1106,87 @@ h1, h2, h3, h4 { font-family: inherit; }
 .panel-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-title-extra { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; }
 
-/* A state as pip + word (`StatusLabel`). The word keeps the reading ink; the pip alone carries tone. */
+/* A state led by a 6px pip (`StatusLabel`). The default is text on the surface's own ground: a
+   healthy or neutral state reads in the secondary ink with only the pip in colour, and a warning,
+   a failure or a pending action takes its tone's ink too. `.is-chip` sets the same pip and word on
+   a soft semantic wash and is kept for an event's outcome (its list column and its drawer head).
+   Both forms share the chip line height (22px, 20px small) so neither moves a row. */
 .status-label {
+  --status-tone: var(--fg-2);
   display: inline-flex;
-  align-items: center;
+  /* The word is the label's baseline, so a heading set beside it on a baseline-aligned row
+     shares its baseline; the block padding centres the word's line in the 22px box. */
+  align-items: baseline;
   gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 22px;
+  padding-block: calc((22px - 1.25em) / 2);
+  border-radius: var(--radius-sm);
   color: var(--fg-2);
   font-size: var(--text-sm);
-  line-height: 1.4;
+  line-height: 1;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.status-label.is-small {
+  height: 20px;
+  padding-block: calc((20px - 1.25em) / 2);
+  gap: 5px;
+  font-size: var(--text-xs);
 }
 .status-label-pip {
   flex-shrink: 0;
+  align-self: center;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--meta);
+  background: var(--status-tone);
 }
-.status-label.is-success .status-label-pip { background: var(--success); }
-.status-label.is-warn .status-label-pip { background: var(--warn); }
-.status-label.is-danger .status-label-pip { background: var(--danger); }
-.status-label.is-accent .status-label-pip { background: var(--accent); }
-.status-label.is-neutral { color: var(--muted); }
+.status-label.is-small .status-label-pip {
+  width: 5px;
+  height: 5px;
+}
+.status-label.is-neutral .status-label-pip {
+  background: var(--muted);
+}
+.status-label-text {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+.status-label-trailing {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: center;
+  align-items: center;
+  margin-inline-start: -2px;
+  font-size: var(--text-xs);
+  opacity: 0.78;
+}
+.status-label.is-success { --status-tone: var(--success); }
+.status-label.is-warn { --status-tone: var(--warn); }
+.status-label.is-danger { --status-tone: var(--danger); }
+.status-label.is-accent { --status-tone: var(--accent); }
+.status-label.is-warn,
+.status-label.is-danger,
+.status-label.is-accent {
+  color: color-mix(in srgb, var(--status-tone) var(--status-ink-share), var(--fg));
+}
+.status-label.is-chip {
+  padding-inline: 8px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  font-weight: 500;
+}
+.status-label.is-chip.is-small {
+  padding-inline: 7px;
+}
+.status-label.is-chip:not(.is-neutral) {
+  background: color-mix(in srgb, var(--status-tone) 12%, transparent);
+  color: color-mix(in srgb, var(--status-tone) var(--status-ink-share), var(--fg));
+}
 
 /* EmptyState (components/common/EmptyState.tsx). A centred column: the mark, the state, one
    further line, one action. The mark is the rows that are not there - three rules from the border
@@ -1382,8 +1454,9 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
   justify-content: space-between;
   gap: 12px 20px;
   min-height: 46px;
-  /* The trailing buttons sit 6px inside the slab's corner, concentric with it (6 + 6 = 12). */
-  padding: 6px 6px 6px 16px;
+  /* The clear glyph and the trailing buttons sit 6px inside the slab's corner, concentric with it
+     (6 + 6 = 12). */
+  padding: 6px;
   border-radius: var(--radius-xl);
   background: var(--elevated);
   box-shadow: var(--shadow-float);
@@ -1391,12 +1464,22 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
   animation: selection-dock-in var(--motion-base) var(--ease-out) backwards;
 }
 .selection-bar-start,
-.selection-bar-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 14px; min-width: 0; }
+.selection-bar-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; min-width: 0; }
+/* The way out hugs the count it ends; the widening links keep the start's wider rhythm. */
+.selection-bar-clear { margin-inline-end: -10px; color: var(--fg-2); }
 .selection-bar-actions {
-  gap: 8px;
+  gap: 4px;
   margin-inline-start: auto;
-  padding-inline-start: 16px;
+  padding-inline-start: 12px;
   border-inline-start: 1px solid var(--border-soft);
+}
+/* A destructive action stands apart from the rest by the same rule that sets the actions apart. */
+.selection-bar-divider {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin-inline: 6px;
+  background: var(--border-soft);
 }
 @keyframes selection-dock-in {
   from { opacity: 0; transform: translateY(8px); }
@@ -1409,7 +1492,27 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
 }
 .selection-bar-count { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .selection-bar-note { color: var(--muted); }
-.selection-bar-start [data-slot="button"][data-variant="link"] { padding-inline: 0; }
+.selection-bar-start [data-slot="button"][data-variant="link"] { padding-inline: 0; white-space: nowrap; }
+/* A phone's bar is one line: the way out, the count and the reach of the selection, then the actions
+   as glyphs. The note and a widening link give way before the count does. */
+@media (max-width: 640px) {
+  .selection-bar,
+  .selection-bar-start { flex-wrap: nowrap; }
+  .selection-bar { gap: 8px; }
+  .selection-bar-start { flex: 1 1 auto; gap: 8px; }
+  .selection-bar-clear { margin-inline-end: 0; }
+  .selection-bar-count { flex-shrink: 0; }
+  .selection-bar-note,
+  .selection-bar-start [data-slot="button"][data-variant="link"] {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .selection-bar-actions { flex: none; gap: 0; }
+  .selection-bar-divider { margin-inline: 4px; }
+}
 
 /* Tag (components/common/Tag.tsx): a short label on a soft fill. A row carries several facts, and a
    neutral outline around each made the row a strip of boxes; a wash keeps each one legible as a
@@ -1417,16 +1520,16 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
    stronger, drawn inside, so the chip has a crisp material rim without a second colour. The tone
    sets one custom property and the ink, tint and rim are mixed from it, so a caller that brings its
    own colour (a provider family's brand) sets the same property and nothing else. Every chip in
-   the console - labels, counts, value chips - shares the two geometries here: 22px (or 18px
-   small), 7px (6px) inline padding, the `sm` corner and the medium weight. */
+   the console - labels, counts, value chips - shares the two geometries here: 22px (or 20px
+   small), 8px (7px) inline padding, the `sm` corner and the medium weight. */
 .tag {
   --tag-tone: var(--fg-2);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   box-sizing: border-box;
   height: 22px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 0;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
@@ -1441,8 +1544,9 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
   vertical-align: middle;
 }
 .tag.is-small {
-  height: 18px;
-  padding: 0 6px;
+  height: 20px;
+  padding: 0 7px;
+  gap: 4px;
   font-size: var(--text-xs);
 }
 .tag.is-success { --tag-tone: var(--success); }
@@ -1452,7 +1556,24 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
 .tag.is-success, .tag.is-warn, .tag.is-danger, .tag.is-accent {
   background: color-mix(in srgb, var(--tag-tone) 12%, transparent);
 }
-.tag-icon { display: inline-flex; font-size: var(--text-sm); }
+.tag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+/* Brand marks rendered inside a chip (such as provider marks shared with 16px menus) fit the chip's
+   inner height so artwork never crowds the chip's top or bottom edge. */
+.tag-icon > :is(img, svg, [data-remote-image]) {
+  max-width: 14px;
+  max-height: 14px;
+}
+.tag.is-small .tag-icon > :is(img, svg, [data-remote-image]) {
+  max-width: 12px;
+  max-height: 12px;
+}
 /* EffortTag (components/common/Tag.tsx): the level's step on the effort scale inks and tints the tag. */
 .effort-tag {
   --effort-hue: var(--fg-2);
@@ -1619,6 +1740,9 @@ body.is-row-dragging, body.is-row-dragging * { cursor: grabbing !important; user
    likewise ringed by its container (a card whose stretched button opens it). */
 :focus-visible:not(input):not(textarea):not([data-slot="select-trigger"]):not([data-slot="combobox-trigger"]):not([data-slot="color-picker-trigger"]):not([data-focus-ring="outer"]) { outline: none; box-shadow: 0 0 0 2px var(--accent) !important; border-radius: var(--radius-md); }
 input:focus-visible, textarea:focus-visible { outline: none; }
+@media (forced-colors: active) {
+  textarea:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}
 
 /* ── shell: a rail on the canvas, the page on one sheet ─────────────────────
    Two layers and no rules between them. The navigation stands on the canvas, which is chrome;
@@ -1780,10 +1904,12 @@ input:focus-visible, textarea:focus-visible { outline: none; }
    same element to the rail and to the sidebar-visibility dialog, so the glyph box belongs to the
    logo itself rather than to the rail that first drew it. */
 .app-menu-plugin-logo { width: 16px; height: 16px; flex: none; }
-/* An available update marks the entry with a `--warn` dot just outside the icon's corner,
-   where it touches neither the glyph nor the row's hover fill. */
-.app-menu .app-menu-flagged-icon { position: relative; display: inline-flex; align-items: center; flex: none; }
-.app-menu .app-menu-update-dot { position: absolute; top: -3px; inset-inline-end: -4px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+/* AttentionDot: a dot that asks for a look, inline beside a label or pinned to a mark's corner by
+   FlaggedMark, just outside the glyph and the row's hover fill. */
+.attention-dot { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.attention-dot[data-tone='danger'] { background: var(--danger); }
+.flagged-mark { position: relative; display: inline-flex; align-items: center; flex: none; }
+.flagged-mark > .attention-dot { position: absolute; top: -3px; inset-inline-end: -4px; }
 /* Stands in for every page while the gateway is older than CPA v8. The steps read
    left-aligned under the centred result, like instructions rather than a slogan. */
 .cpa-blocked { max-width: 680px; margin: 48px auto; padding: 0 16px; }
@@ -1819,7 +1945,7 @@ input:focus-visible, textarea:focus-visible { outline: none; }
 /* The demonstration's marker. It borrows the credential card's own badge language -
    accent text on the surface with a border edge - rather than introducing a hue, so it
    reads as one more label in the shell instead of as an alert. */
-.demo-chip { border: 0; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: var(--text-xs); font-weight: 500; }
+.demo-chip { border: 0; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: var(--text-xs); font-weight: 500; line-height: 1; }
 /* The page's one scroller is also its content's containing block. An absolutely positioned element
    with no positioned ancestor - a visually hidden label - would otherwise escape this clip and lengthen
    the document, which the shell's `overflow: hidden` stops the reader scrolling but not a script: a
@@ -2487,8 +2613,18 @@ input:focus-visible, textarea:focus-visible { outline: none; }
   box-shadow: var(--shadow-control);
 }
 .placeholder-settings-card { padding: 10px 18px; }
-.placeholder-system-product { display: flex; flex-direction: column; gap: 12px; padding: 12px 0; }
+/* The versions card's two products, side by side where the card is wide (`.product-list` in
+   SystemPage.module.css), stacked otherwise. */
+.placeholder-system-products { container: placeholder-products / inline-size; display: flex; flex-wrap: wrap; }
+.placeholder-system-product { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 4px 0 24px; }
+.placeholder-system-product + .placeholder-system-product { padding-top: 24px; }
+.placeholder-system-product:last-child { padding-bottom: 0; }
 .placeholder-system-product + .placeholder-system-product { border-top: 1px solid var(--border-soft); }
+@container placeholder-products (min-width: 1040px) {
+  .placeholder-system-product { flex-basis: 0; padding-block: 4px; }
+  .placeholder-system-product:first-child { padding-inline-end: 40px; }
+  .placeholder-system-product + .placeholder-system-product { border-top: 0; border-inline-start: 1px solid var(--border-soft); padding-block: 4px; padding-inline-start: 40px; }
+}
 .placeholder-system-product-head { display: flex; flex-direction: column; gap: 6px; }
 .placeholder-system-versions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .placeholder-system-action { margin-left: auto; }
@@ -2819,6 +2955,7 @@ input:focus-visible, textarea:focus-visible { outline: none; }
   color: var(--muted);
   margin-top: 4px;
   line-height: 1.5;
+  overflow-wrap: break-word;
 }
 
 .settings-toggle-control {

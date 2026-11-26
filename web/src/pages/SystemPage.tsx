@@ -1,6 +1,7 @@
 import { DatabaseBackups } from './SystemPage/DatabaseBackups';
 import { useTimeZone } from '../utils/TimeZoneProvider';
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DownloadOutlined,
@@ -15,6 +16,7 @@ import {
   ClearOutlined,
   BellOutlined,
   BellOffOutlined,
+  ArrowRightOutlined,
 } from '../components/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from '../utils/time';
@@ -32,6 +34,7 @@ import type {
 import { PageHeader } from '../components/common/PageHeader';
 import { PanelTitle } from '../components/common/PanelTitle';
 import { FactList } from '../components/common/FactList';
+import { MetaLine } from '../components/common/MetaLine';
 import { ParagraphPlaceholder } from '../components/common/ContentPlaceholder';
 import { SuspenseFallback, SystemSkeleton } from '../components/common/PageLoading';
 import { LoadingRegion } from '../components/common/Placeholder';
@@ -49,6 +52,7 @@ import { StorageFootprint } from './SystemPage/StorageFootprint';
 import { INCOMPLETE_REASON_KEYS, MaintenanceOutcome, MaintenanceRunning } from './SystemPage/MaintenanceOutcome';
 import { UPDATE_STATUS_QUERY_KEY, useUpdateDismissals } from '../hooks/useUpdateNotice';
 import { isUpdateDismissed } from '../utils/updateDismissals';
+import { GITHUB_TOKEN_SETTINGS_PATH, isGitHubTokenError } from '../types/githubToken';
 import styles from './SystemPage.module.css';
 import { LoadFailure, Notice, useToast } from '../components/feedback';
 import { AppDrawer } from '../components/common/AppDrawer';
@@ -94,6 +98,7 @@ interface ProductBlockProps {
   updateOffer: UpdateOffer;
   isSubmittingUpdate: boolean;
   onUpdate: () => void;
+  onConfigureGitHubToken: () => void;
 }
 
 const ProductBlock: React.FC<ProductBlockProps> = ({
@@ -108,48 +113,34 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
   updateOffer,
   isSubmittingUpdate,
   onUpdate,
+  onConfigureGitHubToken,
 }) => {
   useTimeZone();
   const t = useT();
 
   const presentation = deriveVersionPresentation(version, isChecking);
+  const isUpdating = updateOffer.kind === 'running';
   // Offered for a known newer release only: there is nothing to dismiss about a build that
-  // is current, ahead, or not comparable.
-  const canDismiss = version.state === 'update_available' && version.latest_version !== '';
+  // is current, ahead, or not comparable, nor about the one being installed right now.
+  const canDismiss = version.state === 'update_available' && version.latest_version !== '' && !isUpdating;
+  const running = version.running_version || t('sys.version_unknown');
+  const latest = version.latest_version;
+  // The arrow is the verdict: a newer release reads as the move from the running build to it.
+  // Any other state shows the running build alone, with the release beside the verdict when it
+  // differs from what runs.
+  const isTransition = version.state === 'update_available' && latest !== '';
+  const hasLatestFact = !isTransition && latest !== '' && latest !== version.running_version;
 
   return (
     <section className={styles['product-block']} aria-label={productTitle} data-testid={`sys-product-${version.product}`}>
-      <div className={styles['product-header']} data-testid="sys-product-header">
+      <div className={styles['product-head']} data-testid="sys-product-header">
         <div className={styles['product-identity']}>
-          <div className={styles['product-title']}>{productTitle}</div>
-          <a
-            href={version.repository_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles['repo-link']}
-          >
+          <h3 className={styles['product-title']}>{productTitle}</h3>
+          <a href={version.repository_url} target="_blank" rel="noopener noreferrer" className={styles['repo-link']}>
             {version.repository} <LinkOutlined />
           </a>
         </div>
-        <div className={styles['product-badge']} role="status">
-          <StatusLabel tone={presentation.tone}>{t(presentation.statusKey)}</StatusLabel>
-        </div>
-      </div>
-
-      <div className={styles['version-row']} data-testid="sys-version-row">
-        <div className={styles['version-comparison']} data-testid="sys-version-comparison">
-          <div className={styles['version-pair']}>
-            <span className={styles['version-label']}>{t('sys.current_version')}</span>
-            <span className={styles['version-value']}>{version.running_version || t('sys.version_unknown')}</span>
-          </div>
-          <div className={styles['version-pair']} data-testid="sys-latest-release">
-            <span className={styles['version-label']}>{t('sys.latest_version')}</span>
-            <span className={`${styles['version-value']} ${version.state === 'update_available' ? styles['version-target'] : ''}`}>
-              {version.latest_version || '—'}
-            </span>
-          </div>
-        </div>
-        {(canDismiss || presentation.hasChangelog || updateOffer.kind === 'available' || updateOffer.kind === 'running') && (
+        {(canDismiss || presentation.hasChangelog) && (
           <div className={styles['version-actions']}>
             {canDismiss && (
               <Button
@@ -162,7 +153,7 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
                 icon={isDismissed ? <BellOffOutlined /> : <BellOutlined />}
                 aria-pressed={isDismissed}
                 disabled={!canChangeDismissal}
-                aria-label={t('sys.dismiss_update_named', { product: productTitle, version: version.latest_version })}
+                aria-label={t('sys.dismiss_update_named', { product: productTitle, version: latest })}
                 data-testid="sys-dismiss-update"
                 onClick={isDismissed ? onRestore : onDismiss}
               >
@@ -182,15 +173,42 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
                 <span className={styles['changelog-count']} aria-hidden="true">{version.merge_count}</span>
               </Button>
             )}
-            {/* The primary action is drawn last so it sits at the row's right edge, the same
-                edge the page's own primary action takes. */}
-            <UpdateAction version={version} productTitle={productTitle} offer={updateOffer} isSubmitting={isSubmittingUpdate} onUpdate={onUpdate} />
           </div>
         )}
       </div>
 
+      {/* The version is the card's figure, and the update that changes it stands on its line. */}
+      <div className={styles['version-hero']}>
+        <div
+          className={styles['version-line']}
+          role="img"
+          aria-label={isTransition ? t('sys.version_transition', { from: running, to: latest }) : `${t('sys.current_version')} ${running}`}
+          data-testid="sys-version-comparison"
+        >
+          <span className={styles['version-figure']}>{running}</span>
+          {isTransition && (
+            <>
+              <ArrowRightOutlined className={styles['version-arrow']} />
+              <span className={`${styles['version-figure']} ${styles['version-target']}`} data-testid="sys-latest-release">{latest}</span>
+            </>
+          )}
+        </div>
+        <UpdateAction version={version} productTitle={productTitle} offer={updateOffer} isSubmitting={isSubmittingUpdate} onUpdate={onUpdate} />
+      </div>
+
+      <div className={styles['version-status']} role="status">
+        {isUpdating ? (
+          <StatusLabel tone="accent">{t('sys.update_running')}</StatusLabel>
+        ) : (
+          <StatusLabel tone={presentation.tone}>{t(presentation.statusKey)}</StatusLabel>
+        )}
+        <MetaLine>
+          {hasLatestFact && <span data-testid="sys-latest-release">{t('sys.latest_release_value', { version: latest })}</span>}
+          {presentation.detailKey && t(presentation.detailKey)}
+        </MetaLine>
+      </div>
+
       <UpdateStatusLine offer={updateOffer} />
-      {presentation.detailKey && <div className={styles['version-detail']}>{t(presentation.detailKey)}</div>}
       {presentation.shouldShowNotesNotice && (
         <div className={styles['version-detail']}>{t('sys.notes_not_held')}</div>
       )}
@@ -204,9 +222,11 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
             time: version.attempted_at_ms ? dayjs(version.attempted_at_ms).format('YYYY-MM-DD HH:mm:ss') : '—',
             msg: version.check_error,
           })}{version.checked_at_ms && <div>{t('sys.last_successful_check', { time: dayjs(version.checked_at_ms).format('YYYY-MM-DD HH:mm:ss') })}</div>}</>}
+          action={isGitHubTokenError(version.check_error) ? (
+            <Button size="sm" onClick={onConfigureGitHubToken}>{t('sys.configure_github_token')}</Button>
+          ) : undefined}
         />
       )}
-
     </section>
   );
 };
@@ -214,6 +234,7 @@ const ProductBlock: React.FC<ProductBlockProps> = ({
 export const SystemPage: React.FC = () => {
   useTimeZone();
   const t = useT();
+  const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { dismissals, isLoaded: areDismissalsLoaded, dismiss, restore } = useUpdateDismissals();
@@ -512,7 +533,12 @@ export const SystemPage: React.FC = () => {
         const summary = summarizeUpdateCheck([outcome.omc_version, outcome.cpa_version], outcome.served_from_cache);
         if (summary.kind === 'failed' || summary.kind === 'partial') {
           const products = summary.failedProducts.map((product) => t(product === 'omc' ? 'sys.omc_version' : 'sys.cpa_version')).join(', ');
-          toast.warning(t(outcome.served_from_cache ? 'sys.check_updates_cached_failed' : 'sys.check_updates_failed', { products }));
+          const hasTokenError = [outcome.omc_version.check_error, outcome.cpa_version.check_error].some((msg) => isGitHubTokenError(msg));
+          toast.warning(t(outcome.served_from_cache ? 'sys.check_updates_cached_failed' : 'sys.check_updates_failed', { products }), {
+            actions: hasTokenError
+              ? <Button size="sm" onClick={() => navigate(GITHUB_TOKEN_SETTINGS_PATH)}>{t('sys.configure_github_token')}</Button>
+              : undefined,
+          });
         } else if (summary.kind === 'cached') {
           toast.info(t('sys.check_updates_cached'));
         } else if (summary.kind === 'checking') {
@@ -525,8 +551,16 @@ export const SystemPage: React.FC = () => {
       const detail = describeError(error);
       // One outcome, one surface: a check the operator asked for answers in a toast, and only an
       // automatic check, which nobody is waiting on, states its failure in the card.
-      if (shouldNotify) toast.error(t('sys.check_failed'), { detail });
-      else setUpdateCheckError(detail);
+      if (shouldNotify) {
+        toast.error(t('sys.check_failed'), {
+          detail,
+          actions: isGitHubTokenError(detail)
+            ? <Button size="sm" onClick={() => navigate(GITHUB_TOKEN_SETTINGS_PATH)}>{t('sys.configure_github_token')}</Button>
+            : undefined,
+        });
+      } else {
+        setUpdateCheckError(detail);
+      }
     } finally {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['management-system-info'] }),
@@ -665,35 +699,50 @@ export const SystemPage: React.FC = () => {
             </div>
           }
         >
-          {updateCheckError && <Notice tone="warning" title={t('sys.check_failed')} description={updateCheckError} />}
+          {updateCheckError && (
+            <Notice
+              tone="warning"
+              title={t('sys.check_failed')}
+              description={updateCheckError}
+              action={isGitHubTokenError(updateCheckError) ? (
+                <Button size="sm" onClick={() => navigate(GITHUB_TOKEN_SETTINGS_PATH)}>{t('sys.configure_github_token')}</Button>
+              ) : undefined}
+            />
+          )}
           {sysInfo && (
             <>
-              <ProductBlock
-                productTitle={t('sys.omc_version')}
-                version={sysInfo.omc_version}
-                isChecking={isCheckingUpdates}
-                onOpenChangelog={() => setExpandedProduct('omc')}
-                isDismissed={isUpdateDismissed(sysInfo.omc_version, dismissals)}
-                canChangeDismissal={areDismissalsLoaded}
-                onDismiss={() => void changeDismissal(sysInfo.omc_version, true)}
-                onRestore={() => void changeDismissal(sysInfo.omc_version, false)}
-                updateOffer={deriveUpdateOffer(sysInfo.omc_version, updater, 'omc')}
-                isSubmittingUpdate={submittingProduct === 'omc'}
-                onUpdate={() => void handleApplyUpdate('omc')}
-              />
-              <ProductBlock
-                productTitle={t('sys.cpa_version')}
-                version={sysInfo.cpa_version}
-                isChecking={isCheckingUpdates}
-                onOpenChangelog={() => setExpandedProduct('cpa')}
-                isDismissed={isUpdateDismissed(sysInfo.cpa_version, dismissals)}
-                canChangeDismissal={areDismissalsLoaded}
-                onDismiss={() => void changeDismissal(sysInfo.cpa_version, true)}
-                onRestore={() => void changeDismissal(sysInfo.cpa_version, false)}
-                updateOffer={deriveUpdateOffer(sysInfo.cpa_version, updater, 'cpa')}
-                isSubmittingUpdate={submittingProduct === 'cpa'}
-                onUpdate={() => void handleApplyUpdate('cpa')}
-              />
+              <div className={styles['product-list']}>
+                <div className={styles['product-columns']}>
+                  <ProductBlock
+                    productTitle={t('sys.omc_version')}
+                    version={sysInfo.omc_version}
+                    isChecking={isCheckingUpdates}
+                    onOpenChangelog={() => setExpandedProduct('omc')}
+                    isDismissed={isUpdateDismissed(sysInfo.omc_version, dismissals)}
+                    canChangeDismissal={areDismissalsLoaded}
+                    onDismiss={() => void changeDismissal(sysInfo.omc_version, true)}
+                    onRestore={() => void changeDismissal(sysInfo.omc_version, false)}
+                    updateOffer={deriveUpdateOffer(sysInfo.omc_version, updater, 'omc')}
+                    isSubmittingUpdate={submittingProduct === 'omc'}
+                    onUpdate={() => void handleApplyUpdate('omc')}
+                    onConfigureGitHubToken={() => navigate(GITHUB_TOKEN_SETTINGS_PATH)}
+                  />
+                  <ProductBlock
+                    productTitle={t('sys.cpa_version')}
+                    version={sysInfo.cpa_version}
+                    isChecking={isCheckingUpdates}
+                    onOpenChangelog={() => setExpandedProduct('cpa')}
+                    isDismissed={isUpdateDismissed(sysInfo.cpa_version, dismissals)}
+                    canChangeDismissal={areDismissalsLoaded}
+                    onDismiss={() => void changeDismissal(sysInfo.cpa_version, true)}
+                    onRestore={() => void changeDismissal(sysInfo.cpa_version, false)}
+                    updateOffer={deriveUpdateOffer(sysInfo.cpa_version, updater, 'cpa')}
+                    isSubmittingUpdate={submittingProduct === 'cpa'}
+                    onUpdate={() => void handleApplyUpdate('cpa')}
+                    onConfigureGitHubToken={() => navigate(GITHUB_TOKEN_SETTINGS_PATH)}
+                  />
+                </div>
+              </div>
               <UpdaterSetup updater={updater} />
             </>
           )}

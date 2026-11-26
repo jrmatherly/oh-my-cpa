@@ -11,7 +11,9 @@ const buttonVariants = cva(
     // neighbours for a frame, and the console's controls do not give way under a hand.
     'rounded-md transition-[background-color,color,box-shadow,opacity] cursor-pointer',
     'focus-visible:outline-none focus-visible:shadow-focus',
-    'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
+    // A refused button fades; a working one (`loading`, which also refuses clicks) keeps its weight
+    // and colour and shows its spinner, so work in progress never reads as a dead control.
+    'disabled:not-aria-busy:cursor-not-allowed disabled:not-aria-busy:opacity-50 disabled:not-aria-busy:shadow-none aria-busy:cursor-progress',
     '[&_svg]:pointer-events-none [&_svg]:shrink-0',
   ].join(' '),
   {
@@ -28,7 +30,11 @@ const buttonVariants = cva(
         ghost: 'bg-transparent text-foreground hover:enabled:bg-secondary active:enabled:bg-secondary-hover shadow-none',
         dashed: 'border border-dashed border-border bg-transparent text-foreground hover:enabled:border-muted-foreground hover:enabled:bg-[color-mix(in_srgb,var(--fg)_4%,transparent)] shadow-none',
         destructive: 'bg-destructive text-destructive-foreground hover:enabled:opacity-90 shadow-none',
-        'destructive-secondary': 'bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger hover:enabled:bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--danger)_28%,transparent)]',
+        // Quiet on the page like `secondary`, carrying the same `--shadow-control` material; reveals
+        // its danger wash and WCAG-AA danger ink when approached or open for confirmation, so a
+        // resting destructive trigger never draws an outline or outshouts the primary action beside it.
+        'destructive-secondary':
+          'bg-secondary text-secondary-foreground shadow-control hover:enabled:bg-danger-wash hover:enabled:text-danger-ink active:enabled:bg-danger-wash-active active:enabled:text-danger-ink focus-visible:text-danger-ink data-[popup-open]:bg-danger-wash data-[popup-open]:text-danger-ink',
         'destructive-ghost': 'bg-transparent text-danger hover:enabled:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] shadow-none',
         link: 'h-auto px-0 py-0 bg-transparent text-brand hover:enabled:underline shadow-none',
       },

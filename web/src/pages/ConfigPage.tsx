@@ -45,7 +45,7 @@ import {
 import { LoadFailure, Notice, useToast } from '../components/feedback';
 import { SearchInput } from '../components/common/SearchInput';
 import { SectionHeading } from '../components/common/SectionHeading';
-import { Tag } from '../components/common/Tag';
+import { StatusLabel } from '../components/common/StatusLabel';
 import { ConfirmAction } from '../components/common/ConfirmAction';
 import { CopyButton } from '../components/common/CopyButton';
 import { ToolButton } from '../components/common/ToolButton';
@@ -90,13 +90,15 @@ export const ConfigPage: React.FC = () => {
     saveMutation,
     showErrorFeedback,
     handleDiscardChanges,
-    payloadIssues,
+    blockingPayloadIssuesCount,
     stringMapIssues,
     patternRulesIssues,
+    serverIdIssues,
     firstFieldErrorMessage,
     hasYamlErrors,
     hasConfigErrors,
     hasPendingPayloadEdits,
+    saveConfirmDescription,
     saveConfig,
     requestSaveConfirmation,
     handleViewModeChange,
@@ -242,13 +244,16 @@ export const ConfigPage: React.FC = () => {
     for (const fieldId of Object.keys(patternRulesIssues)) {
       changed.add(fieldId);
     }
+    for (const fieldId of Object.keys(serverIdIssues)) {
+      changed.add(fieldId);
+    }
     if (hasPendingPayloadEdits) {
       changed.add('payloadReplaceRules');
     }
     return changed;
     // rawYaml is the draft's revision: the refs are rewritten before it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDirty, rawYaml, docRef, serverDocRef, stringMapIssues, patternRulesIssues, hasPendingPayloadEdits]);
+  }, [isDirty, rawYaml, docRef, serverDocRef, stringMapIssues, patternRulesIssues, serverIdIssues, hasPendingPayloadEdits]);
   const changedSectionIds = React.useMemo(
     () => new Set(ALL_CONFIG_FIELDS.filter((field) => changedFieldIds.has(field.id)).map((field) => field.sectionId)),
     [changedFieldIds],
@@ -343,15 +348,15 @@ export const ConfigPage: React.FC = () => {
               <h1 className="terminal-title">{t('nav.config')}</h1>
               <div className="config-toolbar-meta">
                 {configQuery.isPending && !rawYaml ? (
-                  <Tag className="config-sync-badge">{t('cfg.status_loading')}</Tag>
+                  <StatusLabel tone="neutral">{t('cfg.status_loading')}</StatusLabel>
                 ) : configQuery.isError && !rawYaml ? (
-                  <Tag tone="danger" className="config-sync-badge">{t('cfg.status_error')}</Tag>
+                  <StatusLabel tone="danger">{t('cfg.status_error')}</StatusLabel>
                 ) : configQuery.isError && rawYaml ? (
-                  <Tag tone="warn" className="config-sync-badge">{t('cfg.status_stale')}</Tag>
+                  <StatusLabel tone="warn">{t('cfg.status_stale')}</StatusLabel>
                 ) : isDirty ? (
-                  <Tag tone="warn" className="config-sync-badge">{t('cfg.source_dirty')}</Tag>
+                  <StatusLabel tone="warn">{t('cfg.source_dirty')}</StatusLabel>
                 ) : (
-                  <Tag tone="success" className="config-sync-badge">{t('cfg.source_clean')}</Tag>
+                  <StatusLabel tone="success">{t('cfg.source_clean')}</StatusLabel>
                 )}
                 <span className="config-field-count">{t('cfg.items_count', { n: ALL_CONFIG_FIELDS.length })}</span>
               </div>
@@ -407,7 +412,7 @@ export const ConfigPage: React.FC = () => {
               ) : (
                 <ConfirmAction
                   title={t('cfg.source_save_confirm')}
-                  description={t('cfg.source_save_confirm_desc')}
+                  description={saveConfirmDescription}
                   onConfirm={saveConfig}
                   disabled={!isDirty || saveMutation.isPending}
                 >
@@ -530,9 +535,9 @@ export const ConfigPage: React.FC = () => {
             {!isPhone && (
               <div className="inline-flex items-center gap-3">
                 {isSourceFocused && (
-                  <Tag tone={isDirty ? 'warn' : 'success'}>
+                  <StatusLabel tone={isDirty ? 'warn' : 'success'}>
                     {isDirty ? t('cfg.source_dirty') : t('cfg.source_clean')}
-                  </Tag>
+                  </StatusLabel>
                 )}
                 {rawYaml && (
                   <MetaLine className="mono-num text-xs">
@@ -618,9 +623,10 @@ export const ConfigPage: React.FC = () => {
         isDirty={isDirty}
         isSaving={saveMutation.isPending}
         yamlError={hasYamlErrors}
-        payloadIssuesCount={payloadIssues.length}
+        payloadIssuesCount={blockingPayloadIssuesCount}
         validationError={firstFieldErrorMessage}
         showErrorFeedback={showErrorFeedback}
+        confirmDescription={saveConfirmDescription}
         onSave={saveConfig}
         onDiscard={handleDiscardChanges}
       />

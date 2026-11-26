@@ -2,7 +2,9 @@ import type { BackupAuthorization, BackupArchive, BackupAutomation, BackupAutoma
 import type { RoutingBoard, RoutingModels, RoutingOutcome, RoutingPlanRequest } from '../types/routing';
 import type { ExchangeRates } from '../types/currencyDisplay';
 import type { OutboundProxyInput, OutboundProxySettings } from '../types/outboundProxy';
+import type { GitHubTokenInput, GitHubTokenStatus, GitHubTokenTestResult } from '../types/githubToken';
 import type { InsightsClientsResponse, InsightsCubeResponse, InsightsRhythmResponse } from '../types/insights';
+import type { TrendsQuotaResponse, TrendsTelemetryResponse, TrendsUsageResponse } from '../types/trends';
 import type { WarmupRunResponse, WarmupStateView, WarmupTaskInput } from '../types/warmup';
 import type { ModelCatalogRefreshResult, ModelSquareDirectory } from '../types/modelSquare';
 import type { CustomIcon } from '../types/customIcons';
@@ -33,6 +35,8 @@ import {
   ManagementOAuthModelAliasesResponse,
   ManagementOAuthModelAliasMutationResponse,
   ManagementOAuthProviderModelsResponse,
+  ManagementOAuthRequestScopedErrorsMutationResponse,
+  ManagementOAuthRequestScopedErrorsResponse,
 } from '../types/managementOAuthModelAlias';
 import { DashboardResponse, DashboardTailResponse, DashboardWindow, type WindowCredentialTraffic, type WindowProviderTraffic } from '../types/dashboard';
 import { DashboardTokenHeatmap } from '../types/tokenHeatmap';
@@ -49,10 +53,10 @@ import {
   ConfigSourceResponse,
   ConfigSourceSaveResponse,
 } from '../types/configManagement';
-import { ClientAPIKeyItem, ClientKeyUsageItem, ProviderItem, SaveProviderPayload } from '../types/providers';
+import { ClientAPIKeyItem, ClientKeyUsageItem, ProviderErrorRule, ProviderItem, SaveProviderPayload } from '../types/providers';
 import { GatewayModelItem } from '../types/gatewayModels';
 import { OAuthProviderItem, StartOAuthResponse, OAuthStatusResponse, OAuthCallbackResponse, OAuthCancelResponse, SIWCBindingStart, SIWCBindingStatus } from '../types/oauth';
-import { QuotaOverviewResponse, CredentialQuotaDetailResponse, QuotaItem, QuotaCapacityHistory } from '../types/quota';
+import { QuotaOverviewResponse, CredentialQuotaDetailResponse, QuotaItem, QuotaCapacityHistory, QuotaSubscriptionCycleHistory } from '../types/quota';
 import {
   SystemInfoResponse,
   SystemReleasesResponse,
@@ -79,7 +83,7 @@ import type {
   PricingModelDetail,
   PricingModelUpdate,
   PricingResponse,
-  PricingSyncState,
+  PricingSyncScheduleResponse,
   ModelPrice,
   UpstreamModel,
 } from '../types/pricing';
@@ -480,23 +484,36 @@ export const api = {
   },
 
   async getSession(): Promise<AuthSession> {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
     let response: Response;
     try {
       response = await fetch(authUrl('/session'), {
         method: 'GET',
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
+        ...(controller ? { signal: controller.signal } : {}),
       });
     } catch (err: unknown) {
+      if (timeoutId !== null) clearTimeout(timeoutId);
       const errorMsg = err instanceof Error ? err.message : String(err);
       throw new ApiError(`Network request failed (${errorMsg}); check that the backend is running`, 0);
     }
-    if (!response.ok) {
-      const error = await readError(response);
-      if (response.status === 401) unauthorizedHandler?.();
-      throw new ApiError(error.message, response.status, error.data);
+    try {
+      if (!response.ok) {
+        const error = await readError(response);
+        // Session probes let AuthGate decide how to handle 401 under its own request generation
+        // guard so a stale/abandoned probe can never sign out a newer login.
+        throw new ApiError(error.message, response.status, error.data);
+      }
+      return await (response.json() as Promise<AuthSession>);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      throw new ApiError(`Network request failed (${errorMsg}); check that the backend is running`, 0);
+    } finally {
+      if (timeoutId !== null) clearTimeout(timeoutId);
     }
-    return response.json() as Promise<AuthSession>;
   },
 
   async logout(): Promise<void> {
@@ -803,6 +820,21 @@ export const api = {
     return request<InsightsClientsResponse>(`/management/insights/clients?${query}`, { method: 'GET' });
   },
 
+  /** getTrendsQuota reads every active OAuth window's cycle burn, forecast and cycle history. */
+  async getTrendsQuota(query: string, signal?: AbortSignal): Promise<TrendsQuotaResponse> {
+    return request<TrendsQuotaResponse>(`/management/trends/quota${query ? `?${query}` : ''}`, { method: 'GET', signal });
+  },
+
+  /** getTrendsUsage reads a window's cumulative net-token trajectory, its group shares and its movers. */
+  async getTrendsUsage(query: string, signal?: AbortSignal): Promise<TrendsUsageResponse> {
+    return request<TrendsUsageResponse>(`/management/trends/usage?${query}`, { method: 'GET', signal });
+  },
+
+  /** getTrendsTelemetry reads a window's streaming speed, latency percentiles, failures and substitutions. */
+  async getTrendsTelemetry(query: string, signal?: AbortSignal): Promise<TrendsTelemetryResponse> {
+    return request<TrendsTelemetryResponse>(`/management/trends/telemetry?${query}`, { method: 'GET', signal });
+  },
+
   async getClientKeyUsage(
     query: string,
   ): Promise<{ window: { from: number; to: number }; usage: ClientKeyUsageItem[] }> {
@@ -1011,8 +1043,8 @@ export const api = {
     return request<UsageEventPage>(`/usage/events${query ? `?${query}` : ''}`, { method: 'GET', signal });
   },
 
-  async getUsageEvent(id: number): Promise<UsageEventDetail> {
-    return request<UsageEventDetail>(`/usage/events/${id}`, { method: 'GET' });
+  async getUsageEvent(id: number, replay?: 'calendar'): Promise<UsageEventDetail> {
+    return request<UsageEventDetail>(`/usage/events/${id}${replay === 'calendar' ? '?replay=calendar' : ''}`, { method: 'GET' });
   },
 
   async downloadUsageEventRequestLog(id: number): Promise<Blob> {
@@ -1172,6 +1204,20 @@ export const api = {
     return request<ManagementOAuthExcludedModelsMutationResponse>('/management/auth-files/excluded-models', {
       method: 'PATCH',
       body: JSON.stringify({ provider, models }),
+    });
+  },
+
+  async getManagementOAuthRequestScopedErrors(): Promise<ManagementOAuthRequestScopedErrorsResponse> {
+    return request<ManagementOAuthRequestScopedErrorsResponse>('/management/auth-files/request-scoped-errors', { method: 'GET' });
+  },
+
+  async patchManagementOAuthRequestScopedErrors(
+    provider: string,
+    rules: ProviderErrorRule[],
+  ): Promise<ManagementOAuthRequestScopedErrorsMutationResponse> {
+    return request<ManagementOAuthRequestScopedErrorsMutationResponse>('/management/auth-files/request-scoped-errors', {
+      method: 'PATCH',
+      body: JSON.stringify({ provider, rules }),
     });
   },
 
@@ -1475,6 +1521,22 @@ export const api = {
     return request<OutboundProxySettings>('/management/outbound-proxy', { method: 'PUT', body: JSON.stringify(input) });
   },
 
+  async getGitHubToken(): Promise<GitHubTokenStatus> {
+    return request<GitHubTokenStatus>('/management/github-token', { method: 'GET' });
+  },
+
+  async setGitHubToken(input: GitHubTokenInput): Promise<GitHubTokenStatus> {
+    return request<GitHubTokenStatus>('/management/github-token', { method: 'PUT', body: JSON.stringify(input) });
+  },
+
+  async testGitHubToken(token?: string): Promise<GitHubTokenTestResult> {
+    const trimmed = token?.trim();
+    return request<GitHubTokenTestResult>('/management/github-token/test', {
+      method: 'POST',
+      body: JSON.stringify(trimmed ? { token: trimmed } : {}),
+    });
+  },
+
   async getDataRetention(): Promise<DataRetentionResponse> {
     return request<DataRetentionResponse>('/management/system/data-retention', { method: 'GET' });
   },
@@ -1547,6 +1609,12 @@ export const api = {
 
   async getQuotaCapacityHistory(authIndex: string, windowId: string): Promise<QuotaCapacityHistory> {
     return request<QuotaCapacityHistory>(`/management/quota/${encodeURIComponent(authIndex)}/capacity?window=${encodeURIComponent(windowId)}`, {
+      method: 'GET',
+    });
+  },
+
+  async getQuotaSubscriptionCycle(authIndex: string): Promise<QuotaSubscriptionCycleHistory> {
+    return request<QuotaSubscriptionCycleHistory>(`/management/quota/${encodeURIComponent(authIndex)}/subscription-cycle`, {
       method: 'GET',
     });
   },
@@ -1627,8 +1695,14 @@ export const api = {
     return request<{ started: boolean }>('/pricing/sync', { method: 'POST' });
   },
 
-  async updatePricingSyncSchedule(intervalHours: number): Promise<{ interval_hours: number; state: PricingSyncState }> {
-    return request<{ interval_hours: number; state: PricingSyncState }>('/pricing/sync-schedule', {
+  async getPricingSyncSchedule(): Promise<PricingSyncScheduleResponse> {
+    return request<PricingSyncScheduleResponse>('/pricing/sync-schedule', {
+      method: 'GET',
+    });
+  },
+
+  async updatePricingSyncSchedule(intervalHours: number): Promise<PricingSyncScheduleResponse> {
+    return request<PricingSyncScheduleResponse>('/pricing/sync-schedule', {
       method: 'PUT',
       body: JSON.stringify({ interval_hours: intervalHours }),
     });

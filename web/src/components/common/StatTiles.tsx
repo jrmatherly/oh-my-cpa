@@ -1,7 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 
-import { StatusLabel, type StatusTone } from './StatusLabel';
+import { type StatusTone } from './StatusLabel';
 import styles from './StatTiles.module.css';
 import { Tooltip } from './Tooltip';
 import { useSelectionThumb } from '@/components/ui/selection-thumb';
@@ -25,7 +25,8 @@ export interface StatTile<K extends string> {
 
 export interface StatTilesProps<K extends string> {
   tiles: readonly StatTile<K>[];
-  selected: K;
+  /** The tile currently chosen; `null` when the strip is an overview with none picked yet. */
+  selected: K | null;
   onSelect: (key: K) => void;
   /** Names the group for assistive technology: what the tiles choose. */
   ariaLabel: string;
@@ -57,6 +58,7 @@ export function StatTiles<K extends string>({
   // On a phone a filter strip is a segmented control, and its selection glides like every other one.
   const thumbRef = useSelectionThumb<HTMLDivElement>('[aria-pressed="true"]', 'aria-pressed');
   const isSegmentedOnPhone = phoneLayout === 'segmented';
+  const hasFoot = tiles.some((tile) => tile.foot !== undefined);
   return (
     <div
       ref={isSegmentedOnPhone ? thumbRef : undefined}
@@ -81,12 +83,15 @@ export function StatTiles<K extends string>({
             data-testid={tileTestIdPrefix ? `${tileTestIdPrefix}-${tile.key}` : undefined}
           >
             <span className={styles['stat-tile-label']}>
-              {tone === 'neutral' ? tile.label : <StatusLabel tone={tone}>{tile.label}</StatusLabel>}
+              {tone !== 'neutral' && (
+                <span className={clsx(styles['stat-tile-pip'], styles[`pip-${tone}`])} aria-hidden="true" />
+              )}
+              <span className={styles['stat-tile-label-text']}>{tile.label}</span>
             </span>
             <span className={clsx(styles['stat-tile-value'], isToned && styles[`stat-${tone}`])}>
               {tile.value === undefined ? '—' : isCount ? (tile.value as number).toLocaleString() : tile.value}
             </span>
-            {tile.foot !== undefined && <span className={styles['stat-tile-foot']}>{tile.foot}</span>}
+            {hasFoot && <span className={styles['stat-tile-foot']}>{tile.foot ?? null}</span>}
           </button>
         );
         return tile.hint ? <Tooltip key={tile.key} title={tile.hint}>{button}</Tooltip> : button;

@@ -93,9 +93,13 @@ state. The configuration revision identifies the persisted document, not complet
 of CPA's runtime hot reload. Applied-runtime changes are observed separately, so a
 later hot reload cannot remain hidden behind an unchanged file revision.
 
-The visual editor exposes shared Claude header settings through the
-[configuration schema](../web/src/types/configSchema.ts) and the existing change-set
-path. Native-client entrypoint labels extend CPA's built-in entries and still require
+The visual editor exposes shared Claude header and OAuth login scope settings through
+the [configuration schema](../web/src/types/configSchema.ts) and the existing change-set
+path. When `oauth.providers.claude.oauth-include-create-api-key` is omitted from the
+saved baseline, it stays omitted while matching CPA's default (`true`) and persists an
+explicit `false` opt-out; saved explicit values follow the baseline-aware writer
+(enabling a saved `false` sends an explicit `true` patch). CPA owns authorization URL
+scope assembly. Native-client entrypoint labels extend CPA's built-in entries and still require
 its other strong request signals; an absent or empty list adds no custom entries.
 CPA owns normalization (trim, lowercase, drop blanks and duplicates in order) and
 request detection; OMC accepts the gateway's saved readback without maintaining a
@@ -108,6 +112,16 @@ explicit (`""`) so CPA deletes the phrase, while clearing all entries removes th
 CPA owns phrase normalization, prompt sanitization and Anthropic refusal-fallback
 injection (`upstream.claude.server-side-fallback`), reporting the serving model in
 responses and usage records when a fallback fires.
+
+The deployment identity (`server.server-id`, `GET /v8/management/server/server-id` and
+the `X-CPA-SERVER-ID` management response header) is a non-secret deployment UUID
+distinct from any Home node identifier. OMC reads it through the existing admin system
+surface and omits it when the gateway predates support or is offline. Because CPA's
+management write handler silently allocates a new UUIDv4 when `server.server-id` is
+missing, blank or invalid, OMC validates a nonzero hyphenated UUID before sending
+configuration patches, refuses patch-level removal of `server.server-id`, leaves the
+key untouched on unrelated edits, and displays the lowercased value read back from CPA
+after saving rather than echoing the submitted input.
 
 A multi-path change can require several CPA calls (merge, map replacement, deletion).
 It is not an upstream atomic transaction. Pre-write backup and honest failure/readback

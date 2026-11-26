@@ -1,5 +1,5 @@
 import { renewalDetail, renewalKind, renewalLabel, renewalTone } from '../../src/components/authFiles/credentialRecovery.ts';
-import { buildCredentialQuotaBoard } from '../../src/components/dashboard/credentialQuotaLogic.ts';
+import { buildCredentialQuotaBoard, resolveCredentialQuotaStatusDetail } from '../../src/components/dashboard/credentialQuotaLogic.ts';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { ManagementAuthFile } from '../../src/types/managementAuthFile.ts';
@@ -19,14 +19,15 @@ import {
   workspaceProviderOptions,
 } from '../../src/pages/oauthManagement/oauthWorkspaceLogic.ts';
 import { canonicalDisplayProviderKey } from '../../src/types/credentialIdentity.ts';
+import { PRIMARY_CREDENTIAL_PROVIDERS } from '../../src/types/credentialProviders.ts';
 import { pluginOAuthProviderChoices, type OAuthProviderChoice } from '../../src/pages/oauthProviderLogic.ts';
 import { pluginMultiPortalKeys, pluginOAuthProviderTitles } from '../../src/types/pluginOAuthProviders.ts';
 import { providerDisplayName } from '../../src/types/providerMetadata.ts';
 import { orderQuotaWindows, quotaWindowFullName, quotaWindowGroupKey, quotaWindowKindOf, quotaWindowParts } from '../../src/pages/quota/quotaWindowSelection.ts';
 import { applyKeyOrder, moveKey, parseGroupedOrder, parseRankOrder, rankedKeys, ranksOf } from '../../src/types/displayOrder.ts';
-import { credentialStatusOf, compareSections, quotaCellsOf, quotaLinesOf, quotaReadingName, packQuotaLines, sortByQuotaColumn, isListQuotaFamilyExcluded, buildCredentialSections, orderBySection, providersInSectionOrder } from '../../src/pages/oauthManagement/credentialSections.ts';
+import { credentialStatusOf, compareSections, quotaCellsOf, quotaDetailWindowFullName, quotaDetailWindowName, quotaLinesOf, quotaReadingLabels, quotaReadingName, packQuotaLines, sortByQuotaColumn, isListQuotaFamilyExcluded, buildCredentialSections, orderBySection, providersInSectionOrder } from '../../src/pages/oauthManagement/credentialSections.ts';
 import type { QuotaWindow } from '../../src/types/quota.ts';
-import { formatShortDateTime, isUnusedFullCodexFiveHourWindow, quotaResetCountdown, quotaResetText, resetAccuracyMarker } from '../../src/pages/quota/quotaFormat.ts';
+import { formatShortDateTime, isUnusedFullCodexFiveHourWindow, quotaPlanLabel, quotaResetCountdown, quotaResetText, resetAccuracyMarker } from '../../src/pages/quota/quotaFormat.ts';
 import { matchesStatusFilter } from '../../src/components/authFiles/authFileLogic.ts';
 import { healthBucketOf, healthCounts, matchesHealthLens, parseHealthLens, providerSummaries } from '../../src/pages/oauthManagement/fleetPresentation.ts';
 import { siwcBadgeState } from '../../src/components/authFiles/siwcBadge.ts';
@@ -39,10 +40,10 @@ import { languageLocale } from '../../src/i18n/language.ts';
 const echoT: TFunc = (key, vars) => (vars ? `${key}:${Object.values(vars).join('/')}` : key);
 
 const choices: OAuthProviderChoice[] = [
-  { id: 'anthropic', title: 'Claude', description: '', iconId: 'Claude', flow: 'manual-callback', loginLabel: '' },
-  { id: 'codex', title: 'Codex', description: '', iconId: 'Codex', flow: 'manual-callback', loginLabel: '' },
-  { id: 'kimi', title: 'Kimi', description: '', iconId: 'Kimi', flow: 'device', loginLabel: '' },
-  { id: 'iflow', title: 'iFlow', description: '', iconId: '', flow: 'manual-callback', loginLabel: '', pluginId: 'iflow-auth' },
+  { id: 'anthropic', group: 'builtin', title: 'Claude', description: '', iconId: 'Claude', flow: 'manual-callback', loginLabel: '' },
+  { id: 'codex', group: 'builtin', title: 'Codex', description: '', iconId: 'Codex', flow: 'manual-callback', loginLabel: '' },
+  { id: 'kimi', group: 'builtin', title: 'Kimi', description: '', iconId: 'Kimi', flow: 'device', loginLabel: '' },
+  { id: 'iflow', group: 'plugin', title: 'iFlow', description: '', iconId: '', flow: 'manual-callback', loginLabel: '', pluginId: 'iflow-auth' },
 ];
 
 function file(overrides: Partial<ManagementAuthFile> = {}): ManagementAuthFile {
@@ -170,11 +171,11 @@ test('providers: a multi-portal plugin files each credential under the portal th
   const plugins = [
     // Switched off, it still names and draws its credentials, so it still splits them.
     {
-      id: 'harbor-oauth', enabled: false, effective_enabled: false, supports_oauth: true, oauth_providers: ['harbor', 'harbor-cn'],
+      id: 'harbor-oauth', configured: true, registered: true, enabled: false, effective_enabled: false, supports_oauth: true, oauth_providers: ['harbor', 'harbor-cn'],
       oauth_provider_entries: [{ identifier: 'harbor', name: 'Harbor' }, { identifier: 'harbor-cn', name: 'Harbor CN' }],
       metadata: { name: 'Harbor' }, config_fields: [],
     },
-    { id: 'acme', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'acme-login', metadata: { name: 'Acme' }, config_fields: [] },
+    { id: 'acme', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'acme-login', metadata: { name: 'Acme' }, config_fields: [] },
   ];
   const portals = pluginMultiPortalKeys(plugins);
   assert.deepEqual([...portals].sort(), ['harbor', 'harbor-cn']);
@@ -194,7 +195,7 @@ test('providers: a multi-portal plugin files each credential under the portal th
 
 test('providers: workspace sections retain portal names across credential-family aliases', () => {
   const plugins = [{
-    id: 'buddy', enabled: true, effective_enabled: true, supports_oauth: true,
+    id: 'buddy', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, config_fields: [],
     oauth_providers: ['codebuddy', 'workbuddy', 'workbuddy-ai'], metadata: { name: 'Buddy' },
     oauth_provider_entries: [
       { identifier: 'codebuddy', name: 'CodeBuddy' },
@@ -747,7 +748,7 @@ test('a model limit is named by its model, in the English labels and in ones sto
   assert.deepEqual(names, {
     spark_5h: '5 hours GPT-5-Codex-Spark',
     opus_7d: 'Weekly Opus',
-    burst: 'Burst-Model',
+    burst: '1.5h Burst-Model',
     // A model whose own name ends in a period word keeps it: only "<period> limit|usage" is a phrase.
     named_weekly: 'Weekly Atlas Weekly',
     stored_7d: 'Weekly Sonnet',
@@ -1055,4 +1056,121 @@ test('isUnusedFullCodexFiveHourWindow distinguishes unstarted windows from start
   assert.equal(isUnusedFullCodexFiveHourWindow('claude', base, observedAt, observedAt), false);
   assert.equal(isUnusedFullCodexFiveHourWindow('codex', { ...base, id: 'weekly', kind: 'weekly' }, observedAt, observedAt), false);
   assert.equal(isUnusedFullCodexFiveHourWindow('codex', { ...base, scope: 'model', model: 'gpt-5' }, observedAt, observedAt), false);
+});
+
+test('detail window helpers and unknown-plan sentinel localize consistently', () => {
+  const en = makeT('en');
+  const ag: QuotaWindow = { id: 'ag_Gemini Models_5h', label: 'Gemini Models \u00b7 5-hour limit', scope: 'group', period_hours: 5 };
+  const sonnet: QuotaWindow = { id: 'seven_day_sonnet', label: 'Sonnet weekly usage', scope: 'model', model: 'claude-3-5-sonnet', period_hours: 168 };
+  const oauthApps: QuotaWindow = { id: 'seven_day_oauth_apps', label: 'Third-party apps weekly usage', scope: 'standard', period_hours: 168 };
+  const xai: QuotaWindow = { id: 'xai_credit_usage', label: 'Credit usage', scope: 'standard', period_hours: 168 };
+
+  assert.equal(quotaDetailWindowName(ag, en), '5-hour limit');
+  assert.equal(quotaDetailWindowFullName(ag, en), 'Gemini Models 5-hour limit');
+  assert.equal(quotaDetailWindowName(sonnet, en), 'Weekly Sonnet');
+  assert.equal(quotaDetailWindowName(oauthApps, en), 'Weekly OAuth apps');
+  assert.equal(quotaDetailWindowName(xai, en), 'Credit usage');
+  assert.equal(quotaReadingLabels([xai], en).get('xai_credit_usage'), 'Credit usage');
+
+  assert.equal(quotaPlanLabel({ plan_label: 'Unknown plan' }, en), 'Unknown plan');
+  assert.equal(quotaPlanLabel({ plan_label: 'Pro' }, en), 'Pro');
+
+  // Custom non-standard duration like an 8-hour Codex window renders "8h" / "8h" rather than stale "5-hour usage limit".
+  const codex8h: QuotaWindow = { id: 'standard_primary', label: '5-hour usage limit', kind: 'model_scoped', scope: 'standard', period_hours: 8 };
+  assert.equal(quotaDetailWindowName(codex8h, en), '8h');
+  const spark5h: QuotaWindow = { id: 'spark_5h', label: 'Spark 5h', kind: 'model_scoped', scope: 'model', model: 'spark', period_hours: 5 };
+  const spark7d: QuotaWindow = { id: 'spark_7d', label: 'Spark \u6bcf\u5468', kind: 'model_scoped', scope: 'model', model: 'spark', period_hours: 168 };
+  const sparkLabels = quotaReadingLabels([spark5h, spark7d], en);
+  assert.equal(sparkLabels.get('spark_5h'), '5 hours Spark');
+  assert.equal(sparkLabels.get('spark_7d'), 'Weekly Spark');
+
+  // Warmup/compact model windows with unknown custom durations retain their duration-bearing label.
+  const spark8h: QuotaWindow = { id: 'addl_spark_8h', label: 'Spark 8-hour limit', scope: 'model' };
+  const spark48h: QuotaWindow = { id: 'addl_spark_48h', label: 'Spark 48-hour limit', scope: 'model' };
+  assert.equal(quotaDetailWindowName(spark8h, en), 'Spark 8-hour limit');
+  assert.equal(quotaDetailWindowName(spark48h, en), 'Spark 48-hour limit');
+  assert.notEqual(quotaDetailWindowName(spark8h, en), quotaDetailWindowName(spark48h, en));
+
+  // Explicitly custom noncanonical durations (like 4.5h) are not rounded into 5-hour limits,
+  // short sub-hour custom durations keep 2 decimal places (0.05h),
+  // and exact unrounded custom durations like 28860s (8.0167h) still display cleanly as "8h".
+  const custom45h: QuotaWindow = { id: 'custom_4.5h', label: '4.5-hour usage limit (4.5h)', kind: 'custom', scope: 'standard', period_hours: 4.5 };
+  assert.equal(quotaWindowKindOf(custom45h), 'custom');
+  assert.equal(quotaDetailWindowName(custom45h, en), '4.5h');
+  assert.equal(quotaDetailWindowName({ id: 'custom_short', label: '3m', kind: 'custom', scope: 'standard', period_hours: 0.05 }, en), '0.05h');
+  assert.equal(quotaDetailWindowName({ id: 'custom_8h', label: '8-hour usage limit (8h)', kind: 'custom', scope: 'standard', period_hours: 28860 / 3600 }, en), '8h');
+
+  // Same-group, same-period sibling allowances retain their discriminator in detail and full names.
+  const agReq: QuotaWindow = { id: 'ag_req', label: 'Gemini Models · Requests', scope: 'group', period_hours: 5 };
+  const agTok: QuotaWindow = { id: 'ag_tok', label: 'Gemini Models · Tokens', scope: 'group', period_hours: 5 };
+  assert.equal(quotaDetailWindowName(agReq, en, [agReq, agTok]), '5-hour limit (Requests)');
+  assert.equal(quotaDetailWindowFullName(agTok, en, [agReq, agTok]), 'Gemini Models 5-hour limit (Tokens)');
+  assert.equal(quotaDetailWindowFullName(ag, en, [ag]), 'Gemini Models 5-hour limit');
+
+  // The reasons are Chinese, written as escapes: a reason that is not ASCII is one the console
+  // replaces with its own sentence.
+  // Dashboard status detail distinguishes low-quota cooldowns and credits_available from stale or failed readings.
+  const lowCooldown = buildCredentialQuotaBoard(
+    [file({ auth_index: 'low-cooldown', name: 'low-cooldown.json' })],
+    [quota({
+      auth_index: 'low-cooldown',
+      status: 'warning',
+      windows: [{ id: 'five_hour', label: '5-Hour', kind: 'five_hour', scope: 'standard', remaining_percent: 10 }],
+      model_cooldowns: [{ is_active: true, model: 'gpt-5', backoff_level: 1 }],
+      recommendation: { status: 'warning', priority: 'low', action: 'none', reason: '\u914d\u989d\u4f59\u91cf\u504f\u4f4e\uff08\u4e0d\u8db3 20%\uff09' },
+    })],
+  ).rows[0];
+  const lowCredits = buildCredentialQuotaBoard(
+    [file({ auth_index: 'low-credits', name: 'low-credits.json' })],
+    [quota({
+      auth_index: 'low-credits',
+      status: 'warning',
+      windows: [{ id: 'five_hour', label: '5-Hour', kind: 'five_hour', scope: 'standard', remaining_percent: 10 }],
+      model_cooldowns: [{ is_active: true, model: 'gpt-5', backoff_level: 1 }],
+      recommendation: { status: 'credits_available', priority: 'medium', action: 'redeem_credit', reason: '\u914d\u989d\u4f59\u91cf\u4f4e\u4e8e 20%' },
+    })],
+  ).rows[0];
+  const staleWarning = buildCredentialQuotaBoard(
+    [file({ auth_index: 'stale-warn', name: 'stale-warn.json' })],
+    [quota({
+      auth_index: 'stale-warn',
+      status: 'stale',
+      windows: [{ id: 'five_hour', label: '5-Hour', kind: 'five_hour', scope: 'standard', remaining_percent: 10 }],
+      recommendation: { status: 'warning', priority: 'low', action: 'refresh', reason: '\u5df2\u8fc7\u671f' },
+    })],
+  ).rows[0];
+  const errorReading = buildCredentialQuotaBoard(
+    [file({ auth_index: 'error-warn', name: 'error-warn.json' })],
+    [quota({
+      auth_index: 'error-warn',
+      status: 'error',
+      windows: [],
+      recommendation: { status: 'warning', priority: 'high', action: 'refresh', reason: '\u8bfb\u53d6\u5931\u8d25' },
+    })],
+  ).rows[0];
+  assert.equal(resolveCredentialQuotaStatusDetail(lowCooldown, en), 'Quota is running low');
+  assert.equal(resolveCredentialQuotaStatusDetail(lowCredits, en), 'Quota is running low');
+  assert.equal(resolveCredentialQuotaStatusDetail(staleWarning, en), 'This reading is past its own window reset; refresh for the current quota');
+  assert.equal(resolveCredentialQuotaStatusDetail(errorReading, en), 'The reading could not be fetched');
+});
+
+test('workspaceProviderOptions uses PRIMARY_CREDENTIAL_PROVIDERS including copilot and projects Copilot credentials cleanly', () => {
+  assert.deepEqual(workspaceProviderOptions([], []), [...PRIMARY_CREDENTIAL_PROVIDERS]);
+  assert.ok(PRIMARY_CREDENTIAL_PROVIDERS.includes('copilot'));
+  assert.equal(providerDisplayName('copilot'), 'GitHub Copilot');
+  assert.equal(resolveAuthorizationProviderId('copilot', []), 'copilot');
+  assert.equal(
+    legacyOAuthManagementRedirect('/oauth', new URLSearchParams('provider=copilot')),
+    '/oauth-management?provider=copilot&action=connect&connect_provider=copilot',
+  );
+
+  const projection = buildOAuthWorkspaceProjection(
+    [file({ name: 'copilot-work.json', auth_index: 'idx-copilot', type: 'copilot', provider: 'copilot', email: 'dev@example.test' })],
+    [],
+    choices,
+  );
+  assert.equal(projection.records.length, 1);
+  assert.equal(projection.records[0].displayProvider, 'copilot');
+  assert.equal(providerDisplayName(projection.records[0].displayProvider), 'GitHub Copilot');
+  assert.equal(projection.records[0].authorizationProviderId, 'copilot');
 });

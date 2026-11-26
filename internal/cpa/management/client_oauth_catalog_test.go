@@ -193,6 +193,7 @@ func TestOAuthCatalogRetainsBillableUpstreamModels(t *testing.T) {
 		{"disabled credential", `[{"provider":"antigravity","disabled":true,"models":[{"id":"gemini-3.8-flash"}]}]`, `{"antigravity":[{"name":"gemini-3.8-flash-high","alias":"gemini-3.8-flash"}]}`, map[string]string{}},
 		{"provider scoped conflicts", `[{"provider":"claude","models":[{"id":"fast"}]},{"provider":"codex","models":[{"id":"fast"}]}]`, `{"claude":[{"name":"claude-sonnet","alias":"fast"}],"codex":[{"name":"gpt-5","alias":"fast"}]}`, map[string]string{"fast": "", "claude-sonnet": "claude-sonnet", "gpt-5": "gpt-5"}},
 		{"case insensitive alias", `[{"provider":"Antigravity","models":[{"id":"GEMINI-3.8-FLASH"}]}]`, `{"antigravity":[{"name":"gemini-3.8-flash-high","alias":"gemini-3.8-flash"}]}`, map[string]string{"GEMINI-3.8-FLASH": "gemini-3.8-flash-high", "gemini-3.8-flash-high": "gemini-3.8-flash-high"}},
+		{"case-only alias", `[{"provider":"zai","models":[{"id":"GLM-5"}]}]`, `{"zai":[{"name":"glm-5","alias":"GLM-5","fork":false}]}`, map[string]string{"GLM-5": "glm-5", "glm-5": "glm-5"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client, aliasReads := newOAuthCatalogClient(t, test.files, test.aliases, http.StatusOK)
@@ -290,6 +291,89 @@ func TestOAuthCatalogCancellationStopsCredentialDiscovery(t *testing.T) {
 				}
 			} else if snapshot.Models != nil || snapshot.Providers != nil {
 				t.Fatal("pricing must refuse the entire incomplete catalog")
+			}
+		})
+	}
+}
+
+func TestOAuthCatalogStripsCredentialPrefixAndReadsHyphenatedAliases(t *testing.T) {
+	cases := []struct {
+		name           string
+		files          string
+		providerRules  string
+		credentialFile string
+		wantModels     map[string]string
+		wantRoutes     []ConfiguredModelRoute
+		wantPricingIDs []string
+	}{
+		{
+			name:           "prefixed call points resolve provider alias and bare upstream",
+			files:          `[{"name":"antigravity.json","provider":"antigravity","models":[{"id":"team/gemini-4-hydrogen"},{"id":"team/claude-opus-4-6"}]}]`,
+			providerRules:  `{"antigravity":[{"name":"gemini-4-hydrogen-xhigh","alias":"gemini-4-hydrogen"}]}`,
+			credentialFile: `{"prefix":"team"}`,
+			wantModels: map[string]string{
+				"team/gemini-4-hydrogen":  "gemini-4-hydrogen-xhigh",
+				"gemini-4-hydrogen-xhigh": "gemini-4-hydrogen-xhigh",
+				"team/claude-opus-4-6":    "claude-opus-4-6",
+				"claude-opus-4-6":         "claude-opus-4-6",
+			},
+			wantRoutes: []ConfiguredModelRoute{
+				{UpstreamModel: "gemini-4-hydrogen-xhigh", CallPoint: "team/gemini-4-hydrogen"},
+				{UpstreamModel: "claude-opus-4-6", CallPoint: "team/claude-opus-4-6"},
+			},
+			wantPricingIDs: []string{"claude-opus-4-6", "gemini-4-hydrogen-xhigh", "team/claude-opus-4-6", "team/gemini-4-hydrogen"},
+		},
+		{
+			name:           "hyphenated credential model-aliases are honored",
+			files:          `[{"name":"workbuddy.json","provider":"workbuddy","models":[{"id":"deepseek-v4.1-flash"}]}]`,
+			providerRules:  `{}`,
+			credentialFile: `{"model-aliases":[{"name":"deepseek-v4.1-flash-sg","alias":"deepseek-v4.1-flash"}]}`,
+			wantModels: map[string]string{
+				"deepseek-v4.1-flash":    "deepseek-v4.1-flash-sg",
+				"deepseek-v4.1-flash-sg": "deepseek-v4.1-flash-sg",
+			},
+			wantRoutes: []ConfiguredModelRoute{
+				{UpstreamModel: "deepseek-v4.1-flash-sg", CallPoint: "deepseek-v4.1-flash"},
+			},
+			wantPricingIDs: []string{"deepseek-v4.1-flash", "deepseek-v4.1-flash-sg"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newV8Server(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				switch request.URL.Path {
+				case "/v8/management/credentials":
+					_, _ = writer.Write([]byte(`{"files":` + tc.files + `}`))
+				case "/v8/management/credentials/download":
+					_, _ = writer.Write([]byte(tc.credentialFile))
+				case "/v8/management/config":
+					_, _ = writer.Write([]byte(`{"oauth":{"model-alias":` + tc.providerRules + `}}`))
+				default:
+					_, _ = writer.Write([]byte(`{}`))
+				}
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(server.URL, "fixture-key", time.Second, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := client.ListConfiguredModelSnapshot(context.Background())
+			if err != nil {
+				t.Fatalf("ListConfiguredModelSnapshot failed: %v", err)
+			}
+			if !reflect.DeepEqual(snapshot.Models, tc.wantModels) {
+				t.Fatalf("models = %v, want %v", snapshot.Models, tc.wantModels)
+			}
+			if len(snapshot.Providers) != 1 {
+				t.Fatalf("providers = %+v", snapshot.Providers)
+			}
+			provider := snapshot.Providers[0]
+			if !reflect.DeepEqual(provider.Routes, tc.wantRoutes) {
+				t.Fatalf("routes = %+v, want %+v", provider.Routes, tc.wantRoutes)
+			}
+			if got := provider.ListPricingModelIDs(); !reflect.DeepEqual(got, tc.wantPricingIDs) {
+				t.Fatalf("pricing ids = %v, want %v", got, tc.wantPricingIDs)
 			}
 		})
 	}

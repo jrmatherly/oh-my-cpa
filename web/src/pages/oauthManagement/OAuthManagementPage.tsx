@@ -23,6 +23,7 @@ import {
 } from '../../components/icons';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
+import { QUERY_KEYS } from '../../api/queryKeys';
 import { useT } from '../../i18n';
 import { useDebouncedSearch } from '../../components/usage/useDebouncedSearch';
 import { useOAuthManagementViewState } from './useOAuthManagementViewState';
@@ -894,11 +895,11 @@ export const OAuthManagementPage: React.FC = () => {
             isMutating={actions.isOperating}
             onSelectPage={() => credentialActions.onSelect(selectablePage, true)}
             onClearSelection={clearSelection}
-            onEnable={() => void actions.batchStatus(false, selectedRecords)}
-            onDisable={() => void actions.batchStatus(true, selectedRecords)}
-            onRefresh={() => void actions.batchRefresh(selectedRecords)}
+            onEnable={() => actions.batchStatus(false, selectedRecords)}
+            onDisable={() => actions.batchStatus(true, selectedRecords)}
+            onRefresh={() => actions.batchRefresh(selectedRecords)}
             canRefresh
-            onDelete={() => void actions.batchDelete(selectedRecords)}
+            onDelete={() => actions.batchDelete(selectedRecords)}
           />
         </div>
       )}
@@ -945,7 +946,8 @@ export const OAuthManagementPage: React.FC = () => {
           onSaved={() => {
             void Promise.all([
               queryClient.invalidateQueries({ queryKey: ['management-auth-files'] }),
-              queryClient.invalidateQueries({ queryKey: ['management-quota'] }),
+              queryClient.invalidateQueries({ queryKey: QUERY_KEYS.quota }),
+              queryClient.invalidateQueries({ queryKey: QUERY_KEYS.trendsQuota }),
               queryClient.invalidateQueries({ queryKey: ['management-overview'] }),
             ]);
           }}

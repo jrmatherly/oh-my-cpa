@@ -1,5 +1,7 @@
-import { api } from './api/client';
-import { preloadDashboardCharts, preloadInsightsCharts } from './charts/lazyCharts';
+import type { QueryClient } from '@tanstack/react-query';
+import { api, apiErrorCode } from './api/client';
+import { QUERY_KEYS } from './api/queryKeys';
+import { preloadDashboardCharts, preloadInsightsCharts, preloadTrendsCharts } from './charts/lazyCharts';
 import {
   dashboardHeatmapSwr,
   dashboardModelsSwr,
@@ -22,6 +24,7 @@ import {
   loadRoutingPage,
   loadDashboardPage,
   loadInsightsPage,
+  loadTrendsPage,
   loadAgentPage,
   loadAuthorizePage,
   loadPlaygroundPage,
@@ -124,6 +127,12 @@ export const ROUTE_DESCRIPTORS: readonly RouteDescriptor[] = [
     prefetchData: prefetchInsightsData,
   },
   {
+    path: '/trends',
+    priority: 'high',
+    loadingBody: 'trends',
+    preloadChunk: () => Promise.all([loadTrendsPage(), preloadTrendsCharts()]),
+  },
+  {
     path: '/pricing',
     priority: 'high',
     loadingBody: 'table',
@@ -179,6 +188,58 @@ export function currentConsolePathname(): string {
     return raw.slice(basePath.length) || '/';
   }
   return raw;
+}
+
+/** Extracts the `/management/trends/quota` filter query string from a `/trends` URL search string. */
+export function trendsQuotaParamsFromSearch(search: string): string {
+  if (!search) return '';
+  const source = new URLSearchParams(search);
+  const params = new URLSearchParams();
+  for (const key of ['provider', 'auth_index'] as const) {
+    const seen = new Set<string>();
+    for (const raw of source.getAll(key)) {
+      const value = raw.trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      params.append(key, value);
+    }
+  }
+  return params.toString();
+}
+
+/** Retry policy shared between `/trends` cold-boot prefetch and `TrendsPage` queries. */
+export function retryTrendsQuery(count: number, error: unknown): boolean {
+  return apiErrorCode(error) !== 'demo_uncaptured' && count < 2;
+}
+
+function normalizeConsolePath(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed || '/';
+}
+
+/**
+ * Prefetches preference-independent landing-route data on authenticated cold boot so requests
+ * start in parallel with `/preferences` instead of waiting for `TimeZoneProvider`, `AppLayout`,
+ * and page mount (and before competing analytics queries contend for the single SQLite connection).
+ *
+ * Intentionally separate from `ROUTE_DESCRIPTORS.prefetchData`, which runs on sidebar hover intent
+ * and must never touch upstream CPA endpoints.
+ */
+export function prefetchLandingRouteData(
+  queryClient: QueryClient,
+  pathname = currentConsolePathname(),
+  search = typeof window !== 'undefined' ? window.location.search : '',
+): void {
+  if (normalizeConsolePath(pathname) === '/trends') {
+    const quotaQuery = trendsQuotaParamsFromSearch(search);
+    void queryClient.prefetchQuery({
+      queryKey: [...QUERY_KEYS.trendsQuota, quotaQuery],
+      queryFn: ({ signal }) => api.getTrendsQuota(quotaQuery, signal),
+      staleTime: 30_000,
+      retry: retryTrendsQuery,
+      meta: { silent: true },
+    }).catch(() => undefined);
+  }
 }
 
 /**

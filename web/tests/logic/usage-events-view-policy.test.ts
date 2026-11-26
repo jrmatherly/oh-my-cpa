@@ -22,6 +22,7 @@ import {
   replaceFilters,
   viewPreferenceFromUrl,
 } from '../../src/types/usageEventViewActions.ts';
+import { parseUsageEventsView } from '../../src/types/usageEventViewPreference.ts';
 import {
   createSearchDebounce,
   type SearchDebounceController,
@@ -50,7 +51,9 @@ import {
   assignBandTones,
   planArrivalGlide,
 } from '../../src/components/usage/requestVirtualWindow.ts';
-import { EVENT_PRESETS } from '../../src/types/usageEventQuery.ts';
+import { EVENT_PRESETS, readEventQuery, readFilterParams, rejectedEventParams } from '../../src/types/usageEventQuery.ts';
+import { draftFromView, draftToView, isDraftDirty } from '../../src/types/usageEventFilters.ts';
+import { usageEventParams } from '../../src/types/usageEvents.ts';
 import { test } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -304,7 +307,7 @@ test('typing back to the committed value schedules nothing', () => {
   search.change('gpt', (value) => commits.push(value));
   assert.equal(clock.pendingCount(), 0);
   clock.fire();
-  assert.deepEqual(commits, []);
+  assert.deepEqual(commits, [] as string[]);
 });
 
 test('the commit reads the latest callback, not the one captured when it was scheduled', () => {
@@ -361,7 +364,7 @@ test('an invalidation reached through the controller suppresses a queued commit'
   search.invalidate();
   assert.equal(clock.pendingCount(), 0, 'the timer is cancelled outright');
   clock.fire();
-  assert.deepEqual(commits, []);
+  assert.deepEqual(commits, [] as string[]);
 });
 
 test('adopting an external committed value cancels the queued keystroke', () => {
@@ -374,7 +377,7 @@ test('adopting an external committed value cancels the queued keystroke', () => 
   search.sync('navigated');
   assert.equal(search.committed(), 'navigated');
   clock.fire();
-  assert.deepEqual(commits, []);
+  assert.deepEqual(commits, [] as string[]);
 });
 
 test('a keystroke after an external navigation commits against the new view', () => {
@@ -394,7 +397,7 @@ test('a disposed controller commits nothing', () => {
   search.change('gpt', (value) => commits.push(value));
   search.dispose();
   clock.fire();
-  assert.deepEqual(commits, []);
+  assert.deepEqual(commits, [] as string[]);
   // A keystroke on a disposed controller is dropped rather than arming a timer
   // nothing will cancel.
   search.change('after-dispose', (value) => commits.push(value));
@@ -520,6 +523,7 @@ const chipBase = {
   resolveProviderName: (value: string) => (value === 'codex-0' ? 'My Codex Line' : value),
   costLabels: { priced: 'Priced', unpriced: 'Unpriced' },
   servedLabels: { substituted: 'Substituted', matched: 'As requested' },
+  transportLabels: { sse: 'SSE', websocket: 'WebSocket', http: 'HTTP' },
 };
 
 test('a credential chip shows the file name rather than the stored fingerprint', () => {
@@ -544,6 +548,33 @@ test('a provider chip is labelled with the operator name while filtering on the 
 test('the served-model state is named in the reader language', () => {
   assert.equal(chipDisplayValue({ ...chipBase, key: 'served', value: 'substituted' }), 'Substituted');
   assert.equal(chipDisplayValue({ ...chipBase, key: 'served', value: 'matched' }), 'As requested');
+});
+
+test('the failure category filter round-trips through URL parsing, drafts, rejection and chips', () => {
+  const valid = new URLSearchParams('result=failed&failure=rate_limited_429');
+  const query = readEventQuery(valid);
+  assert.equal(query.failure, 'rate_limited_429');
+  assert.deepEqual(rejectedEventParams(valid), []);
+  assert.equal(new URLSearchParams(usageEventParams(query)).get('failure'), 'rate_limited_429');
+  const draft = draftFromView({ result: 'failed', params: { failure: ['upstream_5xx'] } });
+  assert.equal(draft.failure, 'upstream_5xx');
+  assert.deepEqual(draftToView(draft).params.failure, ['upstream_5xx']);
+  assert.deepEqual(rejectedEventParams(new URLSearchParams('failure=unknown_kind')), ['failure']);
+  assert.equal(
+    chipDisplayValue({
+      ...chipBase,
+      key: 'failure',
+      value: 'upstream_5xx',
+      failureLabels: {
+        rate_limited_429: 'Rate limited (429)',
+        upstream_5xx: 'Upstream 5xx',
+        stream_truncated: 'Stream truncated',
+        force_cooldown: 'Forced cooldown',
+        other_failures: 'Other failures',
+      },
+    }),
+    'Upstream 5xx',
+  );
 });
 
 test('the cost state is named in the reader language, and cost bounds carry their sign', () => {
@@ -682,4 +713,73 @@ test('assignBandTones keeps every record its band as records arrive above it', (
   assert.deepEqual([...between.values()], ['even', 'odd', 'even', 'odd', 'even']);
 
   assert.deepEqual([...assignBandTones([8, 7], arrived).values()], ['odd', 'even'], 'another page starts afresh');
+});
+
+test('calendar replay survives absolute-range edits and saved preference round-trips, and clears on relative presets', () => {
+  const calendarParams = new URLSearchParams('from=1000&to=5000&replay=calendar&model=gpt-5');
+  const editedRange = applyTimeWindow(calendarParams, { from: 1000, to: 8000 });
+  assert.equal(editedRange.get('replay'), 'calendar');
+  assert.equal(editedRange.get('to'), '8000');
+
+  const presetParams = applyTimeWindow(editedRange, { preset: '24h' });
+  assert.equal(presetParams.get('replay'), null);
+  assert.equal(presetParams.get('preset'), '24h');
+
+  const ordinaryEdited = applyTimeWindow(new URLSearchParams('from=1000&to=5000'), { from: 1000, to: 8000 });
+  assert.equal(ordinaryEdited.get('replay'), null);
+
+  const savedPref = viewPreferenceFromUrl(editedRange, { grouping: 'time' });
+  assert.equal(savedPref.replay, 'calendar');
+  assert.deepEqual(parseUsageEventsView(savedPref)?.replay, 'calendar');
+
+  const ordinaryPref = viewPreferenceFromUrl(ordinaryEdited, { grouping: 'time' });
+  assert.equal(ordinaryPref.replay, undefined);
+  assert.equal(parseUsageEventsView({ from: 1000, to: 5000, replay: 'other' })?.replay, undefined);
+});
+
+test('failure category filter dirties an unfiltered draft, serialises onto the wire, and survives drawer reopen', () => {
+  const emptyView = { result: 'all' as const, params: {} };
+  const initialDraft = draftFromView(emptyView);
+  assert.equal(isDraftDirty(initialDraft, emptyView), false);
+
+  const selectedDraft = { ...initialDraft, failure: 'rate_limited_429' as const };
+  assert.equal(isDraftDirty(selectedDraft, emptyView), true);
+  const committed = draftToView(selectedDraft);
+  assert.deepEqual(committed, { result: 'all', params: { failure: ['rate_limited_429'] } });
+
+  // Reopening the drawer from the committed view keeps the failure category selected.
+  const reopened = draftFromView(committed);
+  assert.equal(reopened.failure, 'rate_limited_429');
+  assert.equal(isDraftDirty(reopened, committed), false);
+
+  // Wire query string round-trip preserves both result=failed and failure=rate_limited_429,
+  // including across unrelated filter edits in Request records.
+  const arrived = new URLSearchParams('preset=24h&result=failed&failure=rate_limited_429');
+  const nextFilters = mergeFilters(readFilterParams(arrived), 'model', ['gpt-5']);
+  const afterUnrelatedEdit = replaceFilters(arrived, nextFilters);
+  const parsed = readEventQuery(afterUnrelatedEdit);
+  assert.equal(parsed.result, 'failed');
+  assert.equal(parsed.failure, 'rate_limited_429');
+  assert.deepEqual(parsed.filters?.model, ['gpt-5']);
+  const wire = new URLSearchParams(usageEventParams(parsed));
+  assert.equal(wire.get('result'), 'failed');
+  assert.equal(wire.get('failure'), 'rate_limited_429');
+  assert.equal(wire.get('model'), 'gpt-5');
+  assert.deepEqual(rejectedEventParams(new URLSearchParams('failure=rate_limited_429')), []);
+  assert.deepEqual(rejectedEventParams(new URLSearchParams('failure=unknown_lane')), ['failure']);
+
+  // Toolbar result transitions: switching to success clears only `failure` and keeps unrelated filters,
+  // while switching to all or failed preserves `failure`.
+  const withFailure = new URLSearchParams('preset=24h&result=failed&failure=rate_limited_429&model=gpt-5');
+  const currentFilters = readFilterParams(withFailure);
+  const toSuccess = replaceFilters(withFailure, currentFilters, { result: 'success' });
+  assert.equal(toSuccess.get('result'), 'success');
+  assert.equal(toSuccess.get('failure'), null);
+  assert.deepEqual(toSuccess.getAll('model'), ['gpt-5']);
+  const toAll = replaceFilters(withFailure, currentFilters, { result: 'all' });
+  assert.equal(toAll.get('result'), null);
+  assert.equal(toAll.get('failure'), 'rate_limited_429');
+  const toFailed = replaceFilters(toAll, readFilterParams(toAll), { result: 'failed' });
+  assert.equal(toFailed.get('result'), 'failed');
+  assert.equal(toFailed.get('failure'), 'rate_limited_429');
 });

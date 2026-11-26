@@ -57,6 +57,7 @@ export function insightsPresetOf(url) {
 
 /** Insights reads are calendar reads, which the Worker moves by whole weeks. */
 export const INSIGHTS_PATH_PREFIX = '/api/v1/management/insights/';
+export const TRENDS_PATH_PREFIX = '/api/v1/management/trends/';
 
 /**
  * Routes that take no parameter, mapped from their path.
@@ -82,6 +83,7 @@ const FIXED_ROUTES = new Map([
   ['/api/v1/pricing/catalog', 'pricing-catalog'],
   ['/api/v1/management/model-square', 'model-square'],
   ['/api/v1/management/overview', 'overview'],
+  [`${TRENDS_PATH_PREFIX}quota`, 'trends-quota'],
   ['/api/v1/management/system', 'system'],
   ['/api/v1/management/system/releases', 'system-releases'],
   ['/api/v1/management/system/repository', 'system-repository'],
@@ -107,6 +109,7 @@ const FIXED_ROUTES = new Map([
   ['/api/v1/management/auth-files', 'auth-files'],
   ['/api/v1/management/auth-files/model-aliases', 'auth-files-model-aliases'],
   ['/api/v1/management/auth-files/excluded-models', 'auth-files-excluded-models'],
+  ['/api/v1/management/auth-files/request-scoped-errors', 'auth-files-request-scoped-errors'],
   ['/api/v1/management/oauth/providers', 'oauth-providers'],
   ['/api/v1/management/quota', 'quota'],
   ['/api/v1/management/quota/warmup/settings', 'warmup-settings'],
@@ -161,6 +164,9 @@ const PLUGIN_CONFIG = '/api/v1/management/plugins/{id}/config';
 /** One quota window's capacity details. */
 const QUOTA_CAPACITY = '/api/v1/management/quota/{authIndex}/capacity';
 
+/** One credential's subscription billing-cycle usage totals. */
+const QUOTA_SUBSCRIPTION_CYCLE = '/api/v1/management/quota/{authIndex}/subscription-cycle';
+
 /** One model's price editor read. */
 const PRICING_MODEL = '/api/v1/pricing/models/{model}';
 
@@ -179,6 +185,8 @@ const PARAMETERISED_ROUTES = [
   { path: '/api/v1/management/insights/cube', resolve: (url) => `insights-cube-${insightsPresetOf(url)}` },
   { path: '/api/v1/management/insights/rhythm', resolve: (url) => `insights-rhythm-${insightsPresetOf(url)}` },
   { path: '/api/v1/management/insights/clients', resolve: (url) => `insights-clients-${insightsPresetOf(url)}` },
+  { path: `${TRENDS_PATH_PREFIX}usage`, resolve: (url) => trendsResponseName(url, 'usage') },
+  { path: `${TRENDS_PATH_PREFIX}telemetry`, resolve: (url) => trendsResponseName(url, 'telemetry') },
   {
     path: '/api/v1/management/dashboard/models',
     resolve: (url) => {
@@ -212,6 +220,16 @@ const PARAMETERISED_ROUTES = [
     pattern: /^\/api\/v1\/management\/quota\/[A-Za-z0-9._-]+\/capacity$/,
     resolve: (url) => {
       const name = `quota-capacity-${url.pathname.split('/').at(-2)}-${url.searchParams.get('window') ?? ''}`;
+      return Object.hasOwn(dataset.responses, name) ? name : undefined;
+    },
+  },
+  // One credential's subscription billing-cycle consumption, captured for each standard demo
+  // credential so switching to the Subscription cycle tab works on the static demo Worker too.
+  {
+    path: QUOTA_SUBSCRIPTION_CYCLE,
+    pattern: /^\/api\/v1\/management\/quota\/[A-Za-z0-9._-]+\/subscription-cycle$/,
+    resolve: (url) => {
+      const name = `quota-subscription-cycle-${url.pathname.split('/').at(-2)}`;
       return Object.hasOwn(dataset.responses, name) ? name : undefined;
     },
   },
@@ -249,6 +267,11 @@ const PARAMETERISED_ROUTES = [
   // sentence about a route, shown to a visitor who clicked a request.
   { path: REQUEST_EVENT_DETAIL, pattern: /^\/api\/v1\/usage\/events\/(\d+)$/, resolve: () => 'usage-event-detail' },
 ];
+
+function trendsResponseName(url, view) {
+  const group = url.searchParams.get('group_by') || 'model';
+  return `trends-${view}-${group === 'model' ? '' : `${group}-`}${insightsPresetOf(url)}`;
+}
 
 /**
  * The dataset entry that answers a request, or undefined when nothing does.

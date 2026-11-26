@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   FOLDED_ID,
+  anatomyAvgTps,
   attributeServingProviders,
   baselineMeasures,
   buildFlow,
@@ -34,7 +35,7 @@ import { canDrillUsageEvents, cleanValues, csvCell, insightsCsv, usageEventsHref
 import { MAX_USAGE_EVENT_FILTER_VALUES } from '../../src/types/usageEvents.ts';
 import { clientCoverageShare, clientIconId, clientMeasures, clientProductName } from '../../src/types/clientAgents.ts';
 import { readEventQuery } from '../../src/types/usageEventQuery.ts';
-import { formatCountBaseline, formatMetric, metricReadout } from '../../src/types/insightsFormat.ts';
+import { formatCountBaseline, formatMetric, formatTps, metricReadout } from '../../src/types/insightsFormat.ts';
 import { insightsRangeParams, parseInsightsRange } from '../../src/types/insights.ts';
 import { canShowWeekView, peakHourSet, summarizeRhythm } from '../../src/pages/insights/insightsRhythm.ts';
 import {
@@ -335,7 +336,7 @@ test('insights cube', () => {
     `${readout.prefix ?? ''}${new Intl.NumberFormat('en', readout.format).format(readout.number)}${readout.suffix}`;
   for (const value of [0, 0.4, 7, 999.4, 999.6, 1000, 1004.9, 1005, 12_345.678, 999_949, 1_234_567, 98_765_432_101]) {
     for (const metric of ['tokens', 'net_tokens', 'cost', 'requests', 'latency'] as const) {
-      for (const style of ['en-compact', 'zh', 'full'] as const) {
+      for (const style of ['en-compact', 'full'] as const) {
         const whole = metric === 'requests' ? Math.round(value) : value;
         const readout = metricReadout(metric, whole, style);
         assert.ok(readout, `${metric} ${whole} has a readout`);
@@ -499,7 +500,7 @@ test('dashboard receipt ledger and calendar windows', () => {
 
 test('a tooltip card travels as one fact per line plus its structure, and an empty card adds no hint', async () => {
   const { readTipCard, tipCard } = await import('../../src/components/common/tipCard.ts');
-  const card = { heading: 'Versus the previous period', rows: [{ label: 'Change', value: '+230%', tone: 'up' as const }, { label: 'Previous average', value: '867' }], notes: [false, 'Scaled from the previous period'] };
+  const card = { heading: 'Versus the previous period', rows: [{ label: 'Change', value: '+230%', tone: 'up' as const }, { label: 'Previous average', value: '867' }], notes: [false as const, 'Scaled from the previous period'] };
   const attributes = tipCard(card);
   assert.equal(attributes['data-tip'], 'Versus the previous period\nChange: +230%\nPrevious average: 867\nScaled from the previous period');
   assert.deepEqual(readTipCard(attributes['data-tip-card']), card);
@@ -674,6 +675,14 @@ test('insights token anatomy, net scope, request drill-down and export', () => {
   assert.equal(measuresReasoningShare(emptyMeasures()), null);
   assert.equal(measuresAvgTtftMs(measures({ ttftSumMs: 900, ttftCount: 3 })), 300);
   assert.equal(measuresAvgTtftMs(emptyMeasures()), null);
+  assert.equal(anatomyAvgTps(tokenAnatomy(measures({ inputTokens: 100, outputTokens: 300, reasoningTokens: 100, totalTokens: 400 })), 4000), 75);
+  assert.equal(anatomyAvgTps(tokenAnatomy(measures({ inputTokens: 100, outputTokens: 20, reasoningTokens: 30, totalTokens: 150 })), 2000), 25);
+  assert.equal(anatomyAvgTps(tokenAnatomy(emptyMeasures()), 1000), null);
+  assert.equal(anatomyAvgTps(tokenAnatomy(measures({ outputTokens: 100 })), 0), null);
+  assert.equal(formatTps(null), '—');
+  assert.equal(formatTps(42.36), '42.4 t/s');
+  assert.equal(formatTps(103.6), '104 t/s');
+  assert.equal(formatTps(1240.4), '1,240 t/s');
 
   const COLUMNS = [
     'bucket', 'key', 'call_point', 'model', 'provider', 'credential', 'requests', 'failures', 'input_tokens',

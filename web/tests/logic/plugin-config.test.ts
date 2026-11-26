@@ -120,7 +120,7 @@ test('plugin config', () => {
   assert.equal(JSON.stringify(protoComposed), '{"__proto__":{"polluted":true},"level":"info"}');
 
   // Typed values are written with their types; clearing a field removes its key.
-  const edited = {
+  const edited: typeof draft = {
     ...draft,
     priority: '5',
     fields: {
@@ -206,7 +206,7 @@ test('plugin config', () => {
     name: base.name, description: base.description, author: base.author,
     homepage: base.homepage, license: base.license, tags: base.tags,
   });
-  const translated = { ...baseMetadata, name: 'Title en', description: 'Text en', author: 'Author en', homepage: 'https://publisher.example/en', license: 'License en', tags: ['tag-en'] };
+  const translated: NonNullable<StorePluginItem['locales']>[string] = { ...baseMetadata, name: 'Title en', description: 'Text en', author: 'Author en', homepage: 'https://publisher.example/en', license: 'License en', tags: ['tag-en'] };
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: translated } }, 'en'), translated);
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { 'zh-CN': { name: 'Simplified' }, 'en-GB': { name: 'British' } } }, 'en'), baseMetadata);
   assert.deepEqual(selectStorePluginMetadata({ ...base, locales: { en: { name: ' ', description: 'Localized', author: '', homepage: '', license: '', tags: [' '] } } }, 'en'), { ...baseMetadata, description: 'Localized' });

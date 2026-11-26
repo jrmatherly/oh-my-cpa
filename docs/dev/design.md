@@ -195,11 +195,12 @@ weights; a page does not restyle one into another with a class.
 | `dashed` | An empty slot that adds an entry to a list | Any other action |
 
 `filled` is a field-shaped trigger (the time-range button) that sits among selects and must look
-like one. `danger` turns any weight into its destructive form; a destructive row action stays in
-the hint ink until the pointer reaches it. Sizes follow the place, not the importance: `default`
-(32px) for page and dialog actions, `sm` (28px) inside rows, card heads and dense toolbars, `lg`
-only on the sign-in form. An icon-only action is a `ToolButton`, which carries the name the glyph
-cannot.
+like one. `danger` turns any weight into its destructive form: a primary confirmation takes the
+solid danger fill, while a resting secondary or row action stays quiet on its normal material
+until the pointer, keyboard focus or confirmation popover reaches it. Sizes follow the place, not
+the importance: `default` (32px) for page and dialog actions, `sm` (28px) inside rows, card heads
+and dense toolbars, `lg` only on the sign-in form. An icon-only action is a `ToolButton`, which
+carries the name the glyph cannot.
 
 ## Composition and shared controls
 
@@ -215,10 +216,23 @@ The language picker is a globe and the language's own name (its endonym), never 
 names a country, and the console's languages are not countries. Flags are kept for currencies,
 where the issuer is the fact.
 
-A [`Tag`](../../web/src/components/common/Tag.tsx) has one geometry everywhere: 22px high (18px
+A [`Tag`](../../web/src/components/common/Tag.tsx) has one geometry everywhere: 22px high (20px
 small), `--radius-sm`, weight 500, a tint of its tone with a rim of the same tone drawn inside.
 Anything else shaped like a chip - a count, a prefix, a badge on a row - takes the small tag's
-height, radius and rim rather than its own. A dialog
+height, radius and rim rather than its own.
+
+A state is a [`StatusLabel`](../../web/src/components/common/StatusLabel.tsx): a round pip in the
+semantic tone before a word, on the chip's line height (22px, 20px small) so a row never moves
+when a state changes form. It has two forms, chosen by what the state belongs to:
+
+| The state of | Form | Reads as |
+| --- | --- | --- |
+| A thing that lives on: a component, credential, provider, plugin, key, configuration, quota or validation | Text (the default) | Pip and word on the surface's own ground; healthy and neutral in `--fg-2` with only the pip in colour, a warning, failure or pending action in the tone's ink (`STATUS_INK_SHARE`) |
+| An event that happened once: a request, an audit event, a backup job, a warmup run | `variant="chip"`, only in that event list's result column and in the event's own drawer head | Pip and word on a soft semantic wash, weight 500, no rim (neutral takes a foreground wash and a `--muted` pip) |
+
+The chip exists so a reader can scan a column of outcomes for the exceptions; anywhere else it is
+one more box competing with the content. A state the page already says in a value or a sentence
+(a newer version drawn in the accent beside an update button) needs no label at all. A dialog
 (`AppModal`) holds one task that ends where the reader started; on a phone it is a
 bottom sheet. A drawer shows or edits one record beside the page; on a desktop its
 leading edge drags to resize it and a click restores the opening width. The width is a

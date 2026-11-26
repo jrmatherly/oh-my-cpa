@@ -1,13 +1,15 @@
 import { ApiError, api, describeError } from '../api/client';
 import { MUTATION_KEYS, QUERY_KEYS } from '../api/queryKeys';
 import type { ConfigScalars, ConfigScalarsResponse } from '../types/configManagement';
+import type { LogsStatus } from '../api/client';
 import type { ManagementAuthFilesResponse } from '../types/managementAuthFile';
 import type {
   ManagementOAuthExcludedModelsResponse,
   ManagementOAuthModelAlias,
   ManagementOAuthModelAliasesResponse,
+  ManagementOAuthRequestScopedErrorsResponse,
 } from '../types/managementOAuthModelAlias';
-import type { ClientAPIKeyItem, ProviderItem } from '../types/providers';
+import type { ClientAPIKeyItem, ProviderErrorRule, ProviderItem } from '../types/providers';
 import { parseProviderID } from '../types/providerId';
 import { maskKeyText } from '../utils/maskKey';
 import { defineOptimisticTarget, useOptimisticMutation } from './useOptimisticMutation';
@@ -40,6 +42,17 @@ export function useOptimisticConfigScalarMutation(options?: {
               ...current.scalars,
               [key]: value,
             },
+          };
+        },
+      ),
+      defineOptimisticTarget<ConfigScalarMutationInput, LogsStatus>(
+        QUERY_KEYS.logsStatus,
+        (current, { key, value }) => {
+          if (!current) return current;
+          if (key !== 'request_log' && key !== 'logging_to_file') return current;
+          return {
+            ...current,
+            [key]: Boolean(value),
           };
         },
       ),
@@ -150,7 +163,7 @@ export function useOptimisticAuthFileStatusMutation(options?: {
         },
       ),
     ],
-    invalidateKeys: [QUERY_KEYS.quota, QUERY_KEYS.overview, QUERY_KEYS.identityDirectory],
+    invalidateKeys: [QUERY_KEYS.quota, QUERY_KEYS.trendsQuota, QUERY_KEYS.overview, QUERY_KEYS.identityDirectory],
     formatError: options?.formatError,
   });
 }
@@ -197,6 +210,11 @@ export interface OAuthExcludedModelsMutationInput {
   readonly models: string[];
 }
 
+export interface OAuthRequestScopedErrorsMutationInput {
+  readonly provider: string;
+  readonly rules: ProviderErrorRule[];
+}
+
 /**
  * Optimistic global OAuth excluded-model rule save backed by Go StateCoordinator write-behind.
  */
@@ -226,6 +244,38 @@ export function useOptimisticOAuthExcludedModelsMutation(options?: {
     invalidateKeys: [QUERY_KEYS.config],
     formatError: options?.formatError ? (err) => options.formatError?.(err) ?? null : describeError,
     onSuccess: (_data, vars) => options?.onSuccess?.(vars.provider, vars.models),
+  });
+}
+
+/**
+ * Optimistic global OAuth request-scoped error rule save backed by Go StateCoordinator write-behind.
+ */
+export function useOptimisticOAuthRequestScopedErrorsMutation(options?: {
+  formatError?: (error: unknown) => string | null;
+  onSuccess?: (provider: string, rules: ProviderErrorRule[]) => void;
+}) {
+  return useOptimisticMutation({
+    mutationKey: MUTATION_KEYS.oauthRequestScopedErrors,
+    mutationFn: ({ provider, rules }: OAuthRequestScopedErrorsMutationInput) =>
+      api.patchManagementOAuthRequestScopedErrors(provider, rules),
+    targets: [
+      defineOptimisticTarget<OAuthRequestScopedErrorsMutationInput, ManagementOAuthRequestScopedErrorsResponse>(
+        QUERY_KEYS.oauthRequestScopedErrors,
+        (current, { provider, rules }) => {
+          const base = current?.request_scoped_errors ?? {};
+          const nextRules = { ...base };
+          if (rules.length === 0) {
+            delete nextRules[provider];
+          } else {
+            nextRules[provider] = rules;
+          }
+          return { request_scoped_errors: nextRules };
+        },
+      ),
+    ],
+    invalidateKeys: [QUERY_KEYS.config],
+    formatError: options?.formatError ? (err) => options.formatError?.(err) ?? null : describeError,
+    onSuccess: (_data, vars) => options?.onSuccess?.(vars.provider, vars.rules),
   });
 }
 

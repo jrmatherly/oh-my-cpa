@@ -1,9 +1,39 @@
 import { applyKeyOrder } from '../../types/displayOrder';
-import type { MessageKey, TFunc } from '../../i18n/catalog';
+import type { MessageKey } from '../../i18n/catalog';
 import { PRIMARY_CREDENTIAL_PROVIDERS } from '../../types/credentialProviders';
 import type { QuotaWindow } from '../../types/quota';
-import { orderQuotaWindows, quotaWindowGroupKey, quotaWindowKindOf, quotaWindowParts } from '../quota/quotaWindowSelection';
+import {
+  formatQuotaDuration,
+  inferQuotaWindowKind,
+  packQuotaLines,
+  quotaCellsOf,
+  quotaDetailWindowFullName,
+  quotaDetailWindowName,
+  quotaFamilyLabel,
+  quotaLinesFromCells,
+  quotaReadingLabels,
+  quotaReadingName,
+  type QuotaLine,
+  type QuotaLineCell,
+  type QuotaPeriod,
+  type QuotaSlot,
+} from '../quota/quotaWindowNaming';
 import type { OAuthWorkspaceRecord } from './oauthWorkspaceLogic';
+
+export {
+  formatQuotaDuration,
+  inferQuotaWindowKind,
+  packQuotaLines,
+  quotaCellsOf,
+  quotaDetailWindowFullName,
+  quotaDetailWindowName,
+  quotaReadingLabels,
+  quotaReadingName,
+  type QuotaLine,
+  type QuotaLineCell,
+  type QuotaPeriod,
+  type QuotaSlot,
+};
 
 /**
  * The credential list as one table per provider, with two fixed quota columns.
@@ -21,51 +51,6 @@ import type { OAuthWorkspaceRecord } from './oauthWorkspaceLogic';
  * what keeps a new model group, an upstream provider the console has never named, or a plugin's
  * quota readable without a release.
  */
-export type QuotaPeriod = 'five_hour' | 'daily' | 'weekly' | 'monthly';
-
-/** Which of the two fixed columns a limit belongs in. */
-export type QuotaSlot = 'short' | 'long';
-
-export interface QuotaLineCell {
-  /** The reading's identity within the credential, "family|period" or "family|id:…". */
-  key: string;
-  window: QuotaWindow;
-  /** Undefined for a limit whose period is unknown; such a limit has a line of its own. */
-  slot?: QuotaSlot;
-  /** The line's only limit, drawn across both columns. */
-  spans: boolean;
-  /** Distinguishes separate allowances that share a group and period. */
-  allowanceName?: string;
-}
-
-/** One family of a credential's limits: its short limit and its long one, side by side. */
-export interface QuotaLine {
-  key: string;
-  scope: QuotaWindow['scope'];
-  /** The group's, model's or allowance's own name; the plan and the code-review allowance are named by the console. */
-  label?: string;
-  cells: QuotaLineCell[];
-}
-
-const PERIOD_KEYS: Record<QuotaPeriod, MessageKey> = {
-  five_hour: 'quota.slot_five_hour', daily: 'quota.slot_daily', weekly: 'quota.slot_weekly', monthly: 'quota.slot_monthly',
-};
-
-function lineTitle(line: QuotaLine, t: TFunc): string {
-  if (line.label) return line.label;
-  return t(line.scope === 'code_review' ? 'omc.quota_family_code_review' : 'omc.quota_family_plan');
-}
-
-/** The plan's limits are named by their period; any other by its period and name, or its name alone. */
-export function quotaReadingName(line: QuotaLine, cell: QuotaLineCell, t: TFunc): string {
-  const kind = periodOf(cell.window);
-  const period = kind ? t(PERIOD_KEYS[kind]) : undefined;
-  if (line.scope === 'standard' && !line.label) return period ?? cell.window.label;
-  const family = line.scope === 'group' ? groupLabel(cell.window) : lineTitle(line, t);
-  const name = period ? t('omc.quota_reading_name', { family, period }) : family;
-  const allowance = line.scope === 'group' ? cell.allowanceName ?? (!period ? columnLabel(cell.window) : undefined) : undefined;
-  return allowance && allowance !== family ? t('omc.quota_allowance_name', { name, allowance }) : name;
-}
 
 export interface CredentialSection {
   provider: string;
@@ -76,70 +61,6 @@ export interface CredentialSection {
 export interface QuotaColumnSort {
   key: string;
   direction: 'asc' | 'desc';
-}
-
-function periodOf(window: QuotaWindow): QuotaPeriod | undefined {
-  const kind = quotaWindowKindOf(window);
-  return kind === 'five_hour' || kind === 'daily' || kind === 'weekly' || kind === 'monthly' ? kind : undefined;
-}
-
-/** The group "Gemini Models" reads as "Gemini"; "Gemini 4 Argon" keeps its whole name. */
-function groupLabel(window: QuotaWindow): string {
-  const group = quotaWindowParts(window).group ?? window.label;
-  return group.replace(/\s+models$/i, '') || group;
-}
-
-/**
- * "Sonnet weekly usage" and "GPT-5-Codex-Spark 5-hour limit" name their model before the period
- * phrase. A snapshot stored before this fork wrote labels in English carries the phrase as one
- * Chinese word, which the second alternative still removes (the four words are escaped).
- */
-function modelLabel(window: QuotaWindow): string {
-  const name = window.label
-    .replace(/\s+(?:(?:\d+(?:\.\d+)?-(?:hour|minute)|daily|weekly|monthly)\s+(?:limit|usage)|\S*(?:\u914d\u989d|\u7528\u91cf|\u9650\u989d|\u9650\u5236|limit|usage)\S*)$/i, '')
-    .trim();
-  return name || window.model || window.label;
-}
-
-function familyLabel(window: QuotaWindow): string | undefined {
-  if (window.scope === 'group') return groupLabel(window);
-  if (window.scope === 'model') return modelLabel(window);
-  return undefined;
-}
-
-/** What a column says when its period has no name: the window's own name without its group. */
-function columnLabel(window: QuotaWindow): string {
-  return quotaWindowParts(window).name;
-}
-
-/** The family part of a cell key: "group:Gemini Models|five_hour" belongs to "group:Gemini Models". */
-function familyKeyOfCell(cellKey: string): string {
-  return cellKey.slice(0, cellKey.lastIndexOf('|'));
-}
-
-/**
- * Each window of one credential, keyed by the column it belongs in.
- *
- * A window takes its family's column for its period. When a credential reports a second window
- * for a period its family already filled - Claude's third-party-apps weekly limit beside the plan's
- * weekly limit - the later one is keyed by its id, so it becomes a column of its own rather than
- * overwriting the first. Windows with no nameable period are always keyed by id.
- */
-export function quotaCellsOf(windows: QuotaWindow[] | undefined): Map<string, QuotaWindow> {
-  const cells = new Map<string, QuotaWindow>();
-  const seenIds = new Set<string>();
-  for (const window of orderQuotaWindows(windows ?? [])) {
-    const family = quotaWindowGroupKey(window);
-    // A provider can repeat a bucket; two readings of one window id are one window, the first kept.
-    const identity = `${family}|${window.id}`;
-    if (window.id && seenIds.has(identity)) continue;
-    seenIds.add(identity);
-    const period = periodOf(window);
-    const periodKey = period ? `${family}|${period}` : undefined;
-    const key = periodKey && !cells.has(periodKey) ? periodKey : `${family}|id:${window.id}`;
-    if (!cells.has(key)) cells.set(key, window);
-  }
-  return cells;
 }
 
 /**
@@ -157,16 +78,7 @@ export function isListQuotaFamilyExcluded(provider: string | undefined, label: s
 
 /** The readings of one credential that the list table draws. */
 function listedCellsOf(record: OAuthWorkspaceRecord, provider = record.displayProvider): [string, QuotaWindow][] {
-  return [...quotaCellsOf(record.quota?.windows)].filter(([, window]) => !isListQuotaFamilyExcluded(provider, familyLabel(window)));
-}
-
-/** A limit that refills within a day is the short one; anything longer is the long one. */
-function slotOf(window: QuotaWindow): QuotaSlot | undefined {
-  const period = periodOf(window);
-  if (period === 'five_hour' || period === 'daily') return 'short';
-  if (period === 'weekly' || period === 'monthly') return 'long';
-  if (window.period_hours != null) return window.period_hours <= 24 ? 'short' : 'long';
-  return undefined;
+  return [...quotaCellsOf(record.quota?.windows)].filter(([, window]) => !isListQuotaFamilyExcluded(provider, quotaFamilyLabel(window)));
 }
 
 /**
@@ -176,79 +88,7 @@ function slotOf(window: QuotaWindow): QuotaSlot | undefined {
  * weekly one - and a limit with no known period each get a line of their own, named by the limit.
  */
 export function quotaLinesOf(record: OAuthWorkspaceRecord, provider = record.displayProvider): QuotaLine[] {
-  const families = new Map<string, { line: QuotaLine; short?: QuotaLineCell; long?: QuotaLineCell; extras: QuotaLine[] }>();
-  const groupPeriods = new Map<string, QuotaLineCell[]>();
-  for (const [key, window] of listedCellsOf(record, provider)) {
-    const familyKey = familyKeyOfCell(key);
-    let family = families.get(familyKey);
-    if (!family) {
-      family = { line: { key: familyKey, scope: window.scope, label: familyLabel(window), cells: [] }, extras: [] };
-      families.set(familyKey, family);
-    }
-    const slot = slotOf(window);
-    const cell: QuotaLineCell = { key, window, slot, spans: false };
-    const period = periodOf(window);
-    if (window.scope === 'group' && period) {
-      const periodKey = `${familyKey}|${period}`;
-      const siblings = groupPeriods.get(periodKey) ?? [];
-      siblings.push(cell);
-      groupPeriods.set(periodKey, siblings);
-    }
-    if (slot && !family[slot]) {
-      family[slot] = cell;
-    } else {
-      const label = window.scope === 'group' ? groupLabel(window) : slot ? modelLabel(window) : columnLabel(window);
-      cell.spans = true;
-      family.extras.push({ key, scope: window.scope, label, cells: [cell] });
-    }
-  }
-  for (const siblings of groupPeriods.values()) {
-    if (siblings.length > 1) {
-      for (const cell of siblings) cell.allowanceName = columnLabel(cell.window);
-    }
-  }
-  const lines: QuotaLine[] = [];
-  for (const { line, short, long, extras } of families.values()) {
-    const cells = [short, long].filter((cell): cell is QuotaLineCell => cell !== undefined);
-    if (cells.length === 1) cells[0] = { ...cells[0], spans: true };
-    if (cells.length > 0) lines.push({ ...line, cells });
-    lines.push(...extras);
-  }
-  // The plan leads: it is the credential's own limit and what the column headers name.
-  return lines.sort((left, right) => Number(right.scope === 'standard') - Number(left.scope === 'standard'));
-}
-
-/**
- * The readings a row draws, in order, each placed in a column or across both. The first line keeps
- * its columns - its short limit under "5 hours", its long one under "Weekly" - because that is the
- * line the headers and the sort describe. Further lines name every reading, so their single limits
- * are paired two to a line instead of each taking a full one; a family with two limits keeps its
- * own line, and a single limit left over draws across both columns.
- */
-export function packQuotaLines(lines: QuotaLine[]): { line: QuotaLine; cell: QuotaLineCell }[] {
-  const placed: { line: QuotaLine; cell: QuotaLineCell }[] = [];
-  let pending: { line: QuotaLine; cell: QuotaLineCell } | undefined;
-  const flush = () => {
-    if (pending) placed.push({ ...pending, cell: { ...pending.cell, spans: true } });
-    pending = undefined;
-  };
-  lines.forEach((line, index) => {
-    if (index === 0 || line.cells.length > 1) {
-      flush();
-      for (const cell of line.cells) placed.push({ line, cell });
-      return;
-    }
-    const [cell] = line.cells;
-    if (!pending) {
-      pending = { line, cell };
-      return;
-    }
-    placed.push({ ...pending, cell: { ...pending.cell, slot: 'short', spans: false } });
-    placed.push({ line, cell: { ...cell, slot: 'long', spans: false } });
-    pending = undefined;
-  });
-  flush();
-  return placed;
+  return quotaLinesFromCells(listedCellsOf(record, provider));
 }
 
 /**
