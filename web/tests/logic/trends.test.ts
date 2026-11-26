@@ -373,7 +373,7 @@ test('the analytical hour bucket limit holds for ranges up to 14 days', () => {
   assert.equal(isRangeWithinHourLimit({ preset: 'this_month' }, Date.UTC(2026, 2, 20, 0, 0, 0)), false);
 });
 
-test('trends quota window names follow OAuth management localization across all languages', async () => {
+test('trends quota window names follow OAuth management naming', async () => {
   const windows: TrendsQuotaWindow[] = [
     quotaWindow({ window_id: 'five_hour', label: '5-hour rolling usage', scope: 'standard', period_hours: 5 }),
     quotaWindow({ window_id: 'seven_day_sonnet', label: 'Sonnet weekly usage', scope: 'model', model: 'claude-3-5-sonnet', period_hours: 168 }),
@@ -393,7 +393,7 @@ test('trends quota window names follow OAuth management localization across all 
     const t: TFunc = (key, vars) => formatMessage(catalog[key], vars, languageLocale(lang));
     assert.deepEqual(windows.map((win) => quotaWindowName(win, t, windows)), expected[lang], lang);
   }
-  // 8-hour Codex custom period is formatted as 8h rather than falling back to 5-Hour Chinese text,
+  // 8-hour Codex custom period is formatted as 8h rather than the stored 5-hour label,
   // and distinct model-scoped windows sharing `scope: "model"` keep distinct period labels.
   const codexCustom: TrendsQuotaWindow[] = [
     quotaWindow({ window_id: 'standard_primary', label: '5-hour usage limit', kind: 'model_scoped', scope: 'standard', period_hours: 8 }),

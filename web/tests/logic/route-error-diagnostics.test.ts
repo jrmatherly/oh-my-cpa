@@ -297,7 +297,7 @@ test('chunk recovery refuses hidden tabs and holds reloads during post-resume gr
     for (const listener of docListeners.get(type) ?? []) listener(new Event(type));
   };
   // This fork has no vite:preloadError listener; the route boundary calls attemptChunkReload itself.
-  const emitPreloadFailure = () => {
+  const attemptReload = () => {
     attemptChunkReload({
       now: () => clock,
       storage,
@@ -320,11 +320,13 @@ test('chunk recovery refuses hidden tabs and holds reloads during post-resume gr
     },
   });
 
+  assert.equal(winListeners.has('vite:preloadError'), false, 'this fork reloads only from the route boundary');
+
   try {
     // Tab goes to background: aborted preloads must not reload.
     visibilityState = 'hidden';
     emitDoc('visibilitychange');
-    emitPreloadFailure();
+    attemptReload();
     assert.equal(reloads, 0);
 
     // Tab returns to foreground: transient failures within grace window do not trigger eager reload,
@@ -333,7 +335,7 @@ test('chunk recovery refuses hidden tabs and holds reloads during post-resume gr
     visibilityState = 'visible';
     emitDoc('visibilitychange');
     clock += 1_000;
-    emitPreloadFailure();
+    attemptReload();
     assert.equal(reloads, 0);
     assert.equal(
       attemptChunkReload({
@@ -352,7 +354,7 @@ test('chunk recovery refuses hidden tabs and holds reloads during post-resume gr
 
     // Once settled past the grace window, a real foreground stale chunk triggers one guarded reload.
     clock += 5_000;
-    emitPreloadFailure();
+    attemptReload();
     assert.equal(reloads, 1);
 
     // If pageshow fires while the document is still hidden, keep hidden tracking until visibility
@@ -366,11 +368,11 @@ test('chunk recovery refuses hidden tabs and holds reloads during post-resume gr
     visibilityState = 'visible';
     emitDoc('visibilitychange');
     clock += 1_000;
-    emitPreloadFailure();
+    attemptReload();
     assert.equal(reloads, 1, 'visibility return after background pageshow still receives resume grace');
 
     clock += 5_000;
-    emitPreloadFailure();
+    attemptReload();
     assert.equal(reloads, 2, 'foreground preload failure after grace window reloads once');
   } finally {
     dispose();

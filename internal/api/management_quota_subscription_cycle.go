@@ -81,6 +81,9 @@ func (h *Handler) getQuotaSubscriptionCycle(writer http.ResponseWriter, request 
 	ctx := request.Context()
 	snapshots, err := h.repo.GetLatestQuotaSnapshots(ctx, []string{authIndex})
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("subscription cycle quota snapshot could not be read", "auth_index", authIndex, "error", err)
+		}
 		writeError(writer, http.StatusInternalServerError, "quota reading could not be read")
 		return
 	}
@@ -148,6 +151,9 @@ func (h *Handler) getQuotaSubscriptionCycle(writer http.ResponseWriter, request 
 		}
 		return nil
 	}); err != nil {
+		if h.logger != nil {
+			h.logger.Error("subscription cycle usage could not be read", "auth_index", authIndex, "error", err)
+		}
 		writeError(writer, http.StatusInternalServerError, "subscription cycle usage could not be read")
 		return
 	}

@@ -1075,7 +1075,7 @@ test('detail window helpers and unknown-plan sentinel localize consistently', ()
   assert.equal(quotaPlanLabel({ plan_label: 'Unknown plan' }, en), 'Unknown plan');
   assert.equal(quotaPlanLabel({ plan_label: 'Pro' }, en), 'Pro');
 
-  // Custom non-standard duration like an 8-hour Codex window renders "8h" / "8h" rather than stale "5-hour usage limit".
+  // Custom non-standard duration like an 8-hour Codex window renders "8h" rather than the stale "5-hour usage limit".
   const codex8h: QuotaWindow = { id: 'standard_primary', label: '5-hour usage limit', kind: 'model_scoped', scope: 'standard', period_hours: 8 };
   assert.equal(quotaDetailWindowName(codex8h, en), '8h');
   const spark5h: QuotaWindow = { id: 'spark_5h', label: 'Spark 5h', kind: 'model_scoped', scope: 'model', model: 'spark', period_hours: 5 };

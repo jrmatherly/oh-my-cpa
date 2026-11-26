@@ -130,9 +130,10 @@ export function attemptChunkReload(options: AttemptChunkReloadOptions = {}): boo
 
 /**
  * Tracks when the tab was last resumed, so `attemptChunkReload` can hold off while a mobile OS is
- * still aborting the fetches it suspended. This fork installs no `vite:preloadError` listener: a
- * failed surface under `DeferredMount` keeps the page and shows its own notice, and a failure
- * that reaches the route boundary reloads from `RouteErrorPage`.
+ * still aborting the fetches it suspended, and clears a pending reload on `pageshow`. This fork
+ * installs no `vite:preloadError` listener: a failed surface under `DeferredMount` keeps the page
+ * and shows its own notice, and a failure that reaches the route boundary reloads from
+ * `RouteErrorPage`.
  */
 export function installChunkLoadRecovery(
   target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,

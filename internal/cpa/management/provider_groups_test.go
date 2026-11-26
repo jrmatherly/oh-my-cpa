@@ -250,8 +250,12 @@ func TestOAuthMapsReadTheViewNotThePath(t *testing.T) {
 	if err != nil || len(excluded) != 0 {
 		t.Fatalf("excluded = %#v, err = %v", excluded, err)
 	}
+	rules, err := newConfigClient(t, gateway).OAuthRequestScopedErrors(context.Background())
+	if err != nil || len(rules) != 0 {
+		t.Fatalf("rules = %#v, err = %v", rules, err)
+	}
 	sent := gateway.sent()
-	if len(sent) != 2 {
+	if len(sent) != 3 {
 		t.Fatalf("requests = %v", sent)
 	}
 	for _, request := range sent {

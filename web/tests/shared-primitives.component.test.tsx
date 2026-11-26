@@ -594,6 +594,7 @@ describe('DeferredMount', () => {
       function BrokenRoute(): React.ReactNode {
         throw new Error('boom');
       }
+      attemptSpy.mockClear();
       const brokenRouter = createMemoryRouter([{ path: '/', element: <BrokenRoute />, errorElement: <RouteErrorPage /> }]);
       const brokenView = renderWithOmc(
         <ThemeProvider>
@@ -601,7 +602,7 @@ describe('DeferredMount', () => {
         </ThemeProvider>,
       );
       expect((await screen.findByTestId('route-error-message')).textContent).toBe('boom');
-      expect(attemptSpy).toHaveBeenCalledTimes(3);
+      expect(attemptSpy).not.toHaveBeenCalled();
       brokenView.unmount();
 
       // A committed route failure during the post-resume grace window defers one guarded retry
