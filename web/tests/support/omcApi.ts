@@ -33,6 +33,7 @@ export interface OmcState {
   authFiles: OmcAuthFile[];
   archivedCredentials: ArchivedCredentialItem[];
   archivedProviders: ArchivedProviderItem[];
+  logsStatus: { logging_to_file: boolean; request_log: boolean };
 }
 
 export interface OmcRequest {
@@ -115,6 +116,26 @@ const BUILT_IN_ROUTES: Route[] = [
     },
   },
   { method: 'GET', path: '/management/plugins', handler: (_request, state) => ({ plugins: state.plugins }) },
+  {
+    method: 'GET',
+    path: '/management/config',
+    handler: () => ({ scalars: {}, supported_keys: [], revision: 'test-rev', safe_yaml: '', stored_layout: 'v8' }),
+  },
+  {
+    method: 'GET',
+    path: '/management/logs/status',
+    handler: (_request, state) => state.logsStatus,
+  },
+  {
+    method: 'PUT',
+    path: /^\/management\/config\/(request_log|logging_to_file)$/,
+    handler: (request, state) => {
+      const key = lastSegment(request.path) as 'request_log' | 'logging_to_file';
+      const value = Boolean((request.body as { value?: unknown } | undefined)?.value);
+      state.logsStatus = { ...state.logsStatus, [key]: value };
+      return { status: 'ok', key, value };
+    },
+  },
   { method: 'GET', path: '/management/providers', handler: (_request, state) => ({ providers: state.providers }) },
   {
     method: 'GET', path: '/management/identity-directory', handler: (_request, state) => ({
@@ -175,6 +196,7 @@ export function installOmcApi(seed: Partial<OmcState> = {}): OmcApi {
   const state: OmcState = {
     preferences: {}, serverTimezone: 'UTC', plugins: [], providers: [], authFiles: [],
     archivedCredentials: [], archivedProviders: [],
+    logsStatus: { logging_to_file: true, request_log: true },
     health: { status: 'ok', cpa_connected: true, cpa_management_api: 'v8', database_status: 'ok' },
     ...seed,
   };

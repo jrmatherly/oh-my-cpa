@@ -17,7 +17,6 @@ import { targetIdentity } from '../../src/components/dashboard/routing/routingId
 import { EVENT_AUTO_REFRESH_MS } from '../../src/types/usageEventCadence.ts';
 import { pluginMultiPortalKeys, pluginOAuthProviderLogos, pluginOAuthProviderTitles } from '../../src/types/pluginOAuthProviders.ts';
 import {
-  DEFAULT_USAGE_EVENTS_VIEW,
   USAGE_EVENTS_VIEW_PREFERENCE,
   EVENT_GROUPING_VALUES,
   parseEventGrouping,
@@ -66,10 +65,19 @@ import {
 } from '../../src/types/usageEventFilters.ts';
 import {
   REQUEST_COLUMNS,
+  REQUEST_COLUMN_IDS,
   REQUEST_STACK_WIDTH,
   foldRequestColumns,
   USAGE_EVENTS_COLUMNS_PREFERENCE,
   parseUsageEventsColumns,
+  parseUsageEventsColumnPreference,
+  parseUsageEventsColumnsDoc,
+  serializeUsageEventsColumns,
+  canHideRequestColumn,
+  setRequestColumnHidden,
+  moveRequestColumn,
+  stepRequestColumn,
+  resolveSeamColumns,
   SHEET_GRID_CHROME,
   buildGridTemplateColumns,
   LIST_GRID_CHROME,
@@ -92,7 +100,7 @@ test('request provider artwork follows the credential issuing portal', () => {
   const globalLogo = 'https://cdn.example.test/qoder.svg';
   const cnLogo = 'data:image/svg+xml,%3Csvg%20id%3D%22qoder-cn%22/%3E';
   const plugins = [{
-    id: 'omc-qoder-oauth', supports_oauth: true, enabled: false,
+    id: 'omc-qoder-oauth', configured: true, registered: true, supports_oauth: true, enabled: false, effective_enabled: false, config_fields: [],
     oauth_providers: ['qoder', 'qoder-cn'], logo: globalLogo,
     oauth_provider_entries: [{ identifier: 'qoder-cn', name: 'Qoder CN', logo: cnLogo }],
   }];
@@ -123,7 +131,7 @@ test('request provider artwork follows the credential issuing portal', () => {
 
 test('request and live routing names follow the declared issuing portal, with family fallback', () => {
   const plugins = [{
-    id: 'buddy', supports_oauth: true, enabled: false, metadata: { name: 'Buddy' },
+    id: 'buddy', configured: true, registered: true, supports_oauth: true, enabled: false, effective_enabled: false, config_fields: [], metadata: { name: 'Buddy' },
     oauth_providers: ['workbuddy', 'workbuddy-ai'],
     oauth_provider_entries: [
       { identifier: 'workbuddy', name: 'Workbuddy' },
@@ -220,15 +228,17 @@ test('usage event view', () => {
   // Every filter dimension the panel owns must survive a URL round trip, or a
   // reload would silently drop part of the operator's filter.
   const everyFilter = [
-    'model=gpt-5&provider=openai&auth_index=auth-a&source=src&api_key=key&executor=codex',
+    'model=gpt-5&response_model=gpt-5-mini&provider=openai&auth_index=auth-a&source=src&api_key=key&executor=codex',
     'auth_type=oauth&reasoning=high&service_tier=flex&resolved_service_tier=priority&model_alias=fast',
     'q=codex&ua=codex-cli&endpoint=%2Fv1%2Fresponses&request_id=req-1',
     'latency_min=100&latency_max=60000&tokens_min=0&tokens_max=500000',
     'cost_min=0.000001&cost_max=12.5&cost=unpriced&served=substituted&transport=websocket',
   ].join('&');
   const everyQuery = read(everyFilter);
+  assert.deepEqual(everyQuery.filters?.response_model, ['gpt-5-mini']);
   assert.deepEqual(everyQuery.filters?.resolved_service_tier, ['priority']);
   const everyParams = new URLSearchParams(usageEventParams(everyQuery));
+  assert.deepEqual(everyParams.getAll('response_model'), ['gpt-5-mini']);
   assert.deepEqual(everyParams.getAll('resolved_service_tier'), ['priority']);
   const everyAgain = read(everyParams.toString());
   assert.deepEqual(everyAgain, everyQuery);
@@ -639,7 +649,7 @@ test('usage event view', () => {
       cost_max: ['12.5'],
     },
   });
-  assert.equal((parsedFull as Record<string, unknown>).unknown_garbage, undefined);
+  assert.equal((parsedFull as unknown as Record<string, unknown>).unknown_garbage, undefined);
 
   // The legacy flat shape is still on disk. Dropping it would silently reset a
   // returning operator's filters to the default window, so each old scalar becomes
@@ -1555,8 +1565,8 @@ test('usage event view', () => {
 
   // buildGridTemplateColumns: the two name columns share the spare room; every other column is a rigid track
   const defaultGrid = buildGridTemplateColumns({});
-  assert.ok(defaultGrid.includes('minmax(140px, 1fr)'));
-  assert.ok(defaultGrid.includes('minmax(130px, 1fr)'));
+  assert.ok(defaultGrid.includes('minmax(136px, 1fr)'));
+  assert.ok(defaultGrid.includes('minmax(126px, 1fr)'));
   assert.equal(defaultGrid.split(' ').filter((track) => track.startsWith('minmax(')).length, 2);
   assert.ok(defaultGrid.startsWith('20px ')); // selection track
   assert.ok(defaultGrid.endsWith('14px')); // chevron track
@@ -1568,21 +1578,26 @@ test('usage event view', () => {
   const restingGrid = buildGridTemplateColumns({}, { ...LIST_GRID_CHROME, isSelectionClosed: true });
   assert.equal(restingGrid, defaultGrid.replace(/^20px /, '0px '));
 
-  // Manual overrides lock specified tracks to exact px
+  // Manual overrides lock specified tracks to exact px; when no flexible data column remains,
+  // the trailing chevron track absorbs spare width so the chevron stays anchored to the right edge.
   const manualGrid = buildGridTemplateColumns({ provider: 250, model: 200 });
   assert.ok(manualGrid.includes('250px'));
   assert.ok(manualGrid.includes('200px'));
-  assert.ok(manualGrid.endsWith('14px'));
+  assert.ok(manualGrid.endsWith('minmax(14px, 1fr)'));
+  const singleManualGrid = buildGridTemplateColumns({ provider: 250 });
+  assert.ok(singleManualGrid.includes('250px'));
+  assert.ok(singleManualGrid.includes('minmax(126px, 1fr)'));
+  assert.ok(singleManualGrid.endsWith('14px'));
 
   // computeGridMinWidth: fixed defaults + flexible mins + the two fixed tracks + 13 gaps + inline padding
-  // 96 + 68 + 140 + 130 + 84 + 78 + 88 + 140 + 56 + 52 + 136 + 120 = 1188; selection 20 + chevron 14 = 34;
+  // 96 + 76 + 136 + 126 + 84 + 78 + 88 + 140 + 56 + 52 + 136 + 120 = 1188; selection 20 + chevron 14 = 34;
   // gaps 13*16 = 208; padding 40 = 1470
   const baseMin = 1188 + 34;
   assert.equal(computeGridMinWidth({}), baseMin + 208 + 40);
   // A manual override replaces the flexible minimum with the requested width
-  assert.equal(computeGridMinWidth({ provider: 300 }), baseMin - 140 + 300 + 208 + 40);
+  assert.equal(computeGridMinWidth({ provider: 300 }), baseMin - 136 + 300 + 208 + 40);
   // Out-of-range overrides are clamped exactly as the template builder clamps them
-  assert.equal(computeGridMinWidth({ provider: 9999 }), baseMin - 140 + 480 + 208 + 40);
+  assert.equal(computeGridMinWidth({ provider: 9999 }), baseMin - 136 + 480 + 208 + 40);
   // The sheet drops both fixed tracks and the two gaps that separated them from the data.
   assert.equal(computeGridMinWidth({}, 16, 20, SHEET_GRID_CHROME), 1188 + 176 + 40);
   assert.ok(computeGridMinWidth({}, 8, 12) < computeGridMinWidth({}, 12, 12));
@@ -1616,6 +1631,86 @@ test('usage event view', () => {
   const trackCount = (grid: string) => grid.match(/minmax\([^)]*\)|\S+/g)!.length;
   assert.equal(trackCount(foldedGrid), trackCount(defaultGrid) - 2);
   assert.equal(computeGridMinWidth({}, 16, 20, undefined, new Set(['client'])), baseMin + 208 + 40 - 120 - 16);
+
+  // Column visibility & ordering preference parsing, sanitization, and serialization
+  const legacyPref = parseUsageEventsColumnPreference({ provider: 220, latency: 96 });
+  assert.deepEqual(legacyPref.widths, { provider: 220, latency: 96 });
+  assert.deepEqual(legacyPref.hidden, []);
+  assert.equal(legacyPref.order, REQUEST_COLUMN_IDS);
+  assert.deepEqual(parseUsageEventsColumnsDoc({ provider: 220 }), { provider: 220 });
+  assert.equal(parseUsageEventsColumnsDoc(null), undefined);
+
+  const richPref = parseUsageEventsColumnPreference({
+    provider: 260,
+    hidden: ['client', 'unknown_col', 'key', 'client'],
+    order: ['key', 'time', 'unknown_col', 'key'],
+  });
+  assert.deepEqual(richPref.widths, { provider: 260 });
+  assert.deepEqual(richPref.hidden, ['key', 'client']);
+  assert.equal(richPref.order[0], 'key');
+  assert.equal(richPref.order[1], 'time');
+  assert.equal(richPref.order.length, REQUEST_COLUMNS.length);
+
+  // Hiding every column falls back to showing all columns so the table never renders empty.
+  const allHiddenPref = parseUsageEventsColumnPreference({ hidden: [...REQUEST_COLUMN_IDS], provider: 240 });
+  assert.deepEqual(allHiddenPref.hidden, []);
+  assert.deepEqual(allHiddenPref.widths, { provider: 240 });
+
+  // Serialization omits empty hidden / default order and preserves widths independently.
+  assert.deepEqual(serializeUsageEventsColumns({ provider: 240 }, [], REQUEST_COLUMN_IDS), { provider: 240 });
+  assert.deepEqual(
+    serializeUsageEventsColumns({ provider: 240 }, ['client', 'key'], REQUEST_COLUMN_IDS),
+    { provider: 240, hidden: ['key', 'client'] },
+  );
+  const reorderedIds = moveRequestColumn(REQUEST_COLUMN_IDS, 'cost', 'model', 'after');
+  assert.equal(reorderedIds.indexOf('cost'), reorderedIds.indexOf('model') + 1);
+  assert.deepEqual(
+    serializeUsageEventsColumns({ provider: 240 }, ['client'], reorderedIds),
+    { provider: 240, hidden: ['client'], order: [...reorderedIds] },
+  );
+  // Stepping back to canonical order returns the default reference and omits `order` on serialize.
+  const stepped = stepRequestColumn(REQUEST_COLUMN_IDS, 'result', -1);
+  assert.equal(stepped[0], 'result');
+  assert.equal(stepped[1], 'time');
+  assert.equal(stepRequestColumn(stepped, 'result', 1), REQUEST_COLUMN_IDS);
+
+  // At-least-one-visible invariant on visibility toggles.
+  const elevenHidden = REQUEST_COLUMN_IDS.filter((id) => id !== 'model');
+  assert.equal(canHideRequestColumn(elevenHidden, 'model'), false);
+  assert.equal(canHideRequestColumn(elevenHidden, 'time'), true);
+  assert.deepEqual(setRequestColumnHidden(elevenHidden, 'model', true), elevenHidden);
+  assert.deepEqual(setRequestColumnHidden(elevenHidden, 'time', false), elevenHidden.filter((id) => id !== 'time'));
+
+  // Hiding both flexible columns pins the trailing chevron via `minmax(14px, 1fr)`.
+  const noFlexGrid = buildGridTemplateColumns({}, LIST_GRID_CHROME, new Set(['provider', 'model']));
+  assert.ok(noFlexGrid.endsWith('minmax(14px, 1fr)'));
+  // Custom order controls track order in the grid template.
+  const customOrderGrid = buildGridTemplateColumns({}, SHEET_GRID_CHROME, new Set(), stepped);
+  assert.ok(customOrderGrid.startsWith('76px 96px '));
+
+  // User-hidden columns compose with automatic width folding without mutating user choices.
+  assert.deepEqual(
+    [...foldRequestColumns(1140, {}, new Set(['tokens', 'latency', 'cost']))],
+    [],
+    'hiding wide columns frees enough room so foldable columns unfold automatically',
+  );
+  assert.deepEqual(
+    [...foldRequestColumns(1140, {}, new Set(['client']))],
+    ['key', 'cache'],
+    'auto-folding skips columns already hidden by the user',
+  );
+  assert.deepEqual(
+    [...foldRequestColumns(REQUEST_STACK_WIDTH + 1, { client: 320 }, new Set(REQUEST_COLUMN_IDS.filter((id) => id !== 'client')))],
+    [],
+    'auto-folding never folds the last remaining visible column',
+  );
+
+  // Dynamic seam calculation adapts to hidden and reordered columns.
+  assert.deepEqual(resolveSeamColumns(), ['model', 'key']);
+  assert.deepEqual(resolveSeamColumns(new Set(['key'])), ['model', 'client']);
+  assert.deepEqual(resolveSeamColumns(new Set(['provider'])), ['key']);
+  assert.deepEqual(resolveSeamColumns(new Set(), moveRequestColumn(REQUEST_COLUMN_IDS, 'key', 'time', 'before')), ['model', 'client']);
+  assert.deepEqual(resolveSeamColumns(new Set(), moveRequestColumn(REQUEST_COLUMN_IDS, 'model', 'provider', 'before')), ['provider', 'key']);
 
 
 
@@ -1674,7 +1769,7 @@ test('usage event view', () => {
   assert.equal(durationScalePosition(Number.POSITIVE_INFINITY), null, 'an unreadable duration has no position');
   // Continuous: every reading in what used to be the green band now differs from its neighbour.
   assert.notEqual(durationScalePosition(1_000), durationScalePosition(14_999), 'duration is not banded');
-  assert.ok(durationScalePosition(15_000) > durationScalePosition(14_999), 'the ramp never reverses');
+  assert.ok(durationScalePosition(15_000)! > durationScalePosition(14_999)!, 'the ramp never reverses');
   assert.deepEqual(
     durationScaleMix(0),
     { from: 'var(--timing-green)', to: 'var(--timing-orange)', fromShare: '100%' },

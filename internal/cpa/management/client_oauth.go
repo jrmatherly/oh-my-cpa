@@ -17,9 +17,9 @@ type OAuthAuthURLResponse struct {
 	URL          string `json:"url"`
 	State        string `json:"state,omitempty"`
 	// Flow is CPA's own label for the authorization shape: "device" for the
-	// RFC 8628 device-code providers (Kimi, Meta Muse), absent for flows the
-	// browser completes through a redirect. The console uses it to decide
-	// whether a pasted callback belongs on the card at all.
+	// RFC 8628 device-code providers (Kimi, Meta Muse, GitHub Copilot), absent
+	// for flows the browser completes through a redirect. The console uses it to
+	// decide whether a pasted callback belongs on the card at all.
 	Flow string `json:"flow,omitempty"`
 	// UserCode is the short code the operator types on the vendor's device
 	// page. It is presented to the operator only, never persisted.
@@ -313,9 +313,27 @@ func ResolveOAuthModelAlias(callPoint string, rules []OAuthModelAlias) string {
 	return callPoint
 }
 
+// StripModelPrefix removes a configured credential prefix ("team/model" -> "model")
+// matching CPA's case-insensitive prefix stripping before alias resolution.
+func StripModelPrefix(modelID, prefix string) (string, bool) {
+	modelID = strings.TrimSpace(modelID)
+	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
+	if prefix == "" || len(modelID) <= len(prefix)+1 {
+		return modelID, false
+	}
+	if !strings.EqualFold(modelID[:len(prefix)], prefix) || modelID[len(prefix)] != '/' {
+		return modelID, false
+	}
+	stripped := strings.TrimSpace(modelID[len(prefix)+1:])
+	if stripped == "" {
+		return modelID, false
+	}
+	return stripped, true
+}
+
 // sanitizeOAuthModelAliases mirrors CPA's SanitizeOAuthModelAlias: providers
-// are lower-cased, and an alias without a name, equal to its model or repeated
-// within a provider is ignored. The stored document is what the operator
+// are lower-cased, and an alias without a name, equal to its model verbatim or
+// repeated within a provider is ignored. The stored document is what the operator
 // wrote; this is what the gateway uses.
 func sanitizeOAuthModelAliases(stored map[string][]OAuthModelAlias) map[string][]OAuthModelAlias {
 	providers := make([]string, 0, len(stored))
@@ -343,7 +361,7 @@ func sanitizeOAuthModelAliasList(entries []OAuthModelAlias) []OAuthModelAlias {
 	var clean []OAuthModelAlias
 	for _, entry := range entries {
 		name, alias := strings.TrimSpace(entry.Name), strings.TrimSpace(entry.Alias)
-		if name == "" || alias == "" || strings.EqualFold(name, alias) || seen[strings.ToLower(alias)] {
+		if name == "" || alias == "" || name == alias || seen[strings.ToLower(alias)] {
 			continue
 		}
 		seen[strings.ToLower(alias)] = true
@@ -364,9 +382,17 @@ func sanitizeOAuthModelAliasList(entries []OAuthModelAlias) []OAuthModelAlias {
 // file is downloaded for this read alone, so only the alias metadata is decoded
 // and the credential's own material is dropped with the buffer.
 func (c *Client) CredentialModelAliases(ctx context.Context, name string) ([]OAuthModelAlias, error) {
+	aliases, _, err := c.credentialCatalogMeta(ctx, name)
+	return aliases, err
+}
+
+// credentialCatalogMeta reads both credential-local model aliases (snake_case or
+// hyphenated, matching CPA) and credential prefix in a single download, zeroing
+// the credential bytes before returning.
+func (c *Client) credentialCatalogMeta(ctx context.Context, name string) ([]OAuthModelAlias, string, error) {
 	data, _, err := c.DownloadAuthFile(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer func() {
 		for i := range data {
@@ -374,12 +400,18 @@ func (c *Client) CredentialModelAliases(ctx context.Context, name string) ([]OAu
 		}
 	}()
 	var document struct {
-		ModelAliases []OAuthModelAlias `json:"model_aliases"`
+		ModelAliases       []OAuthModelAlias `json:"model_aliases"`
+		LegacyModelAliases []OAuthModelAlias `json:"model-aliases"`
+		Prefix             string            `json:"prefix"`
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, fmt.Errorf("decode credential model aliases: %w", err)
+		return nil, "", fmt.Errorf("decode credential model aliases: %w", err)
 	}
-	return sanitizeOAuthModelAliasList(document.ModelAliases), nil
+	rawAliases := document.ModelAliases
+	if len(rawAliases) == 0 && len(document.LegacyModelAliases) > 0 {
+		rawAliases = document.LegacyModelAliases
+	}
+	return sanitizeOAuthModelAliasList(rawAliases), strings.Trim(strings.TrimSpace(document.Prefix), "/"), nil
 }
 
 // PatchOAuthModelAliases replaces one provider's alias list, and removes the
@@ -485,4 +517,109 @@ func (c *Client) PatchOAuthExcludedModels(ctx context.Context, provider string, 
 		changes = append(changes, ConfigChange{Path: path, Remove: true})
 	}
 	return c.ApplyConfigChanges(WithBackupReason(ctx, BackupReasonOAuthExclusions), changes)
+}
+
+// OAUTH_REQUEST_SCOPED_ERRORS_PATH is where v8 keeps the request-scoped error
+// classification rules CPA applies to every OAuth/file-backed credential of a
+// provider, one ordered rule list per provider.
+var OAUTH_REQUEST_SCOPED_ERRORS_PATH = []string{"oauth", "request-scoped-errors"}
+
+// OAuthRequestScopedErrors reads CPA's global OAuth request-scoped error rules
+// as CPA applies them: the stored lists pass through the cleanup CPA runs when
+// it loads them (see sanitizeOAuthRequestScopedErrors).
+func (c *Client) OAuthRequestScopedErrors(ctx context.Context) (map[string][]RequestScopedErrorRule, error) {
+	var stored map[string][]RequestScopedErrorRule
+	if err := c.configViewValueAt(ctx, OAUTH_REQUEST_SCOPED_ERRORS_PATH, &stored); err != nil {
+		return nil, err
+	}
+	return sanitizeOAuthRequestScopedErrors(stored), nil
+}
+
+// sanitizeOAuthRequestScopedErrors mirrors CPA's SanitizeOAuthRequestScopedErrors:
+// providers are lower-cased, patterns and actions are trimmed, and rules missing
+// a positive status, any pattern or an action are dropped. On case-colliding
+// stored provider spellings, the first nonempty list in sorted order wins so
+// reads stay deterministic until a write removes alternate spellings.
+func sanitizeOAuthRequestScopedErrors(stored map[string][]RequestScopedErrorRule) map[string][]RequestScopedErrorRule {
+	providers := make([]string, 0, len(stored))
+	for provider := range stored {
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+	out := map[string][]RequestScopedErrorRule{}
+	for _, rawProvider := range providers {
+		provider := strings.ToLower(strings.TrimSpace(rawProvider))
+		if provider == "" || out[provider] != nil {
+			continue
+		}
+		if clean := sanitizeOAuthRequestScopedErrorList(stored[rawProvider]); len(clean) > 0 {
+			out[provider] = clean
+		}
+	}
+	return out
+}
+
+func sanitizeOAuthRequestScopedErrorList(rules []RequestScopedErrorRule) []RequestScopedErrorRule {
+	var clean []RequestScopedErrorRule
+	for _, rule := range rules {
+		action := strings.ToLower(strings.TrimSpace(rule.Action))
+		var match []string
+		for _, item := range rule.Match {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				match = append(match, trimmed)
+			}
+		}
+		var matchRegex []string
+		for _, item := range rule.MatchRegex {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				matchRegex = append(matchRegex, trimmed)
+			}
+		}
+		if rule.Status <= 0 || (len(match) == 0 && len(matchRegex) == 0) || action == "" {
+			continue
+		}
+		clean = append(clean, RequestScopedErrorRule{
+			Status:     rule.Status,
+			Match:      match,
+			MatchRegex: matchRegex,
+			Action:     action,
+			extra:      rule.extra,
+		})
+	}
+	return clean
+}
+
+// PatchOAuthRequestScopedErrors replaces one provider's global error rules, and
+// removes the provider when the list is empty. Unchanged rules at the same
+// position retain any wire fields the console does not model, and case-colliding
+// spellings of the same provider are removed together.
+func (c *Client) PatchOAuthRequestScopedErrors(ctx context.Context, provider string, rules []RequestScopedErrorRule) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	var stored map[string][]RequestScopedErrorRule
+	if err := c.configViewValueAt(ctx, OAUTH_REQUEST_SCOPED_ERRORS_PATH, &stored); err != nil {
+		return err
+	}
+	existing := sanitizeOAuthRequestScopedErrors(stored)[provider]
+	merged := make([]RequestScopedErrorRule, len(rules))
+	for index, rule := range rules {
+		if index < len(existing) && existing[index].IsSameRule(rule) {
+			merged[index] = existing[index]
+			continue
+		}
+		merged[index] = rule
+	}
+	path := append(append([]string{}, OAUTH_REQUEST_SCOPED_ERRORS_PATH...), provider)
+	var changes []ConfigChange
+	_, isStored := stored[provider]
+	for storedProvider := range stored {
+		if storedProvider != provider && strings.ToLower(strings.TrimSpace(storedProvider)) == provider {
+			changes = append(changes, ConfigChange{Path: append(append([]string{}, OAUTH_REQUEST_SCOPED_ERRORS_PATH...), storedProvider), Remove: true})
+		}
+	}
+	if len(merged) > 0 {
+		changes = append(changes, ConfigChange{Path: path, Value: merged})
+	} else if isStored {
+		changes = append(changes, ConfigChange{Path: path, Remove: true})
+	}
+	return c.ApplyConfigChanges(WithBackupReason(ctx, BackupReasonOAuthErrorRules), changes)
 }

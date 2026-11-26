@@ -4,11 +4,6 @@
   margin-inline: auto;
 }
 .config-notice { margin-bottom: 16px; }
-.config-sync-badge {
-  font-size: var(--text-sm);
-  padding: 1px 7px;
-  font-weight: 500;
-}
 .config-toolbar-actions {
   display: flex;
   align-items: center;
@@ -725,6 +720,19 @@
   margin-top: 3px;
   font-family: var(--font-mono);
 }
+.payload-field-warning {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.payload-replace-hint {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+  line-height: 1.4;
+}
 .payload-adv-kv-header {
   display: flex;
   align-items: center;
@@ -746,11 +754,34 @@
   flex-direction: column;
   gap: 10px;
 }
+.payload-replace-role-row,
+.payload-replace-paths-header,
 .payload-replace-all-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+.payload-replace-role-select {
+  min-width: 168px;
+  max-width: 100%;
+}
+.payload-replace-paths-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.payload-replace-path-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+.payload-replace-path-input {
+  min-width: 0;
 }
 .payload-replace-positions-row {
   display: flex;
@@ -846,10 +877,14 @@
 }
 .payload-replace-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   width: 100%;
+}
+.payload-replace-kind-select {
+  width: 96px !important;
+  flex: 0 0 96px;
 }
 .payload-replace-textarea {
   min-height: 28px;
@@ -954,7 +989,84 @@
   color: var(--danger);
   line-height: 1.4;
 }
+.server-id-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.server-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.server-id-readout {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--thread-field);
+  box-shadow: var(--shadow-well);
+}
+.server-id-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--fg);
+  user-select: all;
+}
+.server-id-empty {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+.server-id-copy {
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+}
+.server-id-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.server-id-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.server-id-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  line-height: 1.4;
+}
 @media (max-width: 640px) {
+  .server-id-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .server-id-readout {
+    flex: none;
+    width: 100%;
+  }
+  .server-id-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
   .string-map-editor {
     align-items: flex-start;
   }
@@ -1011,22 +1123,30 @@
   .payload-replace-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
-  .payload-replace-from {
+  .payload-replace-kind-select {
     grid-column: 2;
     grid-row: 1;
+    width: auto !important;
+    min-width: 92px;
+    max-width: 140px;
+    justify-self: start;
   }
   .payload-replace-actions {
     grid-column: 3;
     grid-row: 1;
   }
+  .payload-replace-from {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
   .payload-replace-arrow {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 3;
     justify-self: center;
   }
   .payload-replace-to {
     grid-column: 2 / -1;
-    grid-row: 2;
+    grid-row: 3;
   }
 }
 @media (pointer: coarse) and (max-height: 640px) {

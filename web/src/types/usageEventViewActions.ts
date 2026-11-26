@@ -49,6 +49,7 @@ export function replaceFilters(
   if (options.result !== undefined) {
     if (options.result === 'all') next.delete('result');
     else next.set('result', options.result);
+    if (options.result === 'success') next.delete('failure');
   }
   return next;
 }
@@ -81,13 +82,16 @@ export function applyTimeWindow(
   current: URLSearchParams,
   window: { preset?: string; from?: number; to?: number },
 ): URLSearchParams {
+  const preserveCalendarReplay = window.from !== undefined && current.get('replay') === 'calendar';
   const next = new URLSearchParams(current);
   next.delete('preset');
   next.delete('from');
   next.delete('to');
+  next.delete('replay');
   if (window.from !== undefined) {
     next.set('from', String(window.from));
     if (window.to !== undefined) next.set('to', String(window.to));
+    if (preserveCalendarReplay) next.set('replay', 'calendar');
   } else if (window.preset) {
     next.set('preset', window.preset);
   }
@@ -164,6 +168,7 @@ export function viewPreferenceFromUrl(
   if (nextQuery.from !== undefined) {
     nextPref.from = nextQuery.from;
     if (nextQuery.to !== undefined) nextPref.to = nextQuery.to;
+    if (nextQuery.replay === 'calendar') nextPref.replay = 'calendar';
   } else {
     nextPref.preset = nextQuery.preset ?? '1h';
   }

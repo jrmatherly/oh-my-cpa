@@ -335,11 +335,37 @@ type PricingSyncStartResponseDTO struct {
 	Started bool `json:"started"`
 }
 
-// PricingSyncScheduleResponseDTO returns the updated auto-sync interval and sync state.
+// PricingSyncStateDTO is the allowlisted API projection for pricing sync schedule endpoints.
+// Raw upstream errors stay out of this projection; callers observe only the boolean failure signal.
+type PricingSyncStateDTO struct {
+	Source                string `json:"source"`
+	LastSuccessAtMS       *int64 `json:"last_success_at_ms,omitempty"`
+	HasFailed             bool   `json:"has_failed,omitempty"`
+	LastMatched           int64  `json:"last_matched"`
+	LastUnmatched         int64  `json:"last_unmatched"`
+	NextSyncAtMS          *int64 `json:"next_sync_at_ms,omitempty"`
+	AutoSyncIntervalHours int64  `json:"auto_sync_interval_hours"`
+	UpdatedAtMS           int64  `json:"updated_at_ms"`
+}
+
+func projectPricingSyncState(state pricing.SyncState) PricingSyncStateDTO {
+	return PricingSyncStateDTO{
+		Source:                state.Source,
+		LastSuccessAtMS:       state.LastSuccessAtMS,
+		HasFailed:             strings.TrimSpace(state.LastError) != "",
+		LastMatched:           state.LastMatched,
+		LastUnmatched:         state.LastUnmatched,
+		NextSyncAtMS:          state.NextSyncAtMS,
+		AutoSyncIntervalHours: state.AutoSyncIntervalHours,
+		UpdatedAtMS:           state.UpdatedAtMS,
+	}
+}
+
+// PricingSyncScheduleResponseDTO returns the auto-sync interval and allowlisted sync state.
 type PricingSyncScheduleResponseDTO struct {
-	IntervalHours int64             `json:"interval_hours"`
-	Known         bool              `json:"known"`
-	State         pricing.SyncState `json:"state"`
+	IntervalHours int64               `json:"interval_hours"`
+	Known         bool                `json:"known"`
+	State         PricingSyncStateDTO `json:"state"`
 }
 
 // listPricing returns the price book in one round trip: every priced model with
@@ -464,7 +490,22 @@ func (h *Handler) listPricing(writer http.ResponseWriter, request *http.Request)
 	}
 	providers := []pricingProviderDTO{}
 	if h.repo != nil {
-		memberships, readErr := h.repo.ListPricingProviders(ctx)
+		activeModels := make(map[string]struct{}, len(rows)+len(unpriced))
+		for _, row := range rows {
+			activeModels[row.Model] = struct{}{}
+		}
+		for _, model := range unpriced {
+			activeModels[model] = struct{}{}
+		}
+		var memberships []pricing.CatalogProvider
+		var readErr error
+		if effective, ok := h.pricing.(interface {
+			EffectiveProviders(context.Context, map[string]struct{}) ([]pricing.CatalogProvider, error)
+		}); ok {
+			memberships, readErr = effective.EffectiveProviders(ctx, activeModels)
+		} else {
+			memberships, readErr = h.repo.ListPricingProviders(ctx)
+		}
 		if readErr != nil {
 			slog.Warn("pricing provider membership unavailable", "error", readErr)
 			partial = append(partial, "providers")
@@ -621,16 +662,29 @@ func (h *Handler) getPricingModel(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	ctx := request.Context()
-	rows, err := h.pricing.ListPrices(ctx)
-	if err != nil {
-		writeInternalError(writer, err)
-		return
-	}
 	var current *pricing.ModelPrice
-	for index := range rows {
-		if rows[index].Model == model {
-			current = &rows[index]
-			break
+	if direct, ok := h.pricing.(interface {
+		GetPrice(context.Context, string) (pricing.ModelPrice, bool, error)
+	}); ok {
+		row, found, err := direct.GetPrice(ctx, model)
+		if err != nil {
+			writeInternalError(writer, err)
+			return
+		}
+		if found {
+			current = &row
+		}
+	} else {
+		rows, err := h.pricing.ListPrices(ctx)
+		if err != nil {
+			writeInternalError(writer, err)
+			return
+		}
+		for index := range rows {
+			if rows[index].Model == model {
+				current = &rows[index]
+				break
+			}
 		}
 	}
 	channel := strings.TrimSpace(request.URL.Query().Get("channel"))
@@ -752,6 +806,10 @@ func pricingErrorResponse(writer http.ResponseWriter, err error) {
 	writeInternalError(writer, err)
 }
 
+// managementPricingModelBodyLimit bounds one model pricing rule update, leaving
+// room for the full tier table and JSON escaping.
+const managementPricingModelBodyLimit = 64 * 1024
+
 // updatePricingModel applies one operator decision for a current CPA model:
 // custom rates, a pin to an OpenRouter model, or automatic matching. It takes
 // effect for requests stamped from now on; recorded costs never move.
@@ -768,6 +826,7 @@ func pricingErrorResponse(writer http.ResponseWriter, err error) {
 // @Success 200 {object} PricingModelUpdateResponseDTO
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /v1/pricing/models/{model} [put]
 func (h *Handler) updatePricingModel(writer http.ResponseWriter, request *http.Request) {
@@ -780,7 +839,7 @@ func (h *Handler) updatePricingModel(writer http.ResponseWriter, request *http.R
 		return
 	}
 	var body pricingModelRequest
-	if err := decodeManagementJSON(writer, request, 16*1024, &body); err != nil {
+	if err := decodeManagementJSON(writer, request, managementPricingModelBodyLimit, &body); err != nil {
 		return
 	}
 	change := body.ModeChange(model)
@@ -829,6 +888,7 @@ func (h *Handler) updatePricingModel(writer http.ResponseWriter, request *http.R
 // @Success 200 {object} PricingDismissedResponseDTO
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /v1/pricing/models/{model}/dismiss-candidate [post]
 func (h *Handler) dismissPricingCandidate(writer http.ResponseWriter, request *http.Request) {
@@ -987,6 +1047,7 @@ type pricingChannelRequest struct {
 // @Success 200 {object} PricingChannelUpdateResponseDTO
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /v1/pricing/channels/{channel} [put]
 func (h *Handler) updatePricingChannel(writer http.ResponseWriter, request *http.Request) {
@@ -1085,6 +1146,34 @@ type pricingScheduleRequest struct {
 	IntervalHours *int64 `json:"interval_hours"`
 }
 
+// getPricingSyncSchedule returns the current automatic pricing sync cadence and sync state.
+//
+// @Summary Get pricing auto-sync schedule
+// @Description Return the configured automatic OpenRouter pricing refresh interval in hours and sync state.
+// @Tags Pricing
+// @Produce json
+// @Security CookieAuth
+// @Success 200 {object} PricingSyncScheduleResponseDTO
+// @Failure 401 {object} ErrorResponseDTO
+// @Failure 503 {object} ErrorResponseDTO
+// @Router /v1/pricing/sync-schedule [get]
+func (h *Handler) getPricingSyncSchedule(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
+	if !h.requirePricing(writer) {
+		return
+	}
+	state, known, err := h.pricing.SyncStateView(request.Context())
+	if err != nil {
+		writeInternalError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, PricingSyncScheduleResponseDTO{
+		IntervalHours: state.AutoSyncIntervalHours,
+		Known:         known,
+		State:         projectPricingSyncState(state),
+	})
+}
+
 // updatePricingSyncSchedule modifies the background sync interval (0 = disabled).
 //
 // @Summary Update pricing auto-sync schedule
@@ -1097,6 +1186,7 @@ type pricingScheduleRequest struct {
 // @Success 200 {object} PricingSyncScheduleResponseDTO
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /v1/pricing/sync-schedule [put]
 func (h *Handler) updatePricingSyncSchedule(writer http.ResponseWriter, request *http.Request) {
@@ -1130,6 +1220,6 @@ func (h *Handler) updatePricingSyncSchedule(writer http.ResponseWriter, request 
 	writeJSON(writer, http.StatusOK, PricingSyncScheduleResponseDTO{
 		IntervalHours: hours,
 		Known:         known,
-		State:         state,
+		State:         projectPricingSyncState(state),
 	})
 }

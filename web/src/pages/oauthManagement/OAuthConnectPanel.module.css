@@ -16,11 +16,10 @@
   display: block;
   color: var(--fg-2);
   font-size: var(--text-sm);
-  margin-bottom: 6px;
   font-weight: 500;
 }
 
-.selector-wrap {
+.field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -163,6 +162,29 @@
   line-height: 1.4;
 }
 
+.scope-summary {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-edge);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.scope-summary :global(.fact-list-row) {
+  padding: 0;
+}
+
+.scope-list {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .connect-actions {
   display: flex;
   justify-content: flex-end;
@@ -270,6 +292,8 @@
 
 .device-code {
   border: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: var(--text-xl);
   font-weight: 700;

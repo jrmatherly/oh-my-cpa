@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
   BUILTIN_OAUTH_PROVIDERS,
+  CLAUDE_OAUTH_DEFAULT_SCOPES,
+  CLAUDE_OAUTH_USER_SCOPES,
   XAI_CALLBACK_URL,
   builtinOAuthProviderChoices,
   lookupOAuthProvider,
@@ -10,6 +12,7 @@ import {
   pluginOAuthProviderChoices,
   normalizeOAuthFlow,
   normalizeOAuthStatus,
+  resolveClaudeOAuthScope,
   resolveStartedOAuthFlow,
   resolveXaiCallback,
   validateDevinCallback,
@@ -40,7 +43,7 @@ test('Registry: provider ids are unique, routable and consistent with the lookup
   assert.deepEqual([...BUILTIN_OAUTH_IDS].sort(), BUILTIN_OAUTH_PROVIDERS.map((provider) => provider.id).sort(), 'registry ids are unique and match the leaf list every surface reads');
 });
 
-test('Registry: the Devin and Meta Muse adapters are registered', () => {
+test('Registry: the Devin, Meta Muse and GitHub Copilot adapters are registered', () => {
   const devin = lookupOAuthProvider('DEViN');
   assert.equal(devin?.flow, 'manual-callback');
   assert.equal(devin?.keyBase, 'devin');
@@ -51,6 +54,14 @@ test('Registry: the Devin and Meta Muse adapters are registered', () => {
   assert.equal(meta?.flow, 'device');
   assert.equal(meta?.keyBase, 'meta');
   assert.equal(meta?.requiresExplicitCancel, undefined, 'a device flow is restartable by design');
+
+  const copilot = lookupOAuthProvider('COPILOT');
+  assert.equal(copilot?.id, 'copilot');
+  assert.equal(copilot?.iconId, 'GithubCopilot');
+  assert.equal(copilot?.flow, 'device');
+  assert.equal(copilot?.keyBase, 'copilot');
+  assert.equal(copilot?.requiresExplicitCancel, undefined, 'a device flow is restartable by design');
+  assert.equal(copilot?.callback, undefined);
 
   assert.equal(lookupOAuthProvider('not-a-provider'), undefined);
 });
@@ -174,18 +185,31 @@ test('provider choices keep built-ins, plugin ids and disabled discovery separat
   const builtins = builtinOAuthProviderChoices(t);
   assert.equal(builtins.find((provider) => provider.id === 'anthropic')?.title, 'oauth.anthropic_title');
   assert.equal(builtins.some((provider) => provider.id === 'codex'), true);
+  assert.deepEqual(
+    {
+      flow: builtins.find((provider) => provider.id === 'copilot')?.flow,
+      iconId: builtins.find((provider) => provider.id === 'copilot')?.iconId,
+      title: builtins.find((provider) => provider.id === 'copilot')?.title,
+    },
+    { flow: 'device', iconId: 'GithubCopilot', title: 'oauth.copilot_title' },
+  );
+
+  const plugin = (overrides: Partial<PluginItem> & Pick<PluginItem, 'id'>): PluginItem => ({
+    configured: true,
+    registered: true,
+    enabled: true,
+    effective_enabled: overrides.enabled ?? true,
+    config_fields: [],
+    ...overrides,
+  });
 
   const choices = pluginOAuthProviderChoices([
-    {
+    plugin({
       id: 'disabled-shadow', enabled: false, effective_enabled: false, supports_oauth: true,
       oauth_providers: ['iflow-international'], logo: 'data:image/svg+xml,disabled-shadow',
-    },
-    {
+    }),
+    plugin({
       id: 'iflow-auth',
-      name: 'iFlow Alliance Auth',
-      description: '',
-      version: '',
-      author: '',
       enabled: true,
       effective_enabled: true,
       registered: true,
@@ -194,48 +218,49 @@ test('provider choices keep built-ins, plugin ids and disabled discovery separat
       oauth_providers: [' IFLOW ', 'iflow-international', 'iflow-international', 'bad/path', 'codex'],
       metadata: { name: 'iFlow Alliance Auth' },
       logo: 'data:image/svg+xml,fixture',
-      permissions: [],
-    },
-    {
+    }),
+    plugin({
       id: 'disabled-auth',
-      name: 'Disabled Auth',
-      description: '',
-      version: '',
-      author: '',
+      metadata: { name: 'Disabled Auth' },
       enabled: false,
       effective_enabled: false,
       registered: true,
       supports_oauth: true,
       oauth_provider: 'disabled',
       oauth_providers: ['disabled', 'disabled-secondary'],
-      permissions: [],
-    },
-    {
+    }),
+    plugin({
       id: 'codex',
-      name: 'Duplicate built-in',
-      description: '',
-      version: '',
-      author: '',
+      metadata: { name: 'Duplicate built-in' },
       enabled: true,
       effective_enabled: true,
       registered: true,
       supports_oauth: true,
       oauth_provider: 'codex',
-      permissions: [],
-    },
-    {
+    }),
+    plugin({
+      id: 'copilot-plugin',
+      metadata: { name: 'Duplicate Copilot' },
+      enabled: true,
+      effective_enabled: true,
+      registered: true,
+      supports_oauth: true,
+      oauth_provider: 'copilot',
+      oauth_providers: ['copilot'],
+    }),
+    plugin({
       id: 'duplicate-auth', enabled: true, effective_enabled: true, supports_oauth: true,
       oauth_providers: ['iflow-international'],
-    },
-    {
+    }),
+    plugin({
       id: 'stopped-auth', enabled: true, effective_enabled: false, supports_oauth: true,
       oauth_providers: ['stopped-secondary'],
-    },
-    { id: 'not-auth', enabled: true, effective_enabled: true, oauth_providers: ['not-auth-secondary'] },
-    { id: 'legacy-auth', enabled: true, supports_oauth: true, oauth_provider: 'legacy-login' },
-    { id: 'legacy-id', enabled: true, supports_oauth: true },
-    { id: 'plural-only', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['portal-one', 'portal-two'] },
-    { id: 'invalid-portals', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: [' ', 'bad/path', 'bad?query'] },
+    }),
+    plugin({ id: 'not-auth', enabled: true, effective_enabled: true, oauth_providers: ['not-auth-secondary'] }),
+    plugin({ id: 'legacy-auth', enabled: true, supports_oauth: true, oauth_provider: 'legacy-login' }),
+    plugin({ id: 'legacy-id', enabled: true, supports_oauth: true }),
+    plugin({ id: 'plural-only', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['portal-one', 'portal-two'] }),
+    plugin({ id: 'invalid-portals', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: [' ', 'bad/path', 'bad?query'] }),
   ], t);
 
   assert.deepEqual(choices.map((choice) => choice.id), ['iflow', 'iflow-international', 'legacy-login', 'legacy-id', 'portal-one', 'portal-two']);
@@ -253,11 +278,19 @@ test('provider choices keep built-ins, plugin ids and disabled discovery separat
 
 
 test('a plugin\'s login cards carry each portal\'s own name and mark', () => {
+  const plugin = (overrides: Partial<PluginItem> & Pick<PluginItem, 'id'>): PluginItem => ({
+    configured: true,
+    registered: true,
+    enabled: true,
+    effective_enabled: overrides.enabled ?? true,
+    config_fields: [],
+    ...overrides,
+  });
   const t = ((key: string, args?: { name?: string }) => args?.name || key) as Parameters<typeof builtinOAuthProviderChoices>[0];
   const zaiLogo = 'https://cdn.example.test/zai.png';
   const bigmodelLogo = 'http://cdn.example.test/bigmodel.png';
   const [zai, bigmodel, plain] = pluginOAuthProviderChoices([
-    {
+    plugin({
       id: 'omc-zcode-oauth', enabled: true, effective_enabled: true, supports_oauth: true,
       oauth_providers: ['zcode-zai', 'zcode-bigmodel', 'zcode-legacy'],
       metadata: { name: 'OMC ZCode OAuth' },
@@ -266,7 +299,7 @@ test('a plugin\'s login cards carry each portal\'s own name and mark', () => {
         { identifier: 'zcode-zai', name: 'Z.ai', logo: zaiLogo },
         { identifier: 'zcode-bigmodel', name: 'BigModel', logo: bigmodelLogo },
       ],
-    },
+    }),
   ], t);
 
   // Two portals of one plugin answer with one account system each, so the card names the
@@ -289,7 +322,7 @@ test('a plugin\'s login cards carry each portal\'s own name and mark', () => {
   // CPA fills an entry's empty name from the plugin's metadata, so a portal that named
   // nothing of its own arrives reading as the plugin does. That is the fallback arriving
   // as text, not a portal label: the card keeps the identifier suffix it had before.
-  const [named, filled] = pluginOAuthProviderChoices([{
+  const [named, filled] = pluginOAuthProviderChoices([plugin({
     id: 'omc-zcode-oauth', enabled: true, effective_enabled: true, supports_oauth: true,
     oauth_providers: ['zcode-zai', 'zcode-bigmodel'],
     metadata: { name: 'OMC ZCode OAuth' },
@@ -297,28 +330,28 @@ test('a plugin\'s login cards carry each portal\'s own name and mark', () => {
       { identifier: 'zcode-zai', name: 'Z.ai' },
       { identifier: 'zcode-bigmodel', name: 'OMC ZCode OAuth' },
     ],
-  }], t);
+  })], t);
   assert.equal(named.title, 'Z.ai');
   assert.equal(filled.title, 'OMC ZCode OAuth (zcode-bigmodel)');
 
   // A portal logo that cannot be rendered falls back to the plugin's, then to the catalog.
-  const [unusable] = pluginOAuthProviderChoices([{
+  const [unusable] = pluginOAuthProviderChoices([plugin({
     id: 'one-portal', enabled: true, effective_enabled: true, supports_oauth: true,
     oauth_provider: 'one-portal-login', logo: 'data:image/svg+xml,%3Csvg%20id%3D%22plugin%22/%3E',
     oauth_provider_entries: [{ identifier: 'one-portal-login', logo: 'javascript:alert(1)' }],
-  }], t);
+  })], t);
   assert.equal(unusable.logo, 'data:image/svg+xml,%3Csvg%20id%3D%22plugin%22/%3E');
-  const [catalogOnly] = pluginOAuthProviderChoices([{
+  const [catalogOnly] = pluginOAuthProviderChoices([plugin({
     id: 'anon-portal', enabled: true, effective_enabled: true, supports_oauth: true,
     oauth_provider: 'anon-portal-login',
     oauth_provider_entries: [{ identifier: 'anon-portal-login', logo: 'icons/anon.svg' }],
-  }], t);
+  })], t);
   assert.equal(catalogOnly.logo, undefined, 'an unusable mark leaves the catalog mark, never a plugin logo');
 });
 
 test('portal titles stay distinct when their identifiers share a credential-family alias', () => {
   const titles = pluginOAuthProviderTitles([{
-    id: 'buddy', supports_oauth: true, enabled: false,
+    id: 'buddy', configured: true, registered: true, supports_oauth: true, enabled: false, effective_enabled: false, config_fields: [],
     oauth_providers: ['codebuddy', 'workbuddy', 'workbuddy-ai'],
     metadata: { name: 'Buddy' },
     oauth_provider_entries: [
@@ -334,13 +367,21 @@ test('portal titles stay distinct when their identifiers share a credential-fami
 });
 
 test('credentials keep the name their plugin\'s login card gives the provider', () => {
+  const plugin = (overrides: Partial<PluginItem> & Pick<PluginItem, 'id'>): PluginItem => ({
+    configured: true,
+    registered: true,
+    enabled: true,
+    effective_enabled: overrides.enabled ?? true,
+    config_fields: [],
+    ...overrides,
+  });
   const titles = pluginOAuthProviderTitles([
     // Switching a plugin off keeps its credentials, so it keeps naming them.
-    { id: 'opencode', enabled: false, effective_enabled: false, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'OpenCode Go' }, config_fields: [] },
+    plugin({ id: 'opencode', enabled: false, effective_enabled: false, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'OpenCode Go' } }),
     // A credential filed under an alias reads like the section it is grouped into.
-    { id: 'buddy', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'workbuddy', metadata: { name: 'WorkBuddy' }, config_fields: [] },
+    plugin({ id: 'buddy', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'workbuddy', metadata: { name: 'WorkBuddy' } }),
     // A built-in provider keeps its own name.
-    { id: 'codex-shadow', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'codex', metadata: { name: 'Shadow' }, config_fields: [] },
+    plugin({ id: 'codex-shadow', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'codex', metadata: { name: 'Shadow' } }),
   ]);
   assert.equal(providerDisplayName('opencode-go', titles), 'OpenCode Go');
   assert.equal(providerDisplayName('workbuddy', titles), 'WorkBuddy');
@@ -348,8 +389,8 @@ test('credentials keep the name their plugin\'s login card gives the provider', 
   assert.equal(providerDisplayName('codex', titles), 'Codex');
   // When an enabled plugin declares the same provider, its title wins, as its login card does.
   const overlapping = pluginOAuthProviderTitles([
-    { id: 'old-go', enabled: false, effective_enabled: false, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'Old Go' }, config_fields: [] },
-    { id: 'opencode', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'OpenCode Go' }, config_fields: [] },
+    plugin({ id: 'old-go', enabled: false, effective_enabled: false, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'Old Go' } }),
+    plugin({ id: 'opencode', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'opencode-go', metadata: { name: 'OpenCode Go' } }),
   ]);
   assert.equal(providerDisplayName('opencode-go', overlapping), 'OpenCode Go');
   // Provider keys come from plugins; an inherited member is not a brand, and a key nobody
@@ -358,13 +399,13 @@ test('credentials keep the name their plugin\'s login card gives the provider', 
   assert.equal(providerDisplayName(''), 'Unknown');
   // A plugin's own id and quota provider name the same credentials its login portal does.
   const familyKeys = pluginOAuthProviderTitles([
-    { id: 'acme', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'acme-login', quota_provider: 'acme-credentials', metadata: { name: 'Acme' }, config_fields: [] },
+    plugin({ id: 'acme', enabled: true, effective_enabled: true, supports_oauth: true, oauth_provider: 'acme-login', quota_provider: 'acme-credentials', metadata: { name: 'Acme' } }),
   ]);
   assert.equal(providerDisplayName('acme-credentials', familyKeys), 'Acme');
   assert.equal(providerDisplayName('acme', familyKeys), 'Acme');
   // Built-in credentials and CPA's native API-key families are never renamed by a plugin.
   const reserved = pluginOAuthProviderTitles([
-    { id: 'shadow', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['claude', 'gemini', 'interactions'], metadata: { name: 'Shadow' }, config_fields: [] },
+    plugin({ id: 'shadow', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['claude', 'gemini', 'interactions'], metadata: { name: 'Shadow' } }),
   ]);
   assert.equal(providerDisplayName('claude', reserved), 'Claude');
   assert.equal(providerDisplayName('gemini', reserved), 'Gemini');
@@ -444,12 +485,12 @@ test('provider choices are grouped by who publishes them, from the store the plu
   });
   const plugins: PluginItem[] = [
     // OMC maintains this one and its own registry supplied the installed copy.
-    { id: 'omc-portal', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['omc-login'], config_fields: [] },
+    { id: 'omc-portal', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['omc-login'], config_fields: [] },
     // Another registry's listing of the same id is not provenance for the running copy.
-    { id: 'mirror-portal', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['mirror-login'], config_fields: [] },
-    { id: 'community-portal', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['community-login'], config_fields: [] },
+    { id: 'mirror-portal', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['mirror-login'], config_fields: [] },
+    { id: 'community-portal', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['community-login'], config_fields: [] },
     // Installed, but no listing has been read for it.
-    { id: 'unlisted-portal', enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['unlisted-login'], config_fields: [] },
+    { id: 'unlisted-portal', configured: true, registered: true, enabled: true, effective_enabled: true, supports_oauth: true, oauth_providers: ['unlisted-login'], config_fields: [] },
   ];
   const catalog = storeListingsByPluginId([
     listing({ id: 'omc-portal' }),
@@ -487,5 +528,69 @@ test('provider choices are grouped by who publishes them, from the store the plu
     oauthProviderGroups(choices.filter((choice) => choice.group === 'plugin')).map((section) => section.group),
     ['plugin'],
     'a group with nothing to offer is not drawn',
+  );
+});
+
+test('resolveClaudeOAuthScope reads configured pointer-bool semantics and prefers a live URL scope', () => {
+  assert.equal(resolveClaudeOAuthScope(undefined), undefined);
+  assert.equal(resolveClaudeOAuthScope(':\n  [invalid'), undefined);
+
+  assert.deepEqual(resolveClaudeOAuthScope('server:\n  port: 8317\n'), {
+    includesCreateApiKey: true,
+    scopeText: CLAUDE_OAUTH_DEFAULT_SCOPES,
+  });
+  assert.deepEqual(
+    resolveClaudeOAuthScope('oauth:\n  providers:\n    claude:\n      oauth-include-create-api-key: false\n'),
+    {
+      includesCreateApiKey: false,
+      scopeText: CLAUDE_OAUTH_USER_SCOPES,
+    },
+  );
+  assert.deepEqual(
+    resolveClaudeOAuthScope('oauth:\n  providers:\n    claude:\n      oauth-include-create-api-key: true\n'),
+    {
+      includesCreateApiKey: true,
+      scopeText: CLAUDE_OAUTH_DEFAULT_SCOPES,
+    },
+  );
+  assert.deepEqual(
+    resolveClaudeOAuthScope('oauth:\n  providers:\n    claude:\n      oauth-include-create-api-key: null\n'),
+    {
+      includesCreateApiKey: true,
+      scopeText: CLAUDE_OAUTH_DEFAULT_SCOPES,
+    },
+  );
+
+  // Live authorization URL scope wins over configuration YAML when CPA returns it.
+  assert.deepEqual(
+    resolveClaudeOAuthScope(
+      'oauth:\n  providers:\n    claude:\n      oauth-include-create-api-key: false\n',
+      'https://claude.ai/oauth/authorize?scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference',
+    ),
+    {
+      includesCreateApiKey: true,
+      scopeText: 'org:create_api_key user:profile user:inference',
+    },
+  );
+  assert.deepEqual(
+    resolveClaudeOAuthScope(
+      'server:\n  port: 8317\n',
+      'https://claude.ai/oauth/authorize?scope=user%3Aprofile+user%3Ainference',
+    ),
+    {
+      includesCreateApiKey: false,
+      scopeText: 'user:profile user:inference',
+    },
+  );
+  // An authorization URL without a scope query param falls back to configuration YAML.
+  assert.deepEqual(
+    resolveClaudeOAuthScope(
+      'oauth:\n  providers:\n    claude:\n      oauth-include-create-api-key: false\n',
+      'https://demo-sandbox.local/oauth/authorize?provider=anthropic&state=s1',
+    ),
+    {
+      includesCreateApiKey: false,
+      scopeText: CLAUDE_OAUTH_USER_SCOPES,
+    },
   );
 });

@@ -25,6 +25,7 @@ import { CredentialList } from '../src/pages/oauthManagement/CredentialList';
 import { ProviderStrip } from '../src/pages/oauthManagement/ProviderStrip';
 import type { CredentialActions } from '../src/pages/oauthManagement/CredentialParts';
 import { OAuthManagementPage } from '../src/pages/oauthManagement/OAuthManagementPage';
+import { BatchActionBar } from '../src/components/authFiles/BatchActionBar';
 import { installOmcApi } from './support/omcApi';
 import { renderWithOmc } from './support/render';
 import dayjs from '../src/utils/time';
@@ -477,7 +478,11 @@ describe('credential list row', () => {
     const onOpen = vi.fn();
     const onRename = vi.fn<CredentialActions['onRename']>(async () => true);
     const { container } = renderCredentialRow(
-      quota('codex-stale', [quotaWindow('five_hour', 40, 2)], {
+      quota('codex-stale', [
+        quotaWindow('five_hour', 40, 2),
+        { id: 'ag_req', label: 'Gemini Models · Requests', kind: 'five_hour', scope: 'group', period_hours: 5, remaining_percent: 80 },
+        { id: 'ag_tok', label: 'Gemini Models · Tokens', kind: 'five_hour', scope: 'group', period_hours: 5, remaining_percent: 60 },
+      ], {
         status: 'stale',
         observed_at_ms: NOW_MS - 8 * HOUR_MS,
         last_refresh: { attempted_at_ms: NOW_MS - 5 * 60_000, outcome: 'failed', error: 'HTTP 401: unauthorized' },
@@ -494,6 +499,11 @@ describe('credential list row', () => {
         },
       },
     );
+
+    expect(screen.getByRole('group', { name: 'Gemini Models 5-hour limit (Requests)' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Gemini Models 5-hour limit (Tokens)' })).toBeTruthy();
+    expect(screen.getByRole('meter', { name: 'Gemini Models 5-hour limit (Requests)' })).toBeTruthy();
+    expect(screen.getByRole('meter', { name: 'Gemini Models 5-hour limit (Tokens)' })).toBeTruthy();
 
     const refreshBtn = screen.getByTestId('oauth-credential-refresh');
     expect(refreshBtn.getAttribute('data-needs-refresh')).toBe('true');
@@ -512,6 +522,43 @@ describe('credential list row', () => {
     await waitFor(() => expect(screen.queryByTestId('oauth-credential-name-input')).toBeNull());
     expect(onRename).toHaveBeenCalledTimes(1);
     expect(onRename.mock.calls[0][1]).toBe('Team seat');
+  });
+});
+
+describe('OAuth selection bar', () => {
+  it('spins only the batch action it started, and only until that action settles', async () => {
+    let settleRefresh = () => {};
+    const onRefresh = vi.fn(() => new Promise<void>((resolve) => { settleRefresh = resolve; }));
+    const bar = (isMutating: boolean) => (
+      <BatchActionBar
+        selectedCount={2}
+        selectablePageCount={4}
+        selectableFilteredCount={9}
+        canSelectFiltered
+        isSelectionReady
+        onSelectFiltered={vi.fn()}
+        isMutating={isMutating}
+        onSelectPage={vi.fn()}
+        onClearSelection={vi.fn()}
+        onEnable={vi.fn()}
+        onDisable={vi.fn()}
+        onRefresh={onRefresh}
+        canRefresh
+        onDelete={vi.fn()}
+      />
+    );
+    const view = render(bar(false), { wrapper: ({ children }) => <I18nProvider>{children}</I18nProvider> });
+    const busyLabels = () => Array.from(document.querySelectorAll('.selection-bar [aria-busy="true"]'), (node) => node.textContent);
+
+    fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
+    view.rerender(bar(true));
+    expect(busyLabels()).toEqual([expect.stringMatching(/refresh/i)]);
+
+    await act(async () => { settleRefresh(); });
+    view.rerender(bar(false));
+    // The workspace's busy flag is shared with uploads and row actions; a later one spins nothing here.
+    view.rerender(bar(true));
+    expect(busyLabels()).toEqual([]);
   });
 });
 
@@ -670,6 +717,193 @@ describe('quota consumption and window capacity dialog', () => {
       });
     } finally { view.unmount(); }
   });
+
+  it('lazy-loads subscription-cycle totals when switching to Subscription cycle and omits the tab on group windows', async () => {
+    const api = installOmcApi();
+    let subscriptionCalls = 0;
+    let failSubscription = false;
+    const fiveHour: QuotaWindow = {
+      ...quotaWindow('five_hour', 60, 3), period_hours: 5,
+      usage: { from_ms: NOW_MS - 2 * HOUR_MS, to_ms: NOW_MS, requests: 40, priced_requests: 40, tokens: 500_000, cost_nanos: 5_000_000_000 },
+    };
+    const weekly: QuotaWindow = { ...quotaWindow('weekly', 40, 100), id: 'weekly', period_hours: 168 };
+    api.on('GET', '/management/quota/codex-sub/capacity', () => ({
+      window_id: 'five_hour',
+      current: { from_ms: NOW_MS - 2 * HOUR_MS, reset_at_ms: NOW_MS + 3 * HOUR_MS, used_percent: 40, usage: fiveHour.usage },
+      previous: null,
+    }));
+    api.on('GET', '/management/quota/codex-sub/subscription-cycle', () => {
+      subscriptionCalls += 1;
+      if (failSubscription) throw new Error('subscription cycle unavailable');
+      return {
+        source: 'live_subscription',
+        plan_label: 'Pro 200',
+        current: {
+          from_ms: NOW_MS - 15 * 24 * HOUR_MS,
+          to_ms: NOW_MS + 15 * 24 * HOUR_MS,
+          measured_at_ms: NOW_MS,
+          elapsed_percent: 50,
+          usage: {
+            from_ms: NOW_MS - 15 * 24 * HOUR_MS,
+            to_ms: NOW_MS,
+            requests: 2000,
+            priced_requests: 1500,
+            tokens: 200_000_000,
+            cache_rate: 92.5,
+            cost_nanos: 120_000_000_000,
+          },
+        },
+        previous: {
+          from_ms: NOW_MS - 45 * 24 * HOUR_MS,
+          to_ms: NOW_MS - 15 * 24 * HOUR_MS,
+          usage: {
+            from_ms: NOW_MS - 45 * 24 * HOUR_MS,
+            to_ms: NOW_MS - 15 * 24 * HOUR_MS,
+            requests: 3500,
+            priced_requests: 3500,
+            tokens: 400_000_000,
+            cache_rate: 94.0,
+            cost_nanos: 260_000_000_000,
+          },
+        },
+        projection: {
+          basis: 'pace',
+          sample_requests: 2000,
+          sample_priced_requests: 1500,
+          requests: 4000,
+          tokens: 400_000_000,
+          cost_nanos: 240_000_000_000,
+          cache_rate: 92.5,
+        },
+      };
+    });
+
+    const view = renderWithOmc(
+      <QuotaCapacityDialog
+        open
+        onClose={vi.fn()}
+        owner={{ authIndex: 'codex-sub', credentialName: 'sa...6@gmail.com', hasSubscriptionCycle: true }}
+        window={fiveHour}
+        windows={[fiveHour, weekly]}
+      />,
+    );
+    try {
+      const dialog = await screen.findByRole('dialog');
+      expect(subscriptionCalls).toBe(0);
+      fireEvent.click(within(dialog).getByRole('radio', { name: 'Subscription cycle' }));
+      await waitFor(() => expect(subscriptionCalls).toBe(1));
+      const lastCard = within(dialog).getByRole('region', { name: 'Last cycle' });
+      const thisCard = within(dialog).getByRole('region', { name: 'This cycle' });
+      const projectedCard = within(dialog).getByRole('region', { name: 'Projected total' });
+      await waitFor(() => expect(thisCard.textContent).toContain('≥ $120.00'));
+      expect(thisCard.textContent).toContain('50% elapsed');
+      expect(lastCard.textContent).toContain('$260.00');
+      expect(lastCard.textContent).toContain('Completed');
+      expect(projectedCard.textContent).toContain('≥ $240.00');
+      expect(projectedCard.textContent).toContain('4,000');
+      expect(dialog.textContent).toContain('Tracks actual subscription-cycle usage');
+
+      // A failed background refresh keeps the cached totals intact and surfaces the error note.
+      failSubscription = true;
+      await view.client.invalidateQueries({ queryKey: ['quota-subscription-cycle', 'codex-sub'] });
+      await waitFor(() => expect(subscriptionCalls).toBe(2));
+      await waitFor(() => expect(dialog.textContent).toContain('Could not load usage'));
+      expect(thisCard.textContent).toContain('≥ $120.00');
+      expect(lastCard.textContent).toContain('$260.00');
+      expect(projectedCard.textContent).toContain('≥ $240.00');
+    } finally { view.unmount(); }
+
+    // Without verified subscription boundaries (e.g. Claude / Antigravity), the Subscription cycle tab is absent.
+    const noSubView = renderWithOmc(
+      <QuotaCapacityDialog
+        open
+        onClose={vi.fn()}
+        owner={{ authIndex: 'codex-sub', credentialName: 'Claude Max', hasSubscriptionCycle: false }}
+        window={fiveHour}
+        windows={[fiveHour, weekly]}
+      />,
+    );
+    try {
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).queryByRole('radio', { name: 'Subscription cycle' })).toBeNull();
+    } finally { noSubView.unmount(); }
+
+    const groupWindow: QuotaWindow = {
+      id: 'ag_Gemini_5h',
+      label: 'Gemini Models \u00b7 Five Hour Limit',
+      scope: 'group',
+      kind: 'five_hour',
+      remaining_percent: 80,
+      reset_at_ms: NOW_MS + 3 * HOUR_MS,
+    };
+    api.on('GET', '/management/quota/ag-seat/capacity', () => ({ window_id: groupWindow.id, current: null, previous: null }));
+    const groupView = renderWithOmc(
+      <QuotaCapacityDialog open onClose={vi.fn()} owner={{ authIndex: 'ag-seat', credentialName: 'AG Ultra', hasSubscriptionCycle: false }} window={groupWindow} />,
+    );
+    try {
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).queryByRole('radio', { name: 'Subscription cycle' })).toBeNull();
+    } finally { groupView.unmount(); }
+  });
+
+  it('shows the drawer subscription-cycle trigger only for credentials with verified active billing dates', async () => {
+    const api = installOmcApi();
+    api.on('GET', '/management/quota/codex-verified/subscription-cycle', () => ({
+      source: 'live_subscription',
+      plan_label: 'Pro 200',
+      current: {
+        from_ms: NOW_MS - 10 * 24 * HOUR_MS,
+        to_ms: NOW_MS + 20 * 24 * HOUR_MS,
+        measured_at_ms: NOW_MS,
+        elapsed_percent: 33,
+        widened: true,
+        usage: { from_ms: NOW_MS - 10 * 24 * HOUR_MS, to_ms: NOW_MS, requests: 120, priced_requests: 120, tokens: 8_000_000, cost_nanos: 18_500_000_000 },
+      },
+      previous: null,
+      projection_unavailable: 'insufficient_elapsed',
+    }));
+    const verifiedItem = quota('codex-verified', [quotaWindow('five_hour', 100, 5)], {
+      plan: {
+        plan_type: 'pro',
+        plan_label: 'Pro 200',
+        tier: 'elite',
+        starts_at_ms: NOW_MS - 10 * 24 * HOUR_MS,
+        expires_at_ms: NOW_MS + 20 * 24 * HOUR_MS,
+        expires_source: 'live_subscription',
+      },
+    });
+    const view = renderWithOmc(
+      <CredentialQuotaBody item={verifiedItem} credentialLabel="codex...example" nowMS={NOW_MS} isDemo={false} />,
+    );
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Subscription cycle usage' }));
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByRole('region', { name: 'This cycle' }).textContent).toContain('$18.50'));
+      expect(within(dialog).getByRole('region', { name: 'Last cycle' }).textContent).toContain('No record of the last cycle yet');
+      expect(within(dialog).getByRole('region', { name: 'Projected total' }).textContent).toContain('Cycle just started');
+      expect(dialog.textContent).toContain('widened to whole buckets');
+    } finally { view.unmount(); }
+
+    // Claude / Antigravity without verified subscription start+expiry must not show the trigger.
+    const antigravityItem = quota('ag-1', [{
+      id: 'ag_Gemini_5h',
+      label: 'Gemini Models \u00b7 Five Hour Limit',
+      scope: 'group',
+      kind: 'five_hour',
+      remaining_percent: 80,
+      reset_at_ms: NOW_MS + 3 * HOUR_MS,
+    }], {
+      provider: 'antigravity',
+      type: 'antigravity',
+      plan: { plan_type: 'ultra', plan_label: 'Ultra', tier: 'elite' },
+    });
+    const agView = renderWithOmc(
+      <CredentialQuotaBody item={antigravityItem} credentialLabel="ag...example" nowMS={NOW_MS} isDemo={false} />,
+    );
+    try {
+      expect(screen.queryByRole('button', { name: 'Subscription cycle usage' })).toBeNull();
+    } finally { agView.unmount(); }
+  });
 });
 
 describe('dashboard model panels and heatmap alignment states', () => {
@@ -684,7 +918,7 @@ describe('dashboard model panels and heatmap alignment states', () => {
         requests: number;
         priced_requests: number;
         cost_usd: number | null;
-        buckets: number[];
+        series: Array<{ t: number; tokens: number }>;
       }>,
     };
     api.on('GET', '/management/dashboard/models', () => modelsPayload);
@@ -720,7 +954,10 @@ describe('dashboard model panels and heatmap alignment states', () => {
             requests: 4,
             priced_requests: 4,
             cost_usd: 0.12,
-            buckets: [400, 800],
+            series: [
+              { t: NOW_MS - 120_000, tokens: 400 },
+              { t: NOW_MS - 60_000, tokens: 800 },
+            ],
           },
         ],
       };
@@ -790,6 +1027,7 @@ describe('dashboard model panels and heatmap alignment states', () => {
       const legend = await screen.findByTestId('model-trend-legend');
       fireEvent.click(within(legend).getByRole('button', { name: /gpt-5/ }));
       expect(screen.getByRole('radiogroup', { name: t('dash.models.view_toggle_label') })).toBeTruthy();
+      expect(view.container.querySelector('.model-usage-card [data-slot="panel-head-extra"]')).toBeNull();
 
       fireEvent.click(screen.getByRole('tab', { name: t('dash.models.lens_clients') }));
       // The model ranking stays on screen, and clickable, until the client one lands. A choice made

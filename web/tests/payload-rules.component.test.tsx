@@ -471,6 +471,85 @@ requests:
     }
   });
 
+  it('keeps refreshed paths target and marks pending positions unresolved when Ctrl+S runs at document handoff', async () => {
+    const initialRoleYaml = `requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          role: user
+          positions:
+            - 1
+        replacements:
+          - a: b
+`;
+    const refreshedPathsYaml = `requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          paths:
+            - metadata.description
+        replacements:
+          - a: b
+`;
+    const patchSpy = vi.spyOn(api, 'patchConfig');
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], { scalars: {}, revision: 'fixture-r1', safe_yaml: initialRoleYaml });
+    function HandoffHost() {
+      const draft = useConfigDraft();
+      const t = useT();
+      const group = CONFIG_GROUPS.find((g) => g.variant === 'payload-builder')!;
+      const firedAtHandoffRef = React.useRef(false);
+      // Fires after render with the refreshed doc, before child useEffect reconciles replaceRulesRef.
+      React.useLayoutEffect(() => {
+        if (!firedAtHandoffRef.current && draft.rawYaml === refreshedPathsYaml) {
+          firedAtHandoffRef.current = true;
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+        }
+      }, [draft.rawYaml]);
+      return (
+        <>
+          {renderGroupPanel({ ...draft, doc: draft.docRef.current, configuredKeyCount: 0, navigate: () => {}, searchMatchedGroups: [], t }, group)}
+          <output data-testid="payload-draft">{draft.rawYaml}</output>
+          <ConfigDirtyBar
+            isDirty={draft.isDirty}
+            isSaving={draft.saveMutation.isPending}
+            payloadIssuesCount={draft.blockingPayloadIssuesCount}
+            confirmDescription={draft.saveConfirmDescription}
+            onSave={draft.saveConfig}
+            onDiscard={draft.handleDiscardChanges}
+          />
+        </>
+      );
+    }
+    renderWithOmc(<HandoffHost />, { client, isStrict: true });
+    try {
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(initialRoleYaml));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+
+      fireEvent.change(screen.getByTestId('payload-replace-positions-0'), { target: { value: '2' } });
+      expect((screen.getByTestId('payload-replace-positions-0') as HTMLInputElement).value).toBe('2');
+
+      act(() => {
+        client.setQueryData(['management-config'], { scalars: {}, revision: 'fixture-r2', safe_yaml: refreshedPathsYaml });
+      });
+
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(refreshedPathsYaml));
+      const refreshedDraftDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      const refreshedRule = (readPayloadCategory(refreshedDraftDoc, 'replace') as Array<{ target: Record<string, unknown> }>)[0];
+      expect(refreshedRule.target).toEqual({ paths: ['metadata.description'] });
+      const unresolvedNotice = await screen.findByTestId('payload-replace-unresolved-notice');
+      expect(unresolvedNotice.textContent).toContain('2');
+      expect(patchSpy).not.toHaveBeenCalled();
+    } finally {
+      patchSpy.mockRestore();
+      client.clear();
+    }
+  });
+
   it('rejects unsupported target.role without silent retargeting and supports explicit role fix', async () => {
     const doc = parseDocument(`requests:
   payload:
@@ -497,7 +576,7 @@ requests:
 
     fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
     expect(screen.getByTestId('payload-replace-role-tag-0').textContent).toBe('role: assistant');
-    expect(screen.getByText("Target role must be 'user'")).toBeTruthy();
+    expect(screen.getByText('Target role must be system, developer, or user')).toBeTruthy();
     expect(latestIssues.map((i) => i.messageKey)).toContain('cfg.payload_replace_role_invalid');
 
     // Editing a replacement must preserve role: assistant rather than silently rewriting to role: user.
@@ -510,10 +589,418 @@ requests:
 
     // Explicit click on "Set role: user" transitions the target role to user and clears the role issue.
     fireEvent.click(screen.getByTestId('payload-replace-fix-role-0'));
-    expect(screen.getByTestId('payload-replace-role-tag-0').textContent).toBe('role: user');
+    expect(screen.queryByTestId('payload-replace-role-tag-0')).toBeNull();
     const listAfterRoleFix = readPayloadCategory(doc, 'replace') as Array<{ target: { role?: string } }>;
     expect(listAfterRoleFix[0].target.role).toBe('user');
     expect(latestIssues).toEqual([]);
+  });
+
+  it('edits system/developer roles, switches to JSON paths mode, repairs conflicting targets, and saves non-blocking regex warnings verbatim', async () => {
+    const initialYaml = `requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          role: user
+          positions:
+            - 1
+        replacements:
+          - hello: world
+`;
+    const savedRegexYaml = `requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          role: system
+          positions:
+            - 1
+        replacements:
+          - pattern: foo(?=bar)
+            replacement: world
+`;
+    const patchSpy = vi.spyOn(api, 'patchConfig').mockResolvedValue({
+      status: 'ok',
+      safe_yaml: savedRegexYaml,
+      revision: 'fixture-r2',
+    });
+    const getScalarsSpy = vi.spyOn(api, 'getConfigScalars').mockResolvedValue({
+      ...TEST_SCALARS_STUB,
+      revision: 'fixture-r2',
+      safe_yaml: savedRegexYaml,
+    });
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], { scalars: {}, revision: 'fixture-r1', safe_yaml: initialYaml });
+    renderWithOmc(<ConfigPayloadDraft />, { client, isStrict: true });
+    try {
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(initialYaml));
+
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+
+      // 1) Select system role via role dropdown.
+      const roleSelect = screen.getByTestId('payload-replace-role-select-0');
+      fireEvent.click(roleSelect);
+      fireEvent.click(await screen.findByText('System (system)'));
+      expect(screen.getByTestId('payload-draft').textContent).toContain('role: system');
+
+      // 2) Switch literal entry to regex entry, verify hint, aria-describedby, and non-blocking Go RE2 warning.
+      const kindSelect = screen.getByTestId('payload-replace-kind-0-0');
+      fireEvent.click(kindSelect);
+      fireEvent.click(await screen.findByText('Regex'));
+      expect(screen.getByTestId('payload-replace-regex-hint-0')).toBeTruthy();
+
+      const patternInput = screen.getByTestId('payload-replace-pattern-0-0') as HTMLTextAreaElement;
+      expect(patternInput.value).toBe('hello');
+      fireEvent.change(patternInput, { target: { value: 'foo(?=bar)' } });
+      const warningEl = screen.getByTestId('payload-replace-warning-0-0');
+      expect(warningEl.textContent).toContain('Unsupported Go RE2 construct');
+      expect(patternInput.getAttribute('aria-describedby')).toBe(warningEl.id);
+
+      const draftWithRegex = screen.getByTestId('payload-draft').textContent ?? '';
+      expect(draftWithRegex).toContain('pattern: foo(?=bar)');
+      expect(draftWithRegex).toContain('replacement: world');
+
+      // Non-blocking warning must NOT disable or block saving, and still surfaces the regex warning in confirmation.
+      const saveBtn = screen.getByRole<HTMLButtonElement>('button', { name: 'Save changes' });
+      expect(saveBtn.disabled).toBe(false);
+      fireEvent.click(saveBtn);
+      const confirmDialog = await screen.findByRole('dialog');
+      expect(confirmDialog.textContent).toContain('invalid Go RE2 entries that CPA will skip');
+      const confirmBtn = Array.from(confirmDialog.querySelectorAll('button')).pop()!;
+      await act(async () => {
+        fireEvent.click(confirmBtn);
+      });
+      await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1));
+      expect(patchSpy).toHaveBeenCalledWith(
+        [
+          {
+            path: ['requests', 'payload', 'replace'],
+            value: [
+              {
+                models: [{ name: '*' }],
+                target: { role: 'system', positions: [1] },
+                replacements: [{ pattern: 'foo(?=bar)', replacement: 'world' }],
+              },
+            ],
+          },
+        ],
+        'fixture-r1',
+      );
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(savedRegexYaml));
+
+      // 3) Switch target mode to JSON paths and back to Role: preserves role target and paths draft.
+      fireEvent.change(screen.getByTestId('payload-replace-positions-0'), { target: { value: '9' } });
+      const modeSegmented = screen.getByTestId('payload-replace-mode-0');
+      fireEvent.click(within(modeSegmented).getByText('JSON paths'));
+
+      expect(screen.queryByTestId('payload-replace-positions-0')).toBeNull();
+      const path0 = screen.getByTestId('payload-replace-path-0-0') as HTMLInputElement;
+      fireEvent.change(path0, { target: { value: 'system' } });
+      fireEvent.click(screen.getByTestId('payload-replace-add-path-0'));
+      const path1 = screen.getByTestId('payload-replace-path-0-1') as HTMLInputElement;
+      fireEvent.change(path1, { target: { value: 'messages.0.content' } });
+
+      fireEvent.click(screen.getByTestId('payload-replace-path-up-0-1'));
+      const pathsDraftDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      const parsedPathsRule = readPayloadCategory(pathsDraftDoc, 'replace') as Array<{ target: Record<string, unknown> }>;
+      expect(parsedPathsRule[0].target).toEqual({ paths: ['messages.0.content', 'system'] });
+
+      // Switching back to Role restores `system` and committed positions `[1, 9]`, and switching to Paths restores paths.
+      fireEvent.click(within(modeSegmented).getByText('Role messages'));
+      const restoredRoleDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      const restoredRoleRule = readPayloadCategory(restoredRoleDoc, 'replace') as Array<{ target: Record<string, unknown> }>;
+      expect(restoredRoleRule[0].target).toEqual({ role: 'system', positions: [1, 9] });
+
+      fireEvent.click(within(modeSegmented).getByText('JSON paths'));
+      const restoredPathsDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      const restoredPathsRule = readPayloadCategory(restoredPathsDoc, 'replace') as Array<{ target: Record<string, unknown> }>;
+      expect(restoredPathsRule[0].target).toEqual({ paths: ['messages.0.content', 'system'] });
+    } finally {
+      patchSpy.mockRestore();
+      getScalarsSpy.mockRestore();
+      client.clear();
+    }
+  });
+
+  it('surfaces conflicting paths and role fields from hand-edited YAML and clears conflict on explicit repair', () => {
+    const doc = parseDocument(`requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          role: developer
+          all: true
+          positions:
+            - "2"
+          paths:
+            - system
+        replacements:
+          - pattern: "(?i)foo"
+            replacement: bar
+      - models:
+          - name: "*"
+        target:
+          role: assistant
+          all: true
+          paths:
+            - instructions
+        replacements:
+          - a: b
+`);
+    let latestIssues: Array<{ messageKey: string }> = [];
+    render(
+      <PayloadSurface
+        doc={doc}
+        onDocChange={vi.fn()}
+        onValidationChange={(issues) => {
+          latestIssues = issues;
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+    expect(latestIssues.map((i) => i.messageKey)).toContain('cfg.payload_replace_paths_conflict');
+    expect(screen.getByTestId('payload-replace-clear-role-fields-0')).toBeTruthy();
+
+    // Switching to Role while a mixed target holds `all: true` and invalid `positions: ["2"]` preserves the conflict for explicit repair.
+    const modeSegmented = screen.getByTestId('payload-replace-mode-0');
+    fireEvent.click(within(modeSegmented).getByText('Role messages'));
+    expect(latestIssues.map((i) => i.messageKey)).toContain('cfg.payload_replace_target_conflict');
+    const roleConflictTarget = (readPayloadCategory(doc, 'replace') as Array<{ target: Record<string, unknown> }>)[0].target;
+    expect(roleConflictTarget).toEqual({ role: 'developer', all: true, positions: ['2'] });
+
+    // Switching to Role when mixed target carries an unsupported role preserves `assistant` as invalidRole rather than defaulting to `user`.
+    fireEvent.click(within(screen.getByTestId('payload-replace-mode-1')).getByText('Role messages'));
+    expect(latestIssues.map((i) => i.messageKey)).toContain('cfg.payload_replace_role_invalid');
+    const secondTarget = (readPayloadCategory(doc, 'replace') as Array<{ target: Record<string, unknown> }>)[1].target;
+    expect(secondTarget).toEqual({ role: 'assistant', all: true });
+    fireEvent.click(screen.getByTestId('payload-replace-fix-role-1'));
+
+    // Switching back to JSON paths and clearing role fields removes the conflict cleanly.
+    fireEvent.click(within(modeSegmented).getByText('JSON paths'));
+    fireEvent.click(screen.getByTestId('payload-replace-clear-role-fields-0'));
+    const listAfterClear = readPayloadCategory(doc, 'replace') as Array<{ target: Record<string, unknown> }>;
+    expect(listAfterClear[0].target).toEqual({ paths: ['system'] });
+    expect(latestIssues).toEqual([]);
+  });
+
+  it('retains a newly added blank path row on a clean rule and preserves non-string regex replacement when repairing pattern', async () => {
+    const cleanPathsYaml = `requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          paths:
+            - system
+        replacements:
+          - pattern: 123
+            replacement: 456
+`;
+    const patchSpy = vi.spyOn(api, 'patchConfig').mockResolvedValue({
+      status: 'ok',
+      safe_yaml: cleanPathsYaml,
+      revision: 'fixture-r2',
+    });
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], { scalars: {}, revision: 'fixture-r1', safe_yaml: cleanPathsYaml });
+    renderWithOmc(<ConfigPayloadDraft />, { client, isStrict: true });
+    try {
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(cleanPathsYaml));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+
+      // Repairing non-string pattern keeps non-string numeric replacement verbatim and links the error description to destination.
+      const patternInput = screen.getByTestId('payload-replace-pattern-0-0') as HTMLTextAreaElement;
+      const destInput = screen.getByTestId('payload-replace-to-0-0') as HTMLTextAreaElement;
+      fireEvent.change(patternInput, { target: { value: 'fixed' } });
+      expect(screen.getByTestId('payload-draft').textContent).toContain('replacement: 456');
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      const destErrorId = destInput.getAttribute('aria-describedby');
+      expect(destErrorId).toBeTruthy();
+      expect(document.getElementById(destErrorId!)?.textContent).toContain('Replacement text must be a string');
+      expect(patternInput.getAttribute('aria-describedby')).toBeNull();
+
+      // Switching from Regex to Literal while destination is numeric keeps `fixed: 456` and the destination error intact.
+      fireEvent.click(screen.getByTestId('payload-replace-kind-0-0'));
+      fireEvent.click(await screen.findByText('Literal'));
+      expect(screen.getByTestId('payload-draft').textContent).toContain('fixed: 456');
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      expect(patchSpy).not.toHaveBeenCalled();
+      expect(destInput.getAttribute('aria-describedby')).toBeTruthy();
+
+      fireEvent.change(destInput, { target: { value: 'ok' } });
+
+      // Adding a blank path row on a rule with existing paths keeps the blank input mounted and blocks save until filled.
+      fireEvent.click(screen.getByTestId('payload-replace-add-path-0'));
+      const newPathInput = screen.getByTestId('payload-replace-path-0-1') as HTMLInputElement;
+      expect(newPathInput).toBeTruthy();
+      expect(newPathInput.value).toBe('');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(patchSpy).not.toHaveBeenCalled();
+      expect(newPathInput.getAttribute('aria-describedby')).toBeTruthy();
+      expect(document.getElementById(newPathInput.getAttribute('aria-describedby')!)?.textContent).toContain(
+        'Target path cannot be empty',
+      );
+
+      fireEvent.change(newPathInput, { target: { value: 'messages.0.content' } });
+      expect(screen.getByTestId('payload-draft').textContent).toContain('messages.0.content');
+      expect(newPathInput.getAttribute('aria-describedby')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      const confirmDialog = await screen.findByRole('dialog');
+      expect(confirmDialog).toBeTruthy();
+      expect(patchSpy).not.toHaveBeenCalled();
+      fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Cancel' }));
+
+      // Removing a path row preserves the remaining path `system` and keeps paths mode active.
+      fireEvent.click(screen.getByTestId('payload-replace-path-remove-0-1'));
+      expect(screen.getByTestId('payload-replace-mode-0')).toBeTruthy();
+      expect(screen.getByTestId('payload-replace-add-path-0')).toBeTruthy();
+      const postRemoveDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      const postRemoveRules = readPayloadCategory(postRemoveDoc, 'replace') as Array<{ target: Record<string, unknown> }>;
+      expect(postRemoveRules[0].target).toEqual({ paths: ['system'] });
+      expect((screen.getByTestId('payload-replace-path-remove-0-0') as HTMLButtonElement).disabled).toBe(true);
+    } finally {
+      patchSpy.mockRestore();
+      client.clear();
+    }
+  });
+
+  it('allows saving an unrelated change when a stored regex rule has only a non-blocking warning after leaving Payload', async () => {
+    const warningRegexYaml = `server:
+  port: 8317
+requests:
+  payload:
+    replace:
+      - models:
+          - name: "*"
+        target:
+          role: system
+          all: true
+        replacements:
+          - pattern: "("
+            replacement: fixed
+`;
+    const savedPortYaml = warningRegexYaml.replace('port: 8317', 'port: 8318');
+    const patchSpy = vi.spyOn(api, 'patchConfig').mockResolvedValue({
+      status: 'ok',
+      safe_yaml: savedPortYaml,
+      revision: 'fixture-r2',
+    });
+    const getScalarsSpy = vi.spyOn(api, 'getConfigScalars').mockResolvedValue({
+      ...TEST_SCALARS_STUB,
+      revision: 'fixture-r2',
+      safe_yaml: savedPortYaml,
+    });
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], { scalars: {}, revision: 'fixture-r1', safe_yaml: warningRegexYaml });
+
+    function UnrelatedSaveHost() {
+      const draft = useConfigDraft();
+      const t = useT();
+      const payloadGroup = CONFIG_GROUPS.find((g) => g.variant === 'payload-builder')!;
+      const portField = ALL_CONFIG_FIELDS.find((f) => f.id === 'port')!;
+      return (
+        <>
+          {draft.activeSection === 'payload' ? (
+            renderGroupPanel(
+              { ...draft, doc: draft.docRef.current, configuredKeyCount: 0, navigate: () => {}, searchMatchedGroups: [], t },
+              payloadGroup,
+            )
+          ) : (
+            <button
+              type="button"
+              data-testid="bump-port"
+              onClick={() => draft.updateFieldInDoc(portField, 8318)}
+            >
+              bump port
+            </button>
+          )}
+          <button type="button" data-testid="go-payload" onClick={() => draft.setActiveSection('payload')}>payload</button>
+          <button type="button" data-testid="go-conn" onClick={() => draft.setActiveSection('connectivity')}>conn</button>
+          <output data-testid="payload-draft">{draft.rawYaml}</output>
+          <ConfigDirtyBar
+            isDirty={draft.isDirty}
+            isSaving={draft.saveMutation.isPending}
+            payloadIssuesCount={draft.blockingPayloadIssuesCount}
+            confirmDescription={draft.saveConfirmDescription}
+            onSave={draft.saveConfig}
+            onDiscard={draft.handleDiscardChanges}
+          />
+        </>
+      );
+    }
+
+    renderWithOmc(<UnrelatedSaveHost />, { client, isStrict: true });
+    try {
+      await waitFor(() => expect(screen.getByTestId('payload-draft').textContent).toBe(warningRegexYaml));
+      // Mount Payload first, verify the non-blocking regex warning for `(`, then navigate away before saving port.
+      fireEvent.click(screen.getByTestId('go-payload'));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+      expect(screen.getByTestId('payload-replace-warning-0-0').textContent).toContain('Invalid Go RE2');
+
+      fireEvent.click(screen.getByTestId('go-conn'));
+      fireEvent.click(screen.getByTestId('bump-port'));
+
+      const saveBtn = screen.getByRole<HTMLButtonElement>('button', { name: 'Save changes' });
+      fireEvent.click(saveBtn);
+      const confirmDialog = await screen.findByRole('dialog');
+      expect(confirmDialog.textContent).not.toContain('invalid Go RE2 entries');
+      const confirmBtn = within(confirmDialog).getByRole('button', { name: 'Confirm' });
+      await act(async () => {
+        fireEvent.click(confirmBtn);
+      });
+      await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1));
+      expect(patchSpy).toHaveBeenCalledWith([{ path: ['server', 'port'], value: 8318 }], 'fixture-r1');
+
+      // Editing a replacement entry to an invalid regex and navigating away still warns in Ctrl+S save confirmation.
+      fireEvent.click(screen.getByTestId('go-payload'));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+      fireEvent.change(screen.getByTestId('payload-replace-pattern-0-0'), { target: { value: 'foo(?=bar)' } });
+      fireEvent.click(screen.getByTestId('go-conn'));
+      fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+      const ctrlSConfirmDialog = await screen.findByRole('dialog');
+      expect(ctrlSConfirmDialog.textContent).toContain('invalid Go RE2 entries that CPA will skip');
+      fireEvent.click(within(ctrlSConfirmDialog).getByRole('button', { name: 'Cancel' }));
+
+      // Switch to Paths, navigate to Connectivity and back, then switch back to Role: inactive role target survives unmount.
+      fireEvent.click(screen.getByTestId('go-payload'));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+      fireEvent.click(screen.getByTestId('payload-replace-all-0'));
+      fireEvent.change(screen.getByTestId('payload-replace-positions-0'), { target: { value: '2, 4' } });
+      fireEvent.click(within(screen.getByTestId('payload-replace-mode-0')).getByText('JSON paths'));
+      fireEvent.change(screen.getByTestId('payload-replace-path-0-0'), { target: { value: 'system' } });
+
+      fireEvent.click(screen.getByTestId('go-conn'));
+      fireEvent.click(screen.getByTestId('go-payload'));
+      fireEvent.click(screen.getByRole('button', { name: /^Replacement Rules/ }));
+      fireEvent.click(within(screen.getByTestId('payload-replace-mode-0')).getByText('Role messages'));
+      const restoredDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      expect((readPayloadCategory(restoredDoc, 'replace') as Array<{ target: Record<string, unknown> }>)[0].target).toEqual({
+        role: 'system',
+        positions: [2, 4],
+      });
+
+      // Pending position text entered under one role is discarded if the operator switches roles before saving.
+      fireEvent.change(screen.getByTestId('payload-replace-positions-0'), { target: { value: '9' } });
+      fireEvent.click(screen.getByTestId('payload-replace-role-select-0'));
+      fireEvent.click(await screen.findByText('Developer (developer)'));
+      expect((screen.getByTestId('payload-replace-positions-0') as HTMLInputElement).value).toBe('');
+      const switchedRoleDoc = parseDocument(screen.getByTestId('payload-draft').textContent ?? '');
+      expect((readPayloadCategory(switchedRoleDoc, 'replace') as Array<{ target: Record<string, unknown> }>)[0].target).toEqual({
+        role: 'developer',
+        positions: [2, 4],
+      });
+    } finally {
+      patchSpy.mockRestore();
+      getScalarsSpy.mockRestore();
+      client.clear();
+    }
   });
 
   it('retains payload validation issues across an in-flight save completion after the payload editor unmounts', async () => {
@@ -1357,7 +1844,14 @@ function ConfigPayloadDraft() {
   return <>
     {renderGroupPanel({ ...draft, doc: draft.docRef.current, configuredKeyCount: 0, navigate: () => {}, searchMatchedGroups: [], t }, group)}
     <output data-testid="payload-draft">{draft.rawYaml}</output>
-    <ConfigDirtyBar isDirty={draft.isDirty} isSaving={false} onSave={() => {}} onDiscard={() => {}} />
+    <ConfigDirtyBar
+      isDirty={draft.isDirty}
+      isSaving={draft.saveMutation.isPending}
+      payloadIssuesCount={draft.blockingPayloadIssuesCount}
+      confirmDescription={draft.saveConfirmDescription}
+      onSave={draft.saveConfig}
+      onDiscard={draft.handleDiscardChanges}
+    />
   </>;
 }
 
@@ -1638,5 +2132,234 @@ describe('ConfigOutline', () => {
       <ConfigOutline entries={[]} />,
     );
     expect(container.querySelector('.config-outline')).toBeNull();
+  });
+});
+
+function ConfigServiceDraft() {
+  const draft = useConfigDraft();
+  const t = useT();
+  const serviceGroup = CONFIG_GROUPS.find((group) => group.id === 'grp_service')!;
+  return (
+    <div>
+      <output data-testid="service-draft">{draft.rawYaml}</output>
+      <output data-testid="service-dirty">{String(draft.isDirty)}</output>
+      <output data-testid="service-errors">{String(draft.hasConfigErrors)}</output>
+      {renderGroupPanel(
+        {
+          ...draft,
+          doc: draft.docRef.current,
+          configuredKeyCount: 0,
+          navigate: () => undefined,
+          searchQuery: '',
+          searchMatchedGroups: [],
+          t,
+        },
+        serviceGroup,
+      )}
+      <ConfigDirtyBar
+        isDirty={draft.isDirty}
+        isSaving={draft.saveMutation.isPending}
+        yamlError={draft.hasYamlErrors}
+        payloadIssuesCount={draft.blockingPayloadIssuesCount}
+        validationError={draft.firstFieldErrorMessage}
+        showErrorFeedback={draft.showErrorFeedback}
+        onSave={() => void draft.saveConfig()}
+        onDiscard={draft.handleDiscardChanges}
+      />
+    </div>
+  );
+}
+
+describe('ServerIdField configuration workflow', () => {
+  it('validates nonzero hyphenated UUIDs before sending, supports regenerate and cancel, and renders CPA readback after save', async () => {
+    const initialUUID = '11111111-1111-4111-8111-111111111111';
+    const submittedUpper = '20FB88E4-73AB-44DB-B5B5-4E7120BA3368';
+    const savedLower = '20fb88e4-73ab-44db-b5b5-4e7120ba3368';
+    const initialYaml = `server:\n  server-id: ${initialUUID}\n  port: 8317\n`;
+
+    const patchSpy = vi.spyOn(api, 'patchConfig').mockResolvedValue({
+      status: 'ok',
+      revision: 'rev-2',
+      safe_yaml: `server:\n  server-id: ${savedLower}\n  port: 8317\n`,
+    });
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], {
+      ...TEST_SCALARS_STUB,
+      revision: 'rev-1',
+      safe_yaml: initialYaml,
+      stored_layout: 'v8',
+    });
+
+    try {
+      renderWithOmc(<ConfigServiceDraft />, { client, isStrict: true });
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(initialUUID));
+      expect(screen.getByTestId('service-dirty').textContent).toBe('false');
+
+      // Enter edit mode; invalid UUID and nil UUID show inline errors and block save.
+      fireEvent.click(screen.getByTestId('cfg-server-id-edit'));
+      const input = screen.getByTestId('cfg-server-id-input') as HTMLInputElement;
+      expect(input.value).toBe(initialUUID);
+
+      fireEvent.change(input, { target: { value: '00000000-0000-0000-0000-000000000000' } });
+      expect(screen.getByRole('alert').textContent).toContain('36-character nonzero hyphenated UUID');
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(screen.getByTestId('service-errors').textContent).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      expect(patchSpy).not.toHaveBeenCalled();
+
+      // Clearing an existing server-id is also rejected so an empty/deleted write cannot reach CPA.
+      fireEvent.change(input, { target: { value: '' } });
+      expect(screen.getByRole('alert').textContent).toContain('Enter a nonzero hyphenated UUID');
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      expect(patchSpy).not.toHaveBeenCalled();
+
+      // Cancel via Escape restores the baseline, clears dirty/error state, and returns focus to the Edit button.
+      fireEvent.keyDown(input, { key: 'Escape' });
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(initialUUID));
+      expect(document.activeElement).toBe(screen.getByTestId('cfg-server-id-edit'));
+      expect(screen.getByTestId('service-dirty').textContent).toBe('false');
+      expect(screen.getByTestId('service-errors').textContent).toBe('false');
+
+      // Regenerate stages a new valid UUIDv4 without sending until saved, and Discard reverts cleanly.
+      fireEvent.click(screen.getByTestId('cfg-server-id-regenerate'));
+      const regenerated = screen.getByTestId('cfg-server-id-value').textContent ?? '';
+      expect(regenerated).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(regenerated).not.toBe(initialUUID);
+      expect(patchSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId('service-dirty').textContent).toBe('true');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(initialUUID));
+
+      // Saving an uppercase UUID displays CPA's lowercased readback rather than echoing the submitted input.
+      fireEvent.click(screen.getByTestId('cfg-server-id-edit'));
+      fireEvent.change(screen.getByTestId('cfg-server-id-input'), { target: { value: submittedUpper } });
+      expect(screen.getByTestId('service-errors').textContent).toBe('false');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+
+      await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1));
+      expect(patchSpy).toHaveBeenCalledWith(
+        [{ path: ['server', 'server-id'], value: submittedUpper }],
+        'rev-1',
+      );
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(savedLower));
+      expect(screen.getByTestId('service-dirty').textContent).toBe('false');
+    } finally {
+      patchSpy.mockRestore();
+    }
+  });
+
+  it('reconciles Cancel rollback when baseline changes during invalid input while preserving pre-edit unsaved changes', async () => {
+    const idA = '11111111-1111-4111-8111-111111111111';
+    const idB = '22222222-2222-4222-8222-222222222222';
+    const idD = '44444444-4444-4444-8444-444444444444';
+
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], {
+      ...TEST_SCALARS_STUB,
+      revision: 'rev-1',
+      safe_yaml: `server:\n  server-id: ${idA}\n  port: 8317\n`,
+      stored_layout: 'v8',
+    });
+
+    renderWithOmc(<ConfigServiceDraft />, { client, isStrict: true });
+    await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(idA));
+
+    // Scenario 1: invalid input -> baseline advances A -> B -> Cancel must retain B and clear dirty state.
+    fireEvent.click(screen.getByTestId('cfg-server-id-edit'));
+    fireEvent.change(screen.getByTestId('cfg-server-id-input'), { target: { value: 'not-a-uuid' } });
+    expect(screen.getByTestId('service-errors').textContent).toBe('true');
+
+    act(() => {
+      client.setQueryData(['management-config'], {
+        ...TEST_SCALARS_STUB,
+        revision: 'rev-2',
+        safe_yaml: `server:\n  server-id: ${idB}\n  port: 8317\n`,
+        stored_layout: 'v8',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('cfg-server-id-cancel'));
+    await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(idB));
+    expect(screen.getByTestId('service-dirty').textContent).toBe('false');
+    expect(screen.getByTestId('service-errors').textContent).toBe('false');
+    expect(screen.getByTestId('service-draft').textContent).toContain(`server-id: ${idB}`);
+
+    // Scenario 2: pre-edit unsaved local edit (via Regenerate) -> enter edit & type invalid -> baseline advances B -> D -> Cancel preserves staged local value.
+    fireEvent.click(screen.getByTestId('cfg-server-id-regenerate'));
+    const stagedLocal = screen.getByTestId('cfg-server-id-value').textContent ?? '';
+    expect(stagedLocal).not.toBe(idB);
+    expect(screen.getByTestId('service-dirty').textContent).toBe('true');
+
+    fireEvent.click(screen.getByTestId('cfg-server-id-edit'));
+    fireEvent.change(screen.getByTestId('cfg-server-id-input'), { target: { value: 'still-bad' } });
+
+    act(() => {
+      client.setQueryData(['management-config'], {
+        ...TEST_SCALARS_STUB,
+        revision: 'rev-3',
+        safe_yaml: `server:\n  server-id: ${idD}\n  port: 8317\n`,
+        stored_layout: 'v8',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('cfg-server-id-cancel'));
+    await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(stagedLocal));
+    expect(screen.getByTestId('service-dirty').textContent).toBe('true');
+    expect(screen.getByTestId('service-errors').textContent).toBe('false');
+  });
+
+  it('reconciles Cancel rollback to the newly committed ID when the user keeps editing during an in-flight save', async () => {
+    const idA = '11111111-1111-4111-8111-111111111111';
+    const idB = '22222222-2222-4222-8222-222222222222';
+    const idC = '33333333-3333-4333-8333-333333333333';
+
+    let resolveSave!: (value: { status: string; revision: string; safe_yaml: string }) => void;
+    const patchSpy = vi.spyOn(api, 'patchConfig').mockImplementation(
+      () => new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const client = createTestQueryClient();
+    client.setQueryData(['management-config'], {
+      ...TEST_SCALARS_STUB,
+      revision: 'rev-1',
+      safe_yaml: `server:\n  server-id: ${idA}\n  port: 8317\n`,
+      stored_layout: 'v8',
+    });
+
+    try {
+      renderWithOmc(<ConfigServiceDraft />, { client, isStrict: true });
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(idA));
+
+      // Edit A -> B and start saving while keeping edit mode open.
+      fireEvent.click(screen.getByTestId('cfg-server-id-edit'));
+      fireEvent.change(screen.getByTestId('cfg-server-id-input'), { target: { value: idB } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+      await waitFor(() => expect(patchSpy).toHaveBeenCalledTimes(1));
+
+      // While the save of B is in flight, continue editing to C.
+      fireEvent.change(screen.getByTestId('cfg-server-id-input'), { target: { value: idC } });
+
+      // Save of B completes; draft keeps C, while rollback advances from pre-save A to committed B.
+      await act(async () => {
+        resolveSave({
+          status: 'ok',
+          revision: 'rev-2',
+          safe_yaml: `server:\n  server-id: ${idB}\n  port: 8317\n`,
+        });
+      });
+
+      // Cancelling must revert to committed B (clean) rather than stale pre-save A.
+      fireEvent.click(screen.getByTestId('cfg-server-id-cancel'));
+      await waitFor(() => expect(screen.getByTestId('cfg-server-id-value').textContent).toBe(idB));
+      expect(screen.getByTestId('service-dirty').textContent).toBe('false');
+      expect(screen.getByTestId('service-draft').textContent).toContain(`server-id: ${idB}`);
+    } finally {
+      patchSpy.mockRestore();
+    }
   });
 });

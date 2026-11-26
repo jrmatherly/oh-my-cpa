@@ -10,6 +10,8 @@ import { usePrefersReducedMotion } from '../src/hooks/usePrefersReducedMotion';
 import { isMotionReduced, REDUCED_MOTION_QUERY } from '../src/utils/motionPreference';
 import { ContextReadout } from '../src/components/workspace/ContextReadout';
 import { OutboundProxySettings } from '../src/components/settings/OutboundProxySettings';
+import { AutoRefreshSettings } from '../src/components/settings/AutoRefreshSettings';
+import { GitHubTokenSettings } from '../src/components/settings/GitHubTokenSettings';
 
 function deferred<Value>() {
   let resolve!: (value: Value) => void;
@@ -300,5 +302,112 @@ describe('console motion preference', () => {
     mount(<MotionProvider><MotionPreferenceSync /><Control /></MotionProvider>);
     await waitFor(() => expect(screen.getByLabelText('motion preference').textContent).toBe('off'));
     expectReduced(false);
+  });
+
+  it('manages GitHub token status, saves a new token, tests quota, and clears it', async () => {
+    let status = { configured: false, masked_token: '', cpa_revision: 'rev-1' };
+    api.on('GET', '/management/github-token', () => jsonResponse(status));
+    api.on('PUT', '/management/github-token', (req) => {
+      const body = req.body as { token: string; cpa_revision: string };
+      status = body.token
+        ? { configured: true, masked_token: 'ghp_1234••••••••abcd', cpa_revision: 'rev-2' }
+        : { configured: false, masked_token: '', cpa_revision: 'rev-3' };
+      return jsonResponse(status);
+    });
+    api.on('POST', '/management/github-token/test', (req) => {
+      const body = req.body as { token?: string };
+      return jsonResponse(body?.token || status.configured
+        ? { status: 'valid', authenticated: true, limit: 5000, remaining: 4991, used: 9, reset_at_ms: Date.now() + 600_000 }
+        : { status: 'anonymous', authenticated: false, limit: 60, remaining: 57, used: 3, reset_at_ms: Date.now() + 600_000 });
+    });
+
+    mount(<GitHubTokenSettings />);
+    const card = await screen.findByTestId('omc-github-token-settings');
+    expect(await screen.findByText('Not configured')).toBeTruthy();
+
+    // Test anonymous quota before setting a token; outcome surfaces in a toast rather than an inline notice.
+    fireEvent.click(screen.getByRole('button', { name: 'Test quota' }));
+    const anonToastTitle = await screen.findByText('Using anonymous access');
+    expect(anonToastTitle.closest('.omc-toast-info')).not.toBeNull();
+    expect(card.querySelector('.settings-inline-notice')).toBeNull();
+
+    // Type and save a token.
+    const input = screen.getByLabelText('Personal access token');
+    fireEvent.change(input, { target: { value: 'ghp_1234567890abcdef1234567890abcd' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Configured')).toBeTruthy();
+    expect(screen.getByText('ghp_1234••••••••abcd')).toBeTruthy();
+
+    // Test saved token quota and verify the quota readout renders inside the success toast.
+    fireEvent.click(screen.getByRole('button', { name: 'Test quota' }));
+    const validToastTitle = await screen.findByText('Token is valid');
+    const validToast = validToastTitle.closest('.omc-toast-success');
+    expect(validToast).not.toBeNull();
+    expect(validToast?.textContent).toContain('4,991 / 5,000');
+    expect(card.querySelector('.settings-inline-notice')).toBeNull();
+
+    // Typing a new draft immediately dismisses the previous quota-test toast.
+    fireEvent.change(input, { target: { value: 'ghp_replacement_draft_1234567890' } });
+    await waitFor(() => expect(screen.queryByText('Token is valid')).toBeNull());
+
+    // A pending test for an older draft must not reappear once the draft moves on.
+    const slowTest = deferred<Response>();
+    api.on('POST', '/management/github-token/test', () => slowTest.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Test quota' }));
+    fireEvent.change(input, { target: { value: 'ghp_newer_draft_1234567890' } });
+    await act(async () => {
+      slowTest.resolve(jsonResponse({ status: 'valid', authenticated: true, limit: 5000, remaining: 4990, used: 10 }));
+      await slowTest.promise;
+    });
+    const testButton = screen.getByRole('button', { name: 'Test quota' }) as HTMLButtonElement;
+    await waitFor(() => expect(testButton.disabled).toBe(false));
+    expect(screen.queryByText('Token is valid')).toBeNull();
+
+    // An invalid candidate token surfaces an error toast without rendering an inline notice.
+    api.on('POST', '/management/github-token/test', () => jsonResponse({ status: 'invalid', authenticated: false }));
+    fireEvent.click(testButton);
+    const invalidToastTitle = await screen.findByText('Token is invalid or revoked');
+    expect(invalidToastTitle.closest('.omc-toast-error')).not.toBeNull();
+    expect(card.querySelector('.settings-inline-notice')).toBeNull();
+
+    // Upstream probe errors surface a warning toast carrying the diagnostic message.
+    api.on('POST', '/management/github-token/test', () => jsonResponse({ status: 'error', authenticated: false, message: 'HTTP 502' }));
+    await waitFor(() => expect(testButton.disabled).toBe(false));
+    fireEvent.click(testButton);
+    const warnToastTitle = await screen.findByText('Could not complete GitHub API check');
+    const warnToast = warnToastTitle.closest('.omc-toast-warning');
+    expect(warnToast).not.toBeNull();
+    expect(warnToast?.textContent).toContain('HTTP 502');
+
+    // Clear token through confirmation popover.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    const confirmButtons = await screen.findAllByRole('button', { name: 'Clear' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    expect(await screen.findByText('Not configured')).toBeTruthy();
+  });
+
+  it('renders unified auto-refresh controls and offers retry when pricing schedule fails to load', async () => {
+    let attempts = 0;
+    api.on('GET', '/pricing/sync-schedule', () => {
+      attempts += 1;
+      if (attempts === 1) return jsonResponse({ error: 'pricing unavailable' }, 503);
+      return jsonResponse({
+        interval_hours: 12,
+        known: true,
+        state: { source: 'openrouter', last_matched: 0, last_unmatched: 0, auto_sync_interval_hours: 12, updated_at_ms: 1000 },
+      });
+    });
+    mount(<AutoRefreshSettings />);
+    expect(await screen.findByText('OMC & CPA version check')).toBeTruthy();
+    expect(screen.getByText('Plugin store update check')).toBeTruthy();
+    expect(screen.getByText('Scheduled quota refresh')).toBeTruthy();
+    expect(screen.getByText('Model pricing auto-sync')).toBeTruthy();
+    expect(screen.getByText('Exchange rate auto-refresh')).toBeTruthy();
+
+    // Recovery notice appears when the schedule query fails and clears on retry.
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    fireEvent.click(retry);
+    await waitFor(() => expect(attempts).toBe(2));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull());
   });
 });

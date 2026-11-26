@@ -5,7 +5,7 @@ import path from 'path';
 import { resolveApiTarget, resolveBasePath } from '../scripts/api-target.mjs';
 import { syncLobeIcons } from '../scripts/sync-lobe-icons.mjs';
 import { bundleGraphPlugin } from '../scripts/bundle-graph.mjs';
-import { bareBaseRedirectPlugin, devRuntimeConfigPlugin } from '../scripts/dev-base-redirect.mjs';
+import { bareBaseRedirectPlugin, devHmrResiliencePlugin, devRuntimeConfigPlugin } from '../scripts/dev-base-redirect.mjs';
 
 const repoRoot = path.resolve(__dirname, '..');
 const devBasePath = resolveBasePath(repoRoot);
@@ -31,6 +31,7 @@ export default defineConfig(({ command }) => ({
     react(),
     bundleGraphPlugin(repoRoot),
     bareBaseRedirectPlugin(),
+    devHmrResiliencePlugin(),
     devRuntimeConfigPlugin(devBasePath),
   ],
   // Development follows OMCPA_BASE_PATH so an existing local environment and the

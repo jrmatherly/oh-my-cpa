@@ -117,6 +117,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "429": {
             "description": "Too Many Requests",
             "schema": {
@@ -474,6 +480,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -647,6 +659,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -890,6 +908,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -986,6 +1010,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -1669,6 +1699,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "502": {
             "description": "Bad Gateway",
             "schema": {
@@ -2071,6 +2107,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -2155,6 +2197,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -2730,6 +2778,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -2807,6 +2861,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -2973,6 +3033,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -3044,6 +3110,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -3148,6 +3220,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -3325,6 +3403,116 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/auth-files/request-scoped-errors": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return per-provider global request-scoped error rules configured in CPA for OAuth credentials.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "AuthFiles"
+        ],
+        "summary": "List OAuth request-scoped error rules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.OAuthRequestScopedErrorsResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Replace global request-scoped error rules for one OAuth provider channel and verify persistence.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "AuthFiles"
+        ],
+        "summary": "Update OAuth request-scoped error rules for a provider",
+        "parameters": [
+          {
+            "description": "Provider request-scoped error rules payload",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/api.OAuthRequestScopedErrorsPatchRequestDTO"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.OAuthRequestScopedErrorsPatchResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -3464,6 +3652,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -3529,6 +3723,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -3722,6 +3922,12 @@
             "description": "Conflict",
             "schema": {
               "$ref": "#/definitions/api.ClientKeyAliasConflictResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
           "500": {
@@ -3973,6 +4179,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -4128,6 +4340,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -4420,6 +4638,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -4492,6 +4716,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -4903,6 +5133,190 @@
           },
           "503": {
             "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/github-token": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return whether CPA's server.github-token is configured, its redacted mask, and the current CPA configuration revision.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Config"
+        ],
+        "summary": "Get GitHub token configuration status",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.GitHubTokenStatusDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Set, replace, or clear CPA's server.github-token under revision check, pre-write backup, and audit logging, immediately invalidating OMC's in-memory token cache.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Config"
+        ],
+        "summary": "Update or clear GitHub token",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Expected CPA configuration revision",
+            "name": "If-Match",
+            "in": "header"
+          },
+          {
+            "description": "GitHub token payload (empty token clears server.github-token)",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/api.gitHubTokenInput"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.GitHubTokenStatusDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/github-token/test": {
+      "post": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Probe GitHub's /rate_limit endpoint using an optional candidate token or the currently configured CPA server.github-token (anonymous when unset).",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Config"
+        ],
+        "summary": "Test GitHub token and query API rate limit",
+        "parameters": [
+          {
+            "description": "Optional candidate token to test before saving",
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/api.gitHubTokenTestInput"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.GitHubTokenTestResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -5543,6 +5957,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -5706,6 +6126,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "429": {
             "description": "Too Many Requests",
             "schema": {
@@ -5796,6 +6222,12 @@
           },
           "410": {
             "description": "Gone",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -6015,6 +6447,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -6188,6 +6626,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -6357,6 +6801,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "429": {
             "description": "Too Many Requests",
             "schema": {
@@ -6506,6 +6956,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -6718,6 +7174,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -6796,6 +7258,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -6924,6 +7392,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -6993,6 +7467,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -7052,6 +7532,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -7121,6 +7607,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -7209,6 +7701,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -7375,6 +7873,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -7487,6 +7991,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -7558,6 +8068,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -7638,6 +8154,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -7703,6 +8225,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -7868,6 +8396,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -7934,6 +8468,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -8161,6 +8701,70 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/api.QuotaCapacityHistoryResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/quota/{authIndex}/subscription-cycle": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return recorded usage across the current and previous subscription billing periods plus a pace-based full-cycle projection.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Quota"
+        ],
+        "summary": "Get credential subscription-cycle usage",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Credential runtime auth_index",
+            "name": "authIndex",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.QuotaSubscriptionCycleResponseDTO"
             }
           },
           "400": {
@@ -8440,6 +9044,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -8747,6 +9357,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -8863,6 +9479,12 @@
           },
           "404": {
             "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -8984,6 +9606,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -9154,6 +9782,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "422": {
             "description": "Unprocessable Entity",
             "schema": {
@@ -9254,6 +9888,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -9602,6 +10242,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -9728,6 +10374,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "422": {
             "description": "Unprocessable Entity",
             "schema": {
@@ -9812,6 +10464,12 @@
           },
           "409": {
             "description": "Conflict",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -10223,6 +10881,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
@@ -10268,6 +10932,407 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/trends/quota": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return observed quota cycles, physical consumption and bounded forecasts for enabled OAuth credentials.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Trends"
+        ],
+        "summary": "Query credential quota trends",
+        "parameters": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Provider filter",
+            "name": "provider",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Credential filter",
+            "name": "auth_index",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.TrendsQuotaResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/trends/telemetry": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return retained TPS and latency samples, stability, and model substitutions on the deployment's time grid.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Trends"
+        ],
+        "summary": "Query request telemetry trends",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Insights time preset",
+            "name": "preset",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Custom start timestamp in Unix milliseconds",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Inclusive end timestamp in Unix milliseconds",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "auto",
+              "hour",
+              "day",
+              "week",
+              "month"
+            ],
+            "type": "string",
+            "description": "Time grid",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "call_point",
+              "model",
+              "provider",
+              "credential"
+            ],
+            "type": "string",
+            "default": "model",
+            "description": "Grouping dimension",
+            "name": "group_by",
+            "in": "query"
+          },
+          {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer",
+            "default": 5,
+            "description": "Maximum group series (1–8)",
+            "name": "top",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Client key filter",
+            "name": "api_key",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Model filter",
+            "name": "model",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Call point filter",
+            "name": "model_alias",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Provider filter",
+            "name": "provider",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Credential filter",
+            "name": "auth_index",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Client program filter",
+            "name": "client_agent",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.TrendsTelemetryResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      }
+    },
+    "/v1/management/trends/usage": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return cumulative and grouped usage, comparison overlays, and significant changes against a robust prior-period baseline.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Trends"
+        ],
+        "summary": "Query usage trends",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Insights time preset",
+            "name": "preset",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Custom start timestamp in Unix milliseconds",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Inclusive end timestamp in Unix milliseconds",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "auto",
+              "hour",
+              "day",
+              "week",
+              "month"
+            ],
+            "type": "string",
+            "description": "Time grid",
+            "name": "bucket",
+            "in": "query"
+          },
+          {
+            "enum": [
+              "call_point",
+              "model",
+              "client_agent",
+              "key",
+              "provider",
+              "credential"
+            ],
+            "type": "string",
+            "default": "model",
+            "description": "Grouping dimension",
+            "name": "group_by",
+            "in": "query"
+          },
+          {
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer",
+            "default": 5,
+            "description": "Maximum group series before folding (1–10)",
+            "name": "top",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Client key filter",
+            "name": "api_key",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Model filter",
+            "name": "model",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Call point filter",
+            "name": "model_alias",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Provider filter",
+            "name": "provider",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Credential filter",
+            "name": "auth_index",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Client program filter",
+            "name": "client_agent",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.TrendsUsageResponseDTO"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -11512,6 +12577,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -11693,6 +12764,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -11869,6 +12946,12 @@
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
           },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "schema": {
@@ -11985,6 +13068,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -12143,6 +13232,41 @@
       }
     },
     "/v1/pricing/sync-schedule": {
+      "get": {
+        "security": [
+          {
+            "CookieAuth": []
+          }
+        ],
+        "description": "Return the configured automatic OpenRouter pricing refresh interval in hours and sync state.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "Get pricing auto-sync schedule",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/api.PricingSyncScheduleResponseDTO"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          }
+        }
+      },
       "put": {
         "security": [
           {
@@ -12186,6 +13310,12 @@
           },
           "401": {
             "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
@@ -12304,6 +13434,12 @@
             "schema": {
               "$ref": "#/definitions/api.ErrorResponseDTO"
             }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "schema": {
+              "$ref": "#/definitions/api.ErrorResponseDTO"
+            }
           }
         }
       }
@@ -12385,6 +13521,19 @@
             "in": "query"
           },
           {
+            "enum": [
+              "rate_limited_429",
+              "upstream_5xx",
+              "stream_truncated",
+              "force_cooldown",
+              "other_failures"
+            ],
+            "type": "string",
+            "description": "Failure category filter",
+            "name": "failure",
+            "in": "query"
+          },
+          {
             "type": "string",
             "description": "Keyset pagination cursor",
             "name": "cursor",
@@ -12416,6 +13565,16 @@
             "collectionFormat": "multi",
             "description": "Upstream model filters",
             "name": "model",
+            "in": "query"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi",
+            "description": "Upstream served model filters",
+            "name": "response_model",
             "in": "query"
           },
           {
@@ -14252,6 +15411,46 @@
         }
       }
     },
+    "api.GitHubTokenStatusDTO": {
+      "type": "object",
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "cpa_revision": {
+          "type": "string"
+        },
+        "masked_token": {
+          "type": "string"
+        }
+      }
+    },
+    "api.GitHubTokenTestResponseDTO": {
+      "type": "object",
+      "properties": {
+        "authenticated": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "remaining": {
+          "type": "integer"
+        },
+        "reset_at_ms": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "used": {
+          "type": "integer"
+        }
+      }
+    },
     "api.HealthzResponseDTO": {
       "type": "object",
       "properties": {
@@ -14821,6 +16020,61 @@
         },
         "provider": {
           "type": "string"
+        }
+      }
+    },
+    "api.OAuthRequestScopedErrorsPatchRequestDTO": {
+      "type": "object",
+      "required": [
+        "provider",
+        "rules"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.ProviderErrorRuleDTO"
+          }
+        }
+      }
+    },
+    "api.OAuthRequestScopedErrorsPatchResponseDTO": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.ProviderErrorRuleDTO"
+          }
+        },
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.OAuthRequestScopedErrorsResponseDTO": {
+      "type": "object",
+      "properties": {
+        "request_scoped_errors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/api.ProviderErrorRuleDTO"
+            }
+          }
+        },
+        "version": {
+          "type": "integer"
         }
       }
     },
@@ -15396,7 +16650,7 @@
           "type": "boolean"
         },
         "state": {
-          "$ref": "#/definitions/pricing.SyncState"
+          "$ref": "#/definitions/api.PricingSyncStateDTO"
         }
       }
     },
@@ -15405,6 +16659,35 @@
       "properties": {
         "started": {
           "type": "boolean"
+        }
+      }
+    },
+    "api.PricingSyncStateDTO": {
+      "type": "object",
+      "properties": {
+        "auto_sync_interval_hours": {
+          "type": "integer"
+        },
+        "has_failed": {
+          "type": "boolean"
+        },
+        "last_matched": {
+          "type": "integer"
+        },
+        "last_success_at_ms": {
+          "type": "integer"
+        },
+        "last_unmatched": {
+          "type": "integer"
+        },
+        "next_sync_at_ms": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "updated_at_ms": {
+          "type": "integer"
         }
       }
     },
@@ -16045,6 +17328,29 @@
         }
       }
     },
+    "api.QuotaSubscriptionCycleResponseDTO": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "$ref": "#/definitions/api.subscriptionCyclePeriodDTO"
+        },
+        "plan_label": {
+          "type": "string"
+        },
+        "previous": {
+          "$ref": "#/definitions/api.subscriptionCyclePeriodDTO"
+        },
+        "projection": {
+          "$ref": "#/definitions/quota.WindowCapacity"
+        },
+        "projection_unavailable": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
     "api.RequestErrorLogsResponseDTO": {
       "type": "object",
       "properties": {
@@ -16183,6 +17489,15 @@
             "type": "array",
             "items": {
               "$ref": "#/definitions/api.managementOAuthModelAlias"
+            }
+          }
+        },
+        "oauth_request_scoped_errors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/api.ProviderErrorRuleDTO"
             }
           }
         },
@@ -16566,6 +17881,10 @@
         },
         "latency_ms": {
           "type": "integer"
+        },
+        "server_id": {
+          "description": "ServerID is CPA's deployment UUID (distinct from any Home node ID),\nomitted when the gateway is offline or predates CPA v8.1.0.",
+          "type": "string"
         },
         "status": {
           "type": "string"
@@ -17111,6 +18430,1066 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "api.TrendsFailureGroupDTO": {
+      "type": "object",
+      "properties": {
+        "auth_index": {
+          "type": "string"
+        },
+        "auth_index_id": {
+          "type": "string"
+        },
+        "credential_total_requests": {
+          "type": "integer"
+        },
+        "drill_disabled": {
+          "type": "boolean"
+        },
+        "failed_requests": {
+          "type": "integer"
+        },
+        "force_cooldown": {
+          "type": "integer"
+        },
+        "last_failed_at_ms": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "model_total_requests": {
+          "type": "integer"
+        },
+        "other_failures": {
+          "type": "integer"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "provider_id": {
+          "type": "string"
+        },
+        "provider_total_requests": {
+          "type": "integer"
+        },
+        "rate_limited_429": {
+          "type": "integer"
+        },
+        "status_codes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsStatusCountDTO"
+          }
+        },
+        "stream_truncated": {
+          "type": "integer"
+        },
+        "total_requests": {
+          "type": "integer"
+        },
+        "upstream_5xx": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsMoverItemDTO": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "baseline_net_tokens": {
+          "type": "integer"
+        },
+        "baseline_requests": {
+          "type": "integer"
+        },
+        "delta_net_tokens": {
+          "type": "integer"
+        },
+        "delta_percent": {
+          "type": "number"
+        },
+        "delta_requests": {
+          "type": "integer"
+        },
+        "filter_disabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mask": {
+          "type": "string"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "z_score": {
+          "type": "number"
+        }
+      }
+    },
+    "api.TrendsMoversDTO": {
+      "type": "object",
+      "properties": {
+        "fallers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsMoverItemDTO"
+          }
+        },
+        "metric": {
+          "type": "string"
+        },
+        "risers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsMoverItemDTO"
+          }
+        }
+      }
+    },
+    "api.TrendsQuotaBucketDTO": {
+      "type": "object",
+      "properties": {
+        "delta_percent": {
+          "type": "number"
+        },
+        "end_ms": {
+          "type": "integer"
+        },
+        "is_forecast": {
+          "type": "boolean"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "start_ms": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        },
+        "used_percent": {
+          "type": "number"
+        }
+      }
+    },
+    "api.TrendsQuotaCredentialDTO": {
+      "type": "object",
+      "properties": {
+        "account_label": {
+          "type": "string"
+        },
+        "auth_index": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "oauth_provider": {
+          "type": "string"
+        },
+        "observed_at_ms": {
+          "type": "integer"
+        },
+        "plan_tier": {
+          "type": "string"
+        },
+        "plan_type": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsQuotaWindowDTO"
+          }
+        }
+      }
+    },
+    "api.TrendsQuotaCycleHistoryDTO": {
+      "type": "object",
+      "properties": {
+        "actual_net_tokens": {
+          "type": "integer"
+        },
+        "actual_requests": {
+          "type": "integer"
+        },
+        "actual_total_tokens": {
+          "type": "integer"
+        },
+        "cycle_reset_ms": {
+          "type": "integer"
+        },
+        "cycle_start_ms": {
+          "type": "integer"
+        },
+        "full_cost_nanos": {
+          "type": "integer"
+        },
+        "full_net_tokens": {
+          "type": "integer"
+        },
+        "full_requests": {
+          "type": "integer"
+        },
+        "full_total_tokens": {
+          "type": "integer"
+        },
+        "is_approximate": {
+          "type": "boolean"
+        },
+        "is_current": {
+          "type": "boolean"
+        },
+        "used_percent": {
+          "type": "number"
+        }
+      }
+    },
+    "api.TrendsQuotaResponseDTO": {
+      "type": "object",
+      "properties": {
+        "as_of_ms": {
+          "type": "integer"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsQuotaCredentialDTO"
+          }
+        },
+        "summary": {
+          "$ref": "#/definitions/api.TrendsQuotaSummaryDTO"
+        }
+      }
+    },
+    "api.TrendsQuotaSummaryDTO": {
+      "type": "object",
+      "properties": {
+        "active_credentials": {
+          "type": "integer"
+        },
+        "healthy_windows": {
+          "type": "integer"
+        },
+        "is_membership_unknown": {
+          "type": "boolean"
+        },
+        "limit_reached_windows": {
+          "type": "integer"
+        },
+        "observable_windows": {
+          "type": "integer"
+        },
+        "projected_exhaust_windows": {
+          "type": "integer"
+        },
+        "underutilized_windows": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsQuotaWindowCapacityDTO": {
+      "type": "object",
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "cache_rate": {
+          "type": "number"
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "sample_priced_requests": {
+          "type": "integer"
+        },
+        "sample_requests": {
+          "type": "integer"
+        },
+        "tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsQuotaWindowDTO": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsQuotaBucketDTO"
+          }
+        },
+        "burn_rate_per_hour": {
+          "type": "number"
+        },
+        "capacity": {
+          "$ref": "#/definitions/api.TrendsQuotaWindowCapacityDTO"
+        },
+        "capacity_unavailable": {
+          "type": "string"
+        },
+        "current_cost_nanos": {
+          "type": "integer"
+        },
+        "current_net_tokens": {
+          "type": "integer"
+        },
+        "current_requests": {
+          "type": "integer"
+        },
+        "current_total_tokens": {
+          "type": "integer"
+        },
+        "current_usage": {
+          "$ref": "#/definitions/api.TrendsQuotaWindowUsageDTO"
+        },
+        "cycle_reset_ms": {
+          "type": "integer"
+        },
+        "cycle_start_ms": {
+          "type": "integer"
+        },
+        "cycles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsQuotaCycleHistoryDTO"
+          }
+        },
+        "exhausted_at_ms": {
+          "type": "integer"
+        },
+        "is_approximate": {
+          "type": "boolean"
+        },
+        "is_physical_unavailable": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "period_hours": {
+          "type": "number"
+        },
+        "projected_end_percent": {
+          "type": "number"
+        },
+        "projected_exhaust_at_ms": {
+          "type": "integer"
+        },
+        "remaining_percent": {
+          "type": "number"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "limit_reached",
+            "projected_exhaust",
+            "underutilized"
+          ]
+        },
+        "used_percent": {
+          "type": "number"
+        },
+        "window_id": {
+          "type": "string"
+        }
+      }
+    },
+    "api.TrendsQuotaWindowUsageDTO": {
+      "type": "object",
+      "properties": {
+        "cache_rate": {
+          "type": "number"
+        },
+        "cached_tokens": {
+          "type": "integer"
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "from_ms": {
+          "type": "integer"
+        },
+        "priced_requests": {
+          "type": "integer"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "to_ms": {
+          "type": "integer"
+        },
+        "tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsStatusCountDTO": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "count": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsSubstitutionPairDTO": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "drill_disabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "provider_id": {
+          "type": "string"
+        },
+        "requested_id": {
+          "type": "string"
+        },
+        "requested_model": {
+          "type": "string"
+        },
+        "served_id": {
+          "type": "string"
+        },
+        "served_model": {
+          "type": "string"
+        }
+      }
+    },
+    "api.TrendsTelemetryBucketDTO": {
+      "type": "object",
+      "properties": {
+        "failed_requests": {
+          "type": "integer"
+        },
+        "force_cooldown": {
+          "type": "integer"
+        },
+        "latency_p50_ms": {
+          "type": "number"
+        },
+        "latency_p95_ms": {
+          "type": "number"
+        },
+        "latency_samples": {
+          "type": "integer"
+        },
+        "model_substituted": {
+          "type": "integer"
+        },
+        "other_failures": {
+          "type": "integer"
+        },
+        "rate_limited_429": {
+          "type": "integer"
+        },
+        "start_ms": {
+          "type": "integer"
+        },
+        "stream_truncated": {
+          "type": "integer"
+        },
+        "success_requests": {
+          "type": "integer"
+        },
+        "total_requests": {
+          "type": "integer"
+        },
+        "tps_mean": {
+          "type": "number"
+        },
+        "tps_p50": {
+          "type": "number"
+        },
+        "tps_samples": {
+          "type": "integer"
+        },
+        "ttft_p50_ms": {
+          "type": "number"
+        },
+        "ttft_p95_ms": {
+          "type": "number"
+        },
+        "ttft_samples": {
+          "type": "integer"
+        },
+        "upstream_5xx": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsTelemetryCoverageDTO": {
+      "type": "object",
+      "properties": {
+        "fact_requests": {
+          "type": "integer"
+        },
+        "is_truncated_by_retention": {
+          "type": "boolean"
+        },
+        "retained_requests": {
+          "type": "integer"
+        },
+        "retention_start_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsTelemetryGroupSeriesDTO": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsTelemetryBucketDTO"
+          }
+        },
+        "failed_requests": {
+          "type": "integer"
+        },
+        "filter_disabled": {
+          "type": "boolean"
+        },
+        "force_cooldown": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "latency_p50_ms": {
+          "type": "number"
+        },
+        "latency_p95_ms": {
+          "type": "number"
+        },
+        "latency_samples": {
+          "type": "integer"
+        },
+        "mask": {
+          "type": "string"
+        },
+        "model_substituted": {
+          "type": "integer"
+        },
+        "other_failures": {
+          "type": "integer"
+        },
+        "rate_limited_429": {
+          "type": "integer"
+        },
+        "stream_truncated": {
+          "type": "integer"
+        },
+        "success_requests": {
+          "type": "integer"
+        },
+        "total_requests": {
+          "type": "integer"
+        },
+        "tps_mean": {
+          "type": "number"
+        },
+        "tps_p50": {
+          "type": "number"
+        },
+        "tps_samples": {
+          "type": "integer"
+        },
+        "ttft_p50_ms": {
+          "type": "number"
+        },
+        "ttft_p95_ms": {
+          "type": "number"
+        },
+        "ttft_samples": {
+          "type": "integer"
+        },
+        "upstream_5xx": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsTelemetryResponseDTO": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsTelemetryBucketDTO"
+          }
+        },
+        "coverage": {
+          "$ref": "#/definitions/api.TrendsTelemetryCoverageDTO"
+        },
+        "failure_groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsFailureGroupDTO"
+          }
+        },
+        "failure_groups_truncated": {
+          "type": "boolean"
+        },
+        "group_by": {
+          "type": "string"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.trendsGroupName"
+          }
+        },
+        "scatter": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsTelemetryScatterPointDTO"
+          }
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsTelemetryGroupSeriesDTO"
+          }
+        },
+        "substitution_pairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsSubstitutionPairDTO"
+          }
+        },
+        "summary": {
+          "$ref": "#/definitions/api.TrendsTelemetrySummaryDTO"
+        },
+        "tps_mode": {
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/definitions/api.insightsWindow"
+        }
+      }
+    },
+    "api.TrendsTelemetryScatterPointDTO": {
+      "type": "object",
+      "properties": {
+        "failed": {
+          "type": "boolean"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "latency_ms": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "model_substituted": {
+          "type": "boolean"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "timestamp_ms": {
+          "type": "integer"
+        },
+        "tps": {
+          "type": "number"
+        },
+        "ttft_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsTelemetrySummaryDTO": {
+      "type": "object",
+      "properties": {
+        "failed_requests": {
+          "type": "integer"
+        },
+        "force_cooldown": {
+          "type": "integer"
+        },
+        "latency_p50_ms": {
+          "type": "number"
+        },
+        "latency_p95_ms": {
+          "type": "number"
+        },
+        "latency_samples": {
+          "type": "integer"
+        },
+        "model_substituted": {
+          "type": "integer"
+        },
+        "other_failures": {
+          "type": "integer"
+        },
+        "rate_limited_429": {
+          "type": "integer"
+        },
+        "stream_truncated": {
+          "type": "integer"
+        },
+        "success_requests": {
+          "type": "integer"
+        },
+        "total_requests": {
+          "type": "integer"
+        },
+        "tps_mean": {
+          "type": "number"
+        },
+        "tps_p50": {
+          "type": "number"
+        },
+        "tps_samples": {
+          "type": "integer"
+        },
+        "ttft_p50_ms": {
+          "type": "number"
+        },
+        "ttft_p95_ms": {
+          "type": "number"
+        },
+        "ttft_samples": {
+          "type": "integer"
+        },
+        "upstream_5xx": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageBucketDTO": {
+      "type": "object",
+      "properties": {
+        "cache_rate": {
+          "type": "number"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "compare_cum_net_tokens": {
+          "type": "integer"
+        },
+        "compare_cum_requests": {
+          "type": "integer"
+        },
+        "compare_cum_total_tokens": {
+          "type": "integer"
+        },
+        "compare_net_tokens": {
+          "type": "integer"
+        },
+        "compare_requests": {
+          "type": "integer"
+        },
+        "compare_total_tokens": {
+          "type": "integer"
+        },
+        "completion_tokens": {
+          "type": "integer"
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "cum_cost_nanos": {
+          "type": "integer"
+        },
+        "cum_net_tokens": {
+          "type": "integer"
+        },
+        "cum_requests": {
+          "type": "integer"
+        },
+        "cum_total_tokens": {
+          "type": "integer"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "reasoning_share": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "start_ms": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageCompareTotalsDTO": {
+      "type": "object",
+      "properties": {
+        "baseline_cost_nanos": {
+          "type": "integer"
+        },
+        "baseline_net_tokens": {
+          "type": "integer"
+        },
+        "baseline_requests": {
+          "type": "integer"
+        },
+        "baseline_total_tokens": {
+          "type": "integer"
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageGroupBucketDTO": {
+      "type": "object",
+      "properties": {
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "start_ms": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageGroupOptionDTO": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "filter_disabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mask": {
+          "type": "string"
+        },
+        "requests": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageGroupSeriesDTO": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsUsageGroupBucketDTO"
+          }
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "filter_disabled": {
+          "type": "boolean"
+        },
+        "folded": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mask": {
+          "type": "string"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
+        }
+      }
+    },
+    "api.TrendsUsageResponseDTO": {
+      "type": "object",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsUsageBucketDTO"
+          }
+        },
+        "compare_totals": {
+          "$ref": "#/definitions/api.TrendsUsageCompareTotalsDTO"
+        },
+        "compare_window": {
+          "$ref": "#/definitions/api.insightsCompareWindow"
+        },
+        "coverage": {
+          "$ref": "#/definitions/api.insightsCoverage"
+        },
+        "group_by": {
+          "type": "string"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsUsageGroupOptionDTO"
+          }
+        },
+        "movers": {
+          "$ref": "#/definitions/api.TrendsMoversDTO"
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/api.TrendsUsageGroupSeriesDTO"
+          }
+        },
+        "totals": {
+          "$ref": "#/definitions/api.TrendsUsageTotalsDTO"
+        },
+        "window": {
+          "$ref": "#/definitions/api.insightsWindow"
+        }
+      }
+    },
+    "api.TrendsUsageTotalsDTO": {
+      "type": "object",
+      "properties": {
+        "cache_creation_tokens": {
+          "type": "integer"
+        },
+        "cache_rate": {
+          "type": "number"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "completion_tokens": {
+          "type": "integer"
+        },
+        "cost_nanos": {
+          "type": "integer"
+        },
+        "costed_requests": {
+          "type": "integer"
+        },
+        "failures": {
+          "type": "integer"
+        },
+        "net_tokens": {
+          "type": "integer"
+        },
+        "priced_requests": {
+          "type": "integer"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "reasoning_share": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "total_tokens": {
+          "type": "integer"
         }
       }
     },
@@ -18438,6 +20817,25 @@
         },
         "updated_at_ms": {
           "type": "integer"
+        }
+      }
+    },
+    "api.gitHubTokenInput": {
+      "type": "object",
+      "properties": {
+        "cpa_revision": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "api.gitHubTokenTestInput": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
         }
       }
     },
@@ -20685,6 +23083,30 @@
         }
       }
     },
+    "api.subscriptionCyclePeriodDTO": {
+      "type": "object",
+      "properties": {
+        "elapsed_percent": {
+          "type": "number"
+        },
+        "from_ms": {
+          "type": "integer"
+        },
+        "measured_at_ms": {
+          "type": "integer"
+        },
+        "to_ms": {
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/definitions/quota.WindowUsage"
+        },
+        "widened": {
+          "description": "Widened reports that request records behind the retention horizon could not\nsplit an edge bucket, so usage was read across whole 15-minute fact buckets\nnamed by usage.from_ms and usage.to_ms.",
+          "type": "boolean"
+        }
+      }
+    },
     "api.systemMaintenanceActionDTO": {
       "type": "object",
       "properties": {
@@ -20753,6 +23175,26 @@
         },
         "x_users_fetched": {
           "type": "integer"
+        }
+      }
+    },
+    "api.trendsGroupName": {
+      "type": "object",
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "filter_disabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mask": {
+          "type": "string"
         }
       }
     },
@@ -21874,6 +24316,10 @@
         "plan_type": {
           "description": "e.g. \"pro\", \"plus\", \"ultra\", \"team\", \"free\"",
           "type": "string"
+        },
+        "starts_at_ms": {
+          "description": "epoch ms",
+          "type": "integer"
         },
         "subscription_active": {
           "type": "boolean"

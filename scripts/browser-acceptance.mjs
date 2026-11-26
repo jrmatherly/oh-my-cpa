@@ -50,6 +50,7 @@ const executable = configuredExecutable
   : path.join(temporary, process.platform === 'win32' ? 'oh-my-cpa.exe' : 'oh-my-cpa');
 const configuredSeeder = process.env.OMCPA_SEED_USAGE_BINARY?.trim();
 const appLog = [];
+const appStderr = [];
 const { check, checkEventually, checks, failures } = createChecker();
 let appProcess;
 let browser;
@@ -127,6 +128,10 @@ async function waitFor(url, timeoutMs = 30000) {
 async function auditRoutes(page, responseBodies, routes) {
   for (const [route, selector, options] of routes) {
     await page.goto(`${appURL}${route}`, { waitUntil: 'domcontentloaded' });
+    // Wait past ShellLoading and match a settled page selector rather than outer layout
+    // wrappers shared with route skeletons (.dashboard-page, .logs-page, .plugins-page,
+    // .config-page, .omc-settings-page, .system-page).
+    await page.locator('.app-shell:not(.shell-loading)').waitFor({ state: 'visible', timeout: 15000 });
     await page.locator(selector).first().waitFor({ state: 'visible', timeout: 15000 });
     // The route's loading skeleton carries the same marker and no text, so wait for the page itself;
     // a route that never draws text still fails the check below.
@@ -265,7 +270,11 @@ try {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   appProcess.stdout.on('data', (chunk) => appLog.push(chunk.toString()));
-  appProcess.stderr.on('data', (chunk) => appLog.push(chunk.toString()));
+  appProcess.stderr.on('data', (chunk) => {
+    const text = chunk.toString();
+    appLog.push(text);
+    appStderr.push(text);
+  });
   appProcess.once('exit', (code) => {
     if (code !== null && code !== 0) appLog.push(`app exited with ${code}`);
   });
@@ -279,6 +288,7 @@ try {
   if (identity.version !== fixtureVersion) throw new Error('Acceptance port is served by an unrelated process');
   cancellation.signal.throwIfAborted();
   const redirect = await fetch(appURL, { redirect: 'manual', signal: cancellation.signal });
+  check('startup prints build info banner on stderr', appStderr.join('').includes(`Oh My CPA Version: ${fixtureVersion}, Commit: `));
   check('fixture startup ignores operator dotenv files', !appLog.join('').includes('loaded environment file'));
   check('/omc redirects to /omc/', redirect.status === 308 && redirect.headers.get('location') === '/omc/', `status=${redirect.status}`);
 
@@ -335,12 +345,13 @@ try {
   check('invalid sign-in is rejected', await page.locator('.auth-alert').isVisible());
   await page.locator('input[type="password"]').fill(FAKE_CPA_MANAGEMENT_KEY);
   await page.locator('button[type="submit"]').click();
-  await page.locator('.app-shell').waitFor({ state: 'visible', timeout: 15000 });
-  check('valid sign-in creates an administrator session', await page.locator('.app-shell').isVisible());
+  await page.locator('.app-shell:not(.shell-loading)').waitFor({ state: 'visible', timeout: 15000 });
+  check('valid sign-in creates an administrator session', await page.locator('.app-shell:not(.shell-loading)').isVisible());
 
   const withProviderSecrets = { pageSecrets: providerSecrets };
   await auditRoutes(page, responseBodies, [
-    ['/dashboard', '.dashboard-page', withProviderSecrets],
+    ['/dashboard', '.dashboard-page .tile-head', withProviderSecrets],
+    ['/trends', '[data-testid="trends-page"]:has([data-testid="trends-quota"]:not([aria-busy])):has([data-testid="trends-mover"]) [data-testid="trends-lane-other_failures"]', withProviderSecrets],
     ['/agent', '[data-testid="agent-page"]', withProviderSecrets],
     ['/playground', '[data-testid="playground-empty"]', withProviderSecrets],
     ['/model-square', '.model-square-page [data-model-identity]', withProviderSecrets],
@@ -351,14 +362,14 @@ try {
     ['/routing', '[data-testid="routing-page"] [data-member]', withProviderSecrets],
     ['/usage/events', '.usage-events-page', withProviderSecrets],
     ['/pricing', '[data-testid="pricing-page"]', withProviderSecrets],
-    ['/logs', '.logs-page', withProviderSecrets],
+    ['/logs', '.logs-page .log-line', withProviderSecrets],
     ['/audit', '[data-testid="audit-page"]', withProviderSecrets],
-    ['/plugins', '.plugins-page', withProviderSecrets],
+    ['/plugins', '.plugins-page [data-plugin-panel="installed"]', withProviderSecrets],
     ['/plugins/store', '[data-plugin-panel="store"]', withProviderSecrets],
     ['/plugins/settings', '[data-plugin-panel="settings"]', withProviderSecrets],
-    ['/config', '.config-page'],
-    ['/omc-settings', '.omc-settings-page', withProviderSecrets],
-    ['/system', '.system-page', withProviderSecrets],
+    ['/config', '.config-page .config-workbench'],
+    ['/omc-settings', '.omc-settings-page .terminal-title', withProviderSecrets],
+    ['/system', '.system-page [data-testid="sys-card-versions"]', withProviderSecrets],
     // Retired paths still land on the page that replaced them.
     ['/oauth', '.oauth-management-page', withProviderSecrets],
     ['/quota', '.oauth-management-page', withProviderSecrets],

@@ -30,12 +30,14 @@ test('dashboard providers', () => {
   assert.equal(isOAuthChannel('codex'), true);
   assert.equal(isOAuthChannel('meta'), true);
   assert.equal(isOAuthChannel('devin'), true);
+  assert.equal(isOAuthChannel('copilot'), true);
   assert.equal(isOAuthChannel('antigravity'), true);
   assert.equal(isOAuthChannel('codebuddy'), true);
   assert.equal(isOAuthChannel('cline'), false);
   assert.equal(resolveChannelName('codex'), 'Codex');
   assert.equal(resolveChannelName('meta'), 'Meta');
   assert.equal(resolveChannelName('devin'), 'Devin');
+  assert.equal(resolveChannelName('copilot'), 'GitHub Copilot');
   assert.equal(resolveChannelName('codebuddy'), 'Codebuddy');
   assert.equal(normalizeProviderKey('openai-compatible-cline'), 'cline');
   assert.equal(normalizeProviderKey('DeepSeek V3'), 'deepseekv3');
@@ -44,11 +46,11 @@ test('dashboard providers', () => {
   // Test 2: Exact fixture from user screenshot
   // cline (1,894), inception (1,108), antigravity (664), codebuddy (127), codex (4)
   const mockOverviewProviders: ManagementOverviewProvider[] = [
-    { id: 'cline', credentials: 1, success: 1876, failure: 18, total: 1894, success_rate: 99.05 },
-    { id: 'inception', credentials: 1, success: 1104, failure: 4, total: 1108, success_rate: 99.64 },
-    { id: 'antigravity', credentials: 2, success: 663, failure: 1, total: 664, success_rate: 99.85 },
-    { id: 'codebuddy', credentials: 1, success: 77, failure: 50, total: 127, success_rate: 60.63 },
-    { id: 'codex', credentials: 2, success: 0, failure: 4, total: 4, success_rate: 0.0 },
+    { id: 'cline', credentials: 1, success: 1876, failure: 18, total: 1894, success_rate: 99.05, buckets: [] },
+    { id: 'inception', credentials: 1, success: 1104, failure: 4, total: 1108, success_rate: 99.64, buckets: [] },
+    { id: 'antigravity', credentials: 2, success: 663, failure: 1, total: 664, success_rate: 99.85, buckets: [] },
+    { id: 'codebuddy', credentials: 1, success: 77, failure: 50, total: 127, success_rate: 60.63, buckets: [] },
+    { id: 'codex', credentials: 2, success: 0, failure: 4, total: 4, success_rate: 0.0, buckets: [] },
   ];
 
   const mockConfiguredProviders: ProviderItem[] = [
@@ -174,7 +176,7 @@ test('dashboard providers', () => {
   const withDeletedChannelTraffic = aggregateProviders({
     overviewProviders: [
       // Deleted provider with credentials = 0
-      { id: 'deleted-old-channel', credentials: 0, success: 10, failure: 0, total: 10, success_rate: 100 },
+      { id: 'deleted-old-channel', credentials: 0, success: 10, failure: 0, total: 10, success_rate: 100, buckets: [] },
     ],
     windowProviders: [
       // Historical traffic for a provider that was deleted from CPA config
@@ -338,9 +340,9 @@ test('dashboard providers', () => {
   // title for a provider it registers, the brand table otherwise - never the capitalized key.
   const namedChannels = aggregateProviders({
     authFilesByType: [
-      { type: 'deepseek', count: 1 },
-      { type: 'minimax', count: 1 },
-      { type: 'opencode-go', count: 1 },
+      { type: 'deepseek', count: 1, disabled: 0 },
+      { type: 'minimax', count: 1, disabled: 0 },
+      { type: 'opencode-go', count: 1, disabled: 0 },
     ],
     pluginOAuthIds: new Set(['deepseek', 'minimax', 'opencode-go']),
     pluginTitles: new Map([['opencode-go', 'OpenCode Go']]),
@@ -601,7 +603,7 @@ test('dashboard providers', () => {
   // Both halves come from one response because `credentials[]` is the part of the label rows the server
   // split out; taking the keys alone would count those requests twice.
   const keysWithoutLabels = aggregateProviders({
-    overviewProviders: [{ id: 'codex', credentials: 2, success: 5, failure: 2, total: 7, success_rate: 71.4 }],
+    overviewProviders: [{ id: 'codex', credentials: 2, success: 5, failure: 2, total: 7, success_rate: 71.4, buckets: [] }],
     windowCredentials: [{ auth_index: 'key-a', total: 3, failure: 1 }],
     configuredProviders: [codexFamilyRow('codex-0', 'Codex', 'key-a')],
   });
@@ -1078,4 +1080,15 @@ test('dashboard cost tile caption across estimated, partial and placeholder wind
     ),
     { kind: 'placeholder', showUnpricedLink: false },
   );
+
+  // GitHub Copilot overview traffic aggregates as a first-party OAuth channel with GithubCopilot mark.
+  const copilotAgg = aggregateProviders({
+    overviewProviders: [{ id: 'copilot', credentials: 1, success: 18, failure: 2, total: 20, success_rate: 90, buckets: [] }],
+    configuredProviders: [],
+  });
+  assert.equal(copilotAgg.length, 1);
+  assert.equal(copilotAgg[0].kind, 'oauth');
+  assert.equal(copilotAgg[0].name, 'GitHub Copilot');
+  assert.equal(copilotAgg[0].iconId, 'GithubCopilot');
+  assert.equal(copilotAgg[0].protocol, 'GitHub Copilot (OAuth)');
 });

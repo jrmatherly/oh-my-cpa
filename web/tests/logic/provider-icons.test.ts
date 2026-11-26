@@ -16,6 +16,7 @@ import {
   pluginOAuthProviderIds,
   pluginOAuthProviderKeys,
   pluginOAuthProviderLogos,
+  pluginOAuthProviderTitles,
   pluginMultiPortalKeys,
 } from '../../src/types/pluginOAuthProviders.ts';
 import { resolveProviderMark, resolveProviderPickerIcon, resolveCredentialMark, resolveMarkArtworks } from '../../src/types/brandMark';
@@ -60,6 +61,7 @@ test('every built-in OAuth provider reaches a brand mark that ships in the bundl
 test('the named credential rows carry the mark of the provider they name', () => {
   assert.deepEqual(getCredentialProviderMetadata('devin'), { id: 'devin', label: 'Devin', iconId: 'Devin' });
   assert.deepEqual(getCredentialProviderMetadata('meta'), { id: 'meta', label: 'Meta', iconId: 'Meta' });
+  assert.deepEqual(getCredentialProviderMetadata('copilot'), { id: 'copilot', label: 'GitHub Copilot', iconId: 'GithubCopilot' });
   // The CodeBuddy plugin declares `codebuddy` as its provider key; a build that
   // keeps the plugin's own id has to reach the same row.
   assert.equal(getCredentialProviderMetadata('codebuddy').iconId, 'CodeBuddy');
@@ -68,7 +70,30 @@ test('the named credential rows carry the mark of the provider they name', () =>
   // Case and padding are not part of the key.
   assert.equal(getCredentialProviderMetadata('DEViN').iconId, 'Devin');
   assert.equal(getCredentialProviderMetadata('  meta ').iconId, 'Meta');
+  assert.equal(getCredentialProviderMetadata(' COPILOT ').iconId, 'GithubCopilot');
   assert.equal(getCredentialProviderMetadata('not-a-brand').iconId, '');
+});
+
+test('GitHub Copilot resolves strictly to GithubCopilot rather than Microsoft Copilot and stays reserved for plugins', () => {
+  assert.equal(providerIconId('copilot'), 'GithubCopilot');
+  assert.equal(providerIconId('github-copilot'), 'GithubCopilot');
+  assert.equal(resolveProviderIcon('copilot'), 'GithubCopilot');
+  assert.equal(credentialProviderIconId('copilot'), 'GithubCopilot');
+  assert.equal(iconIdIsRenderable('GithubCopilot'), true);
+  assert.deepEqual(
+    resolveMarkArtworks({ iconId: 'GithubCopilot' }, { baseURL: '/omc/', customIconURL: () => '', customIcons: [] }),
+    [{ url: '/omc/lobe-icons/githubcopilot.svg', isMono: true }],
+  );
+  // A community plugin declaring a Copilot portal cannot rename the built-in GitHub Copilot brand,
+  // and Copilot itself is registered as a built-in device sign-in flow.
+  const customPlugin: PluginItem = { id: 'custom-copilot', configured: true, registered: true, enabled: true, effective_enabled: true, config_fields: [], metadata: { name: 'Custom' }, supports_oauth: true, oauth_provider: 'copilot' };
+  assert.deepEqual(pluginOAuthProviderIds(customPlugin), ['copilot']);
+  assert.equal(pluginOAuthProviderTitles([customPlugin]).has('copilot'), false);
+  const copilotBuiltin = BUILTIN_OAUTH_PROVIDERS.find((provider) => provider.id === 'copilot');
+  assert.deepEqual(
+    copilotBuiltin ? { id: copilotBuiltin.id, iconId: copilotBuiltin.iconId, flow: copilotBuiltin.flow } : undefined,
+    { id: 'copilot', iconId: 'GithubCopilot', flow: 'device' },
+  );
 });
 
 test('a provider the table has not named still resolves through the icon catalog', () => {
@@ -87,26 +112,34 @@ test('an unknown provider is left unbranded rather than given somebody else\'s m
   assert.equal(credentialProviderIconId('zzz-not-a-brand', 'zzz-not-a-brand'), '');
 });
 
+const makePlugin = (overrides: Partial<PluginItem> & Pick<PluginItem, 'id'>): PluginItem => ({
+  configured: true,
+  registered: true,
+  enabled: true,
+  effective_enabled: overrides.enabled ?? true,
+  config_fields: [],
+  ...overrides,
+});
+
 test('pluginOAuthProviderLogos: a plugin logo is keyed by both the provider key and the plugin id', () => {
   const logos = pluginOAuthProviderLogos([
-    {
+    makePlugin({
       id: 'codebuddy',
-      name: 'CodeBuddy',
+      metadata: { name: 'CodeBuddy' },
       enabled: true,
       effective_enabled: true,
       supports_oauth: true,
       oauth_provider: 'CodeBuddy',
       oauth_providers: ['CodeBuddy', ' CodeBuddy-Secondary ', 'CodeBuddy-Secondary'],
       logo: INLINE_LOGO,
-    },
-    {
+    }),
+    makePlugin({
       id: 'store-plugin-2',
-      name: 'Second',
       enabled: true,
       supports_oauth: true,
       oauth_provider: 'second',
-      metadata: { logo: 'data:image/svg+xml,%3Csvg/%3E' },
-    },
+      metadata: { name: 'Second', logo: 'data:image/svg+xml,%3Csvg/%3E' },
+    }),
   ]);
 
   // Spread into a plain object: the map itself has no prototype (the keys come from
@@ -120,14 +153,14 @@ test('pluginOAuthProviderLogos: a plugin logo is keyed by both the provider key 
 });
 
 test('pluginOAuthProviderLogos: only an enabled OAuth plugin with a usable logo contributes', () => {
-  const base: PluginItem = {
+  const base: PluginItem = makePlugin({
     id: 'example',
-    name: 'Example',
+    metadata: { name: 'Example' },
     enabled: true,
     supports_oauth: true,
     oauth_provider: 'example',
     logo: INLINE_LOGO,
-  };
+  });
 
   // Disabling a plugin does not delete the credentials it registered, and those keep
   // appearing with the provider they belong to - so the mark stays available. Excluding a
@@ -179,7 +212,7 @@ test('pluginOAuthProviderLogos: a provider key that shadows Object.prototype sti
   // lookup that read `constructor` off the prototype would answer with a function
   // and silently drop the plugin's own mark.
   const logos = pluginOAuthProviderLogos([
-    { id: 'shadow', name: 'Shadow', enabled: true, supports_oauth: true, oauth_provider: 'constructor', logo: INLINE_LOGO },
+    makePlugin({ id: 'shadow', metadata: { name: 'Shadow' }, enabled: true, supports_oauth: true, oauth_provider: 'constructor', logo: INLINE_LOGO }),
   ]);
   assert.equal(pluginOAuthLogoFor(logos, 'constructor'), INLINE_LOGO);
   assert.equal(pluginOAuthLogoFor(logos, 'toString'), undefined);
@@ -193,23 +226,23 @@ test('pluginOAuthProviderLogos: OAuth capability and a provider key are each eno
   // exactly those plugins, leaving a provider tab with no brand while the plugin
   // publishes one.
   const byId = pluginOAuthProviderLogos([
-    { id: 'idkeyed', name: 'Id keyed', enabled: true, supports_oauth: true, logo: INLINE_LOGO },
+    makePlugin({ id: 'idkeyed', metadata: { name: 'Id keyed' }, enabled: true, supports_oauth: true, logo: INLINE_LOGO }),
   ]);
   assert.equal(pluginOAuthLogoFor(byId, 'idkeyed'), INLINE_LOGO);
 
   const byKey = pluginOAuthProviderLogos([
-    { id: 'other', name: 'Other', enabled: true, oauth_provider: 'keyed', logo: INLINE_LOGO },
+    makePlugin({ id: 'other', metadata: { name: 'Other' }, enabled: true, oauth_provider: 'keyed', logo: INLINE_LOGO }),
   ]);
   assert.equal(pluginOAuthLogoFor(byKey, 'keyed'), INLINE_LOGO);
 
   // Neither declaration means no provider of its own, so no logo either.
-  assert.deepEqual({ ...pluginOAuthProviderLogos([{ id: 'plain', name: 'Plain', enabled: true, logo: INLINE_LOGO }]) }, {});
+  assert.deepEqual({ ...pluginOAuthProviderLogos([makePlugin({ id: 'plain', metadata: { name: 'Plain' }, enabled: true, logo: INLINE_LOGO })]) }, {});
 });
 
 test('pluginOAuthProviderEntryTexts: display text is keyed by the declared portal, never guessed', () => {
   const portalLogo = 'data:image/svg+xml,%3Csvg%20id%3D%22bigmodel%22/%3E';
   const entries = pluginOAuthProviderEntryTexts([
-    {
+    makePlugin({
       id: 'zcode', enabled: true, effective_enabled: true, supports_oauth: true,
       oauth_providers: ['zcode-zai', ' ZCode-BigModel '],
       oauth_provider_entries: [
@@ -220,7 +253,7 @@ test('pluginOAuthProviderEntryTexts: display text is keyed by the declared porta
         // Neither a name nor usable artwork says nothing about the portal.
         { identifier: 'zcode-zai', name: '   ', logo: 'https://cdn.example.test/zai.svg' },
       ],
-    },
+    }),
   ]);
   // The identifier is an upstream key and is normalized; the name keeps the case the
   // plugin wrote. A duplicate declaration does not replace the first answer.
@@ -229,7 +262,7 @@ test('pluginOAuthProviderEntryTexts: display text is keyed by the declared porta
     'zcode-bigmodel': { name: 'BigModel', logo: portalLogo },
   });
   assert.deepEqual({ ...pluginOAuthProviderEntryTexts(undefined) }, {});
-  assert.deepEqual({ ...pluginOAuthProviderEntryTexts([{ id: 'legacy', supports_oauth: true, oauth_provider: 'legacy', oauth_provider_entries: [{ identifier: 'legacy', name: 'Legacy' }] }]) }, {
+  assert.deepEqual({ ...pluginOAuthProviderEntryTexts([makePlugin({ id: 'legacy', supports_oauth: true, oauth_provider: 'legacy', oauth_provider_entries: [{ identifier: 'legacy', name: 'Legacy' }] })]) }, {
     legacy: { name: 'Legacy' },
   });
 });
@@ -237,7 +270,7 @@ test('pluginOAuthProviderEntryTexts: display text is keyed by the declared porta
 test('pluginOAuthProviderLogos: a portal mark wins for its own key, the plugin mark fills the rest', () => {
   const portalLogo = 'data:image/svg+xml,%3Csvg%20id%3D%22bigmodel%22/%3E';
   const logos = pluginOAuthProviderLogos([
-    {
+    makePlugin({
       id: 'zcode', enabled: true, effective_enabled: true, supports_oauth: true,
       oauth_providers: ['zcode-zai', 'zcode-bigmodel'],
       logo: INLINE_LOGO,
@@ -245,7 +278,7 @@ test('pluginOAuthProviderLogos: a portal mark wins for its own key, the plugin m
         { identifier: 'zcode-zai', name: 'Z.ai', logo: INLINE_LOGO },
         { identifier: 'zcode-bigmodel', name: 'BigModel', logo: portalLogo },
       ],
-    },
+    }),
   ]);
   // Credential, quota and request rows name one of these keys and must land on the same
   // artwork the login card drew for it - one credential with two marks would read as two.
@@ -255,33 +288,33 @@ test('pluginOAuthProviderLogos: a portal mark wins for its own key, the plugin m
   assert.equal(pluginOAuthLogoFor(logos, 'zcode'), INLINE_LOGO);
 
   // A portal whose own artwork cannot be rendered falls back to the plugin's, not to a gap.
-  const unusable = pluginOAuthProviderLogos([{
+  const unusable = pluginOAuthProviderLogos([makePlugin({
     id: 'zcode', enabled: true, supports_oauth: true, oauth_providers: ['zcode-bigmodel'], logo: INLINE_LOGO,
     oauth_provider_entries: [{ identifier: 'zcode-bigmodel', name: 'BigModel', logo: 'javascript:alert(1)' }],
-  }]);
+  })]);
   assert.equal(pluginOAuthLogoFor(unusable, 'zcode-bigmodel'), INLINE_LOGO);
 
   // Entries alone do not invent a plugin-wide mark: a portal that publishes none and a
   // plugin with no logo of its own still resolves to nothing, and the console draws its
   // catalog mark.
-  const portalOnly = pluginOAuthProviderLogos([{
+  const portalOnly = pluginOAuthProviderLogos([makePlugin({
     id: 'zcode', enabled: true, supports_oauth: true, oauth_providers: ['zcode-zai'],
     oauth_provider_entries: [{ identifier: 'zcode-zai', name: 'Z.ai', logo: INLINE_LOGO }],
-  }]);
+  })]);
   assert.equal(pluginOAuthLogoFor(portalOnly, 'zcode-zai'), INLINE_LOGO);
   assert.equal(pluginOAuthLogoFor(portalOnly, 'zcode'), undefined);
 });
 
 test('routing credentials use the issuing OAuth portal mark while preserving the family fallback', () => {
   const cnLogo = 'data:image/svg+xml,%3Csvg%20id%3D%22qoder-cn%22/%3E';
-  const plugins: PluginItem[] = [{
+  const plugins: PluginItem[] = [makePlugin({
     id: 'omc-qoder-oauth', enabled: false, effective_enabled: false, supports_oauth: true,
     oauth_providers: ['qoder', 'qoder-cn'], logo: INLINE_LOGO,
     oauth_provider_entries: [
       { identifier: 'qoder', name: 'Qoder', logo: INLINE_LOGO },
       { identifier: 'qoder-cn', name: 'Qoder CN', logo: cnLogo },
     ],
-  }];
+  })];
   const logos = pluginOAuthProviderLogos(plugins);
   const multiPortalKeys = pluginMultiPortalKeys(plugins);
   const identity = (oauthProvider?: string) => credentialBrandIdentity('qoder', { name: 'My account', oauth_provider: oauthProvider }, multiPortalKeys);
@@ -313,7 +346,7 @@ test('quota provider identity connects a multi-portal plugin to its credential m
 
 test('pluginOAuthLogoFor: lookup is case and pad insensitive, and misses are empty', () => {
   const logos = pluginOAuthProviderLogos([
-    { id: 'codebuddy', name: 'CodeBuddy', enabled: true, supports_oauth: true, oauth_provider: 'codebuddy', logo: INLINE_LOGO },
+    makePlugin({ id: 'codebuddy', metadata: { name: 'CodeBuddy' }, enabled: true, supports_oauth: true, oauth_provider: 'codebuddy', logo: INLINE_LOGO }),
   ]);
   assert.equal(pluginOAuthLogoFor(logos, ' CodeBuddy '), INLINE_LOGO);
   assert.equal(pluginOAuthLogoFor(logos, 'devin'), undefined);

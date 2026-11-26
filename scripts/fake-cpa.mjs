@@ -260,6 +260,11 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
     access: { 'api-keys': [FAKE_CLIENT_SECRET] },
     client: { codex: { 'optimize-multi-agent-v2': true } },
     upstream: { codex: { 'orphan-delegation-compatibility': true }, claude: { 'tool-search': false } },
+    oauth: {
+      'request-scoped-errors': {
+        codex: [{ status: 400, match: ['context_window_exceeded'], action: 'stop' }],
+      },
+    },
     plugins: { enabled: true, dir: 'plugins' },
     'config-version': 8,
   };
@@ -287,6 +292,11 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
   const syncOAuthExcludedModelsConfig = () => {
     if (!isPlainObject(configDoc.oauth)) configDoc.oauth = {};
     configDoc.oauth['excluded-models'] = structuredClone(oauthExcludedModels);
+  };
+  const oauthRequestScopedErrorsStore = () => {
+    if (!isPlainObject(configDoc.oauth)) configDoc.oauth = {};
+    if (!isPlainObject(configDoc.oauth['request-scoped-errors'])) configDoc.oauth['request-scoped-errors'] = {};
+    return configDoc.oauth['request-scoped-errors'];
   };
   syncOAuthExcludedModelsConfig();
   const mergeConfig = (target, patch) => {
@@ -712,6 +722,21 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       json(response, 200, { status: 'ok', 'config-version': 8 });
       return;
     }
+    if (settingPath.join('/') === 'oauth/request-scoped-errors' && request.method === 'GET') {
+      const stored = configDoc.oauth?.['request-scoped-errors'];
+      json(response, 200, isPlainObject(stored) ? stored : {});
+      return;
+    }
+    if (settingPath[0] === 'oauth' && settingPath[1] === 'request-scoped-errors' && settingPath.length === 3 && request.method === 'DELETE') {
+      const stored = configDoc.oauth?.['request-scoped-errors'];
+      if (!isPlainObject(stored) || !(settingPath[2] in stored)) {
+        json(response, 404, { error: 'not_found' });
+        return;
+      }
+      delete stored[settingPath[2]];
+      json(response, 200, { status: 'ok', 'config-version': 8 });
+      return;
+    }
     if (settingPath[0] === 'plugins' && settingPath[1] === 'configs' && settingPath.length === 3) {
       const id = settingPath[2];
       if (request.method === 'PUT') {
@@ -738,6 +763,9 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       for (const [channel, rules] of Object.entries(patch.oauth?.['excluded-models'] ?? {})) {
         oauthExcludedModels[channel] = rules;
       }
+      for (const [channel, rules] of Object.entries(patch.oauth?.['request-scoped-errors'] ?? {})) {
+        oauthRequestScopedErrorsStore()[channel] = structuredClone(rules);
+      }
       syncOAuthExcludedModelsConfig();
       for (const [id, config] of Object.entries(patch.plugins?.configs ?? {})) {
         applyPluginConfig(id, { ...(pluginConfigs.get(id) ?? {}), ...config });
@@ -745,6 +773,7 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       delete patch['api-keys'];
       if (patch.oauth) delete patch.oauth['model-alias'];
       if (patch.oauth) delete patch.oauth['excluded-models'];
+      if (patch.oauth) delete patch.oauth['request-scoped-errors'];
       if (patch.plugins) delete patch.plugins.configs;
       const isHandled = Object.keys(patch).every((root) => isPlainObject(patch[root]) && Object.keys(patch[root]).length === 0);
       if (isHandled) {
@@ -834,7 +863,7 @@ export function createFakeCpaServer({ managementKey = FAKE_CPA_MANAGEMENT_KEY } 
       const provider = url.searchParams.get('provider') || '';
       // Device-code providers answer with their flow label and the short code
       // the operator confirms on the vendor page, as CPA does.
-      if (provider === 'meta' || provider === 'kimi' || provider === 'kimi-ai') {
+      if (provider === 'meta' || provider === 'kimi' || provider === 'kimi-ai' || provider === 'copilot') {
         json(response, 200, {
           url: 'https://auth.example.test/oauth?session=e2e',
           state: 'e2e-state',

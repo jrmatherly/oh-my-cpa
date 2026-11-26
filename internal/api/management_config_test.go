@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/configyaml"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/cpa/management"
 	"github.com/oh-my-cpa/oh-my-cpa/internal/pluginregistry"
+	"gopkg.in/yaml.v3"
 )
 
 // configFixtureCPA is a v8 gateway's configuration endpoints: a JSON and a YAML
@@ -30,6 +32,9 @@ type configFixtureCPA struct {
 	keepProxyOnRemove bool
 	// rejectMessage replaces CPA's explanation when writes are refused.
 	rejectMessage string
+	// failYAMLAfterWrite simulates a transient gateway failure on the readback ConfigYAML after a write lands.
+	failYAMLAfterWrite bool
+	hasWritten         bool
 }
 
 // configFixtureManagedPlugins is the plugins section in the managed steady state: the
@@ -88,6 +93,10 @@ func (f *configFixtureCPA) serve(writer http.ResponseWriter, request *http.Reque
 			}
 			_ = json.NewEncoder(writer).Encode(f.configData)
 		case "/config.yaml":
+			if f.failYAMLAfterWrite && f.hasWritten {
+				writer.WriteHeader(http.StatusBadGateway)
+				return
+			}
 			writer.Header().Set("Content-Type", "application/yaml")
 			_, _ = writer.Write([]byte(f.yamlData))
 		default:
@@ -116,14 +125,28 @@ func (f *configFixtureCPA) serve(writer http.ResponseWriter, request *http.Reque
 	case request.Method == http.MethodPatch && path == "/config":
 		var patch map[string]any
 		if json.Unmarshal(body, &patch) == nil {
+			if f.configData == nil {
+				f.configData = map[string]any{}
+			}
 			if requests, ok := patch["requests"]; ok && !f.ignoreProxyWrites {
-				if f.configData == nil {
-					f.configData = map[string]any{}
-				}
 				f.configData["requests"] = requests
+			}
+			if server, ok := patch["server"].(map[string]any); ok {
+				existing, _ := f.configData["server"].(map[string]any)
+				if existing == nil {
+					existing = map[string]any{}
+				}
+				for key, value := range server {
+					existing[key] = value
+				}
+				f.configData["server"] = existing
+				if token, ok := server["github-token"].(string); ok {
+					f.setYAMLServerGitHubToken(token, false)
+				}
 			}
 		}
 		f.yamlData += "# written\n"
+		f.hasWritten = true
 	case request.Method == http.MethodDelete && path == "/config/requests/proxy-url":
 		if !f.keepProxyOnRemove {
 			if requests, ok := f.configData["requests"].(map[string]any); ok {
@@ -131,11 +154,43 @@ func (f *configFixtureCPA) serve(writer http.ResponseWriter, request *http.Reque
 			}
 		}
 		f.yamlData += "# written\n"
+		f.hasWritten = true
+	case request.Method == http.MethodDelete && path == "/config/server/github-token":
+		if server, ok := f.configData["server"].(map[string]any); ok {
+			delete(server, "github-token")
+		}
+		f.setYAMLServerGitHubToken("", true)
+		f.yamlData += "# written\n"
+		f.hasWritten = true
 	default:
 		f.yamlData += "# written\n"
+		f.hasWritten = true
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	_, _ = writer.Write([]byte(`{"status":"ok","config-version":8}`))
+}
+
+func (f *configFixtureCPA) setYAMLServerGitHubToken(token string, remove bool) {
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(f.yamlData), &doc); err != nil || doc == nil {
+		return
+	}
+	server, _ := doc["server"].(map[string]any)
+	if server == nil {
+		if remove {
+			return
+		}
+		server = map[string]any{}
+		doc["server"] = server
+	}
+	if remove {
+		delete(server, "github-token")
+	} else {
+		server["github-token"] = token
+	}
+	if encoded, err := yaml.Marshal(doc); err == nil {
+		f.yamlData = string(encoded)
+	}
 }
 
 func (f *configFixtureCPA) recordedWrites() ([]string, []string) {
@@ -761,12 +816,30 @@ func TestManagementConfigFirstSaveKeepsTheLegacyFile(t *testing.T) {
 func TestManagementConfigSourcePutRejectsOversizedBody(t *testing.T) {
 	fixture := &configFixtureCPA{}
 	client, baseURL, _ := startDashboardTestServer(t, fixture.serve)
-	oversized := strings.Repeat("a", 2*1024*1024+1)
-	resp, payload := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/config/source",
-		`{"yaml":"`+oversized+`","revision":"some-revision"}`)
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("oversized source body must be refused, got %d body %s", resp.StatusCode, payload)
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{name: "exceeds yaml limit", size: management.CONFIG_YAML_LIMIT + 1},
+		{name: "exceeds request body limit", size: managementConfigSourceBodyLimit + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oversized := strings.Repeat("a", tc.size)
+			resp, payload := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/config/source",
+				`{"yaml":"`+oversized+`","revision":"some-revision"}`)
+			if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(string(payload), requestTooLargeCode) {
+				t.Fatalf("oversized source body must be refused with 413 request_too_large, got %d body %s", resp.StatusCode, payload)
+			}
+		})
 	}
+
+	t.Run("config patch enforces CONFIG_YAML_LIMIT", func(t *testing.T) {
+		oversizedPatch := `{"revision":"some-revision","changes":[{"path":["access","api-keys"],"value":["` + strings.Repeat("k", management.CONFIG_YAML_LIMIT+64) + `"]}]}`
+		resp, payload := doJSON(t, client, http.MethodPatch, baseURL+"/omc/api/v1/management/config", oversizedPatch)
+		if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(string(payload), requestTooLargeCode) {
+			t.Fatalf("oversized patch body must be refused with 413 request_too_large, got %d body %s", resp.StatusCode, payload)
+		}
+	})
 }
 
 // A restore that cannot prove which stored entry a hidden value belongs to must
@@ -880,5 +953,457 @@ func TestManagementConfigSaveAuditFailure(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestManagementConfigPatchModelsCatalogRefreshesProvenance(t *testing.T) {
+	fixture := &configFixtureCPA{
+		yamlData: configFixtureYAML,
+	}
+	var handler *Handler
+	client, baseURL, _ := startDashboardTestServer(t, fixture.serve, func(h *Handler) {
+		handler = h
+	})
+
+	// Drain any startup signal so the assertion reflects only this config save.
+	select {
+	case <-handler.modelSquareRefreshSignal():
+	default:
+	}
+
+	catalogURL := "https://mirror.example.test/models.json?ref=main"
+	codexPath := "/etc/cpa/codex_client_models.json"
+	body, err := json.Marshal(map[string]any{
+		"revision": configyaml.ComputeRevision(configFixtureYAML),
+		"changes": []management.ConfigChange{
+			{
+				Path: []string{"models"},
+				Value: map[string]any{
+					"catalog":       catalogURL,
+					"codex-catalog": codexPath,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, payload := doJSON(t, client, http.MethodPatch, baseURL+"/omc/api/v1/management/config", string(body))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch models catalog failed: %d body %s", resp.StatusCode, payload)
+	}
+
+	writes, bodies := fixture.recordedWrites()
+	if len(writes) != 1 || writes[0] != "PUT /config/models" {
+		t.Fatalf("expected single PUT /config/models write, got %v (bodies=%v)", writes, bodies)
+	}
+	var sent map[string]string
+	if err := json.Unmarshal([]byte(bodies[0]), &sent); err != nil {
+		t.Fatalf("decode upstream models payload %q: %v", bodies[0], err)
+	}
+	if sent["catalog"] != catalogURL || sent["codex-catalog"] != codexPath {
+		t.Fatalf("upstream models payload = %v, want catalog=%q codex-catalog=%q", sent, catalogURL, codexPath)
+	}
+
+	select {
+	case <-handler.modelSquareRefreshSignal():
+	default:
+		t.Fatalf("expected config save to queue a Model Square provenance refresh")
+	}
+
+	// Safe YAML projection must preserve catalog URLs (including query params) and local paths verbatim.
+	fixture.mu.Lock()
+	fixture.yamlData = configFixtureYAML + fmt.Sprintf("models:\n    catalog: %s\n    codex-catalog: %s\n", catalogURL, codexPath)
+	fixture.mu.Unlock()
+
+	resp, payload = getJSON(t, client, baseURL+"/omc/api/v1/management/config")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("config GET failed: %d body %s", resp.StatusCode, payload)
+	}
+	var configRes struct {
+		SafeYAML string `json:"safe_yaml"`
+	}
+	if err := json.Unmarshal(payload, &configRes); err != nil {
+		t.Fatalf("decode config GET: %v", err)
+	}
+	if !strings.Contains(configRes.SafeYAML, catalogURL) || !strings.Contains(configRes.SafeYAML, codexPath) {
+		t.Fatalf("safe_yaml altered model catalog sources:\n%s", configRes.SafeYAML)
+	}
+}
+
+func TestGitHubTokenManageAndAudit(t *testing.T) {
+	fixture := &configFixtureCPA{}
+	var handler *Handler
+	client, baseURL, repo := startDashboardTestServer(t, fixture.serve, func(h *Handler) { handler = h })
+	endpoint := baseURL + "/omc/api/v1/management/github-token"
+
+	// Initial state: not configured.
+	resp, payload := getJSON(t, client, endpoint)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET github-token = %d %s", resp.StatusCode, payload)
+	}
+	var initial GitHubTokenStatusDTO
+	if err := json.Unmarshal(payload, &initial); err != nil {
+		t.Fatal(err)
+	}
+	if initial.Configured || initial.MaskedToken != "" || initial.CPARevision == "" {
+		t.Fatalf("initial status = %+v", initial)
+	}
+
+	// Reject whitespace in token.
+	badResp, _ := doJSON(t, client, http.MethodPut, endpoint, mustJSON(map[string]any{
+		"token": "ghp_bad token", "cpa_revision": initial.CPARevision,
+	}))
+	if badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("whitespace token status = %d, want 400", badResp.StatusCode)
+	}
+
+	// Save a valid token: writes server.github-token, never returns raw token, invalidates releaseToken cache.
+	secret := "ghp_fixturetokenvalue1234567890abcd"
+	// Prime cache with empty answer before save.
+	if got := handler.ReleaseToken(t.Context()); got != "" {
+		t.Fatalf("initial cached token = %q, want empty", got)
+	}
+	saveResp, savePayload := doJSON(t, client, http.MethodPut, endpoint, mustJSON(map[string]any{
+		"token": secret, "cpa_revision": initial.CPARevision,
+	}))
+	if saveResp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT github-token = %d %s", saveResp.StatusCode, savePayload)
+	}
+	if strings.Contains(string(savePayload), secret) {
+		t.Fatalf("PUT github-token leaked raw secret: %s", savePayload)
+	}
+	var saved GitHubTokenStatusDTO
+	if err := json.Unmarshal(savePayload, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.Configured || saved.MaskedToken == "" || saved.CPARevision == "" || saved.CPARevision == initial.CPARevision {
+		t.Fatalf("saved status = %+v", saved)
+	}
+	// Cache must have been invalidated immediately without waiting for TTL.
+	if got := handler.ReleaseToken(t.Context()); got != secret {
+		t.Fatalf("ReleaseToken after save = %q, want saved token", got)
+	}
+
+	// Stale revision must be refused with 409 config_conflict.
+	conflictResp, conflictPayload := doJSON(t, client, http.MethodPut, endpoint, mustJSON(map[string]any{
+		"token": "ghp_other_token_1234567890", "cpa_revision": initial.CPARevision,
+	}))
+	if conflictResp.StatusCode != http.StatusConflict || !strings.Contains(string(conflictPayload), "config_conflict") {
+		t.Fatalf("stale revision = %d %s", conflictResp.StatusCode, conflictPayload)
+	}
+
+	// Clear token with empty string.
+	clearResp, clearPayload := doJSON(t, client, http.MethodPut, endpoint, mustJSON(map[string]any{
+		"token": "", "cpa_revision": saved.CPARevision,
+	}))
+	if clearResp.StatusCode != http.StatusOK {
+		t.Fatalf("clear github-token = %d %s", clearResp.StatusCode, clearPayload)
+	}
+	var cleared GitHubTokenStatusDTO
+	if err := json.Unmarshal(clearPayload, &cleared); err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Configured || cleared.MaskedToken != "" {
+		t.Fatalf("cleared status = %+v", cleared)
+	}
+	if got := handler.ReleaseToken(t.Context()); got != "" {
+		t.Fatalf("ReleaseToken after clear = %q, want empty", got)
+	}
+
+	// Audit trail recorded save and clear without leaking secret material.
+	var auditCount int
+	if err := repo.SQL().QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action IN ('github_token.save','github_token.clear') AND result='success'`).Scan(&auditCount); err != nil || auditCount != 2 {
+		t.Fatalf("audit count = %d, err = %v", auditCount, err)
+	}
+	var leaked int
+	if err := repo.SQL().QueryRow(`SELECT COUNT(*) FROM audit_events WHERE details_json LIKE ?`, "%"+secret+"%").Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("secret leaked into audit_events: %d %v", leaked, err)
+	}
+}
+
+func TestGitHubTokenTestProbe(t *testing.T) {
+	githubStub := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/rate_limit" {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.Header.Get("Authorization") {
+		case "":
+			_, _ = writer.Write([]byte(`{"resources":{"core":{"limit":60,"remaining":58,"used":2,"reset":1700003600}}}`))
+		case "Bearer ghp_saved_token_1234567890":
+			_, _ = writer.Write([]byte(`{"resources":{"core":{"limit":5000,"remaining":4995,"used":5,"reset":1700003600}}}`))
+		case "Bearer ghp_draft_token_1234567890":
+			_, _ = writer.Write([]byte(`{"resources":{"core":{"limit":5000,"remaining":4800,"used":200,"reset":1700003600}}}`))
+		case "Bearer ghp_exhausted_token_1234567890":
+			_, _ = writer.Write([]byte(`{"resources":{"core":{"limit":5000,"remaining":0,"used":5000,"reset":1700003600}}}`))
+		default:
+			writer.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer githubStub.Close()
+
+	fixture := &configFixtureCPA{}
+	client, baseURL, _ := startDashboardTestServer(t, fixture.serve, func(h *Handler) {
+		h.githubRateLimitURL = githubStub.URL
+	})
+	testURL := baseURL + "/omc/api/v1/management/github-token/test"
+
+	// Unconfigured -> anonymous quota.
+	resp, payload := doJSON(t, client, http.MethodPost, testURL, `{}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("anonymous test = %d %s", resp.StatusCode, payload)
+	}
+	var anon GitHubTokenTestResponseDTO
+	if err := json.Unmarshal(payload, &anon); err != nil || anon.Status != "anonymous" || anon.Authenticated || anon.Limit != 60 || anon.Remaining != 58 {
+		t.Fatalf("anonymous probe = %+v %v", anon, err)
+	}
+
+	// Candidate draft token tested before saving.
+	resp, payload = doJSON(t, client, http.MethodPost, testURL, `{"token":"ghp_draft_token_1234567890"}`)
+	if resp.StatusCode != http.StatusOK || strings.Contains(string(payload), "ghp_draft_token_1234567890") {
+		t.Fatalf("draft test = %d %s", resp.StatusCode, payload)
+	}
+	var draft GitHubTokenTestResponseDTO
+	if err := json.Unmarshal(payload, &draft); err != nil || draft.Status != "valid" || !draft.Authenticated || draft.Remaining != 4800 {
+		t.Fatalf("draft probe = %+v %v", draft, err)
+	}
+
+	// Exhausted candidate token preserves `"remaining":0` on the wire so the console shows the zero budget.
+	resp, payload = doJSON(t, client, http.MethodPost, testURL, `{"token":"ghp_exhausted_token_1234567890"}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(payload), `"remaining":0`) {
+		t.Fatalf("exhausted probe = %d %s, want 200 with remaining:0", resp.StatusCode, payload)
+	}
+	var exhausted GitHubTokenTestResponseDTO
+	if err := json.Unmarshal(payload, &exhausted); err != nil || exhausted.Status != "valid" || exhausted.Limit != 5000 || exhausted.Remaining != 0 {
+		t.Fatalf("exhausted probe parsed = %+v %v", exhausted, err)
+	}
+
+	// Invalid candidate returns HTTP 200 with status=invalid (never session 401).
+	resp, payload = doJSON(t, client, http.MethodPost, testURL, `{"token":"ghp_revoked"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("invalid token test = %d %s", resp.StatusCode, payload)
+	}
+	var invalid GitHubTokenTestResponseDTO
+	if err := json.Unmarshal(payload, &invalid); err != nil || invalid.Status != "invalid" || invalid.Authenticated {
+		t.Fatalf("invalid probe = %+v %v", invalid, err)
+	}
+
+	// Save token and verify empty-body test uses CPA's configured token.
+	_, initPayload := getJSON(t, client, baseURL+"/omc/api/v1/management/github-token")
+	var initStatus GitHubTokenStatusDTO
+	_ = json.Unmarshal(initPayload, &initStatus)
+	saveResp, _ := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/github-token", mustJSON(map[string]any{
+		"token": "ghp_saved_token_1234567890", "cpa_revision": initStatus.CPARevision,
+	}))
+	if saveResp.StatusCode != http.StatusOK {
+		t.Fatalf("save token = %d", saveResp.StatusCode)
+	}
+	resp, payload = doJSON(t, client, http.MethodPost, testURL, `{}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("configured probe status = %d %s", resp.StatusCode, payload)
+	}
+	var configured GitHubTokenTestResponseDTO
+	if err := json.Unmarshal(payload, &configured); err != nil || configured.Status != "valid" || configured.Remaining != 4995 {
+		t.Fatalf("configured probe = %+v %v", configured, err)
+	}
+}
+
+func TestGitHubTokenReadbackFailureReportsUnconfirmedAndWakesExchangeRateRefresh(t *testing.T) {
+	fixture := &configFixtureCPA{failYAMLAfterWrite: true}
+	var woken []string
+	client, baseURL, _ := startDashboardTestServer(t, fixture.serve, func(h *Handler) {
+		h.SetRefreshWaker(func(name string) {
+			woken = append(woken, name)
+		})
+	})
+
+	_, initPayload := getJSON(t, client, baseURL+"/omc/api/v1/management/github-token")
+	var initial GitHubTokenStatusDTO
+	if err := json.Unmarshal(initPayload, &initial); err != nil {
+		t.Fatal(err)
+	}
+	resp, payload := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/github-token", mustJSON(map[string]any{
+		"token": "ghp_readback_fail_fixture_1234", "cpa_revision": initial.CPARevision,
+	}))
+	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(payload), "github_token_cpa_unconfirmed") {
+		t.Fatalf("readback failure = %d %s, want 502 github_token_cpa_unconfirmed", resp.StatusCode, payload)
+	}
+
+	// Changing omc_exchange_rate_refresh must immediately wake the exchange_rates worker.
+	prefResp, prefPayload := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/preferences/omc_exchange_rate_refresh", `{"interval_hours":6}`)
+	if prefResp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT omc_exchange_rate_refresh = %d %s", prefResp.StatusCode, prefPayload)
+	}
+	if len(woken) != 1 || woken[0] != "exchange_rates" {
+		t.Fatalf("woken tasks = %v, want [exchange_rates]", woken)
+	}
+}
+
+func TestManagementConfigPatchValidatesServerIDAndReturnsCPAReadback(t *testing.T) {
+	var currentYAML = "config-version: 8\nserver:\n  server-id: 11111111-1111-4111-8111-111111111111\n  port: 8317\n"
+	var writeCount int
+
+	cpaHandler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		path := strings.TrimPrefix(request.URL.Path, "/v8/management")
+		switch {
+		case request.Method == http.MethodGet && path == "/config.yaml":
+			writer.Header().Set("Content-Type", "application/yaml")
+			_, _ = writer.Write([]byte(currentYAML))
+		case request.Method == http.MethodGet && path == "/config":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"config-version":8,"server":{"server-id":"11111111-1111-4111-8111-111111111111","port":8317}}`))
+		case request.Method == http.MethodPatch && path == "/config":
+			writeCount++
+			var body struct {
+				Server struct {
+					ServerID string `json:"server-id"`
+				} `json:"server"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Simulate CPA merging PATCH fields and lowercasing server.server-id on write.
+			savedID := "11111111-1111-4111-8111-111111111111"
+			if strings.TrimSpace(body.Server.ServerID) != "" {
+				savedID = strings.ToLower(strings.TrimSpace(body.Server.ServerID))
+				currentYAML = fmt.Sprintf("config-version: 8\nserver:\n  server-id: %s\n  port: 8317\n", savedID)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(fmt.Sprintf(`{"status":"ok","config-version":8,"server-id":%q}`, savedID)))
+		default:
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"status":"ok"}`))
+		}
+	})
+
+	client, baseURL, _ := startDashboardTestServerStoring(t, currentYAML, cpaHandler)
+
+	_, payload := getJSON(t, client, baseURL+"/omc/api/v1/management/config")
+	var loaded struct {
+		Revision string `json:"revision"`
+		SafeYAML string `json:"safe_yaml"`
+	}
+	if err := json.Unmarshal(payload, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(loaded.SafeYAML, "11111111-1111-4111-8111-111111111111") {
+		t.Fatalf("safe_yaml omitted server.server-id: %s", loaded.SafeYAML)
+	}
+
+	// Invalid values and removal are rejected before reaching CPA.
+	for _, change := range []map[string]any{
+		{"path": []string{"server", "server-id"}, "value": "not-a-uuid"},
+		{"path": []string{"server", "server-id"}, "value": "00000000-0000-0000-0000-000000000000"},
+		{"path": []string{"server", "server-id"}, "remove": true},
+	} {
+		patchBody, _ := json.Marshal(map[string]any{"revision": loaded.Revision, "changes": []any{change}})
+		resp, body := doJSON(t, client, http.MethodPatch, baseURL+"/omc/api/v1/management/config", string(patchBody))
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "config_invalid_change") {
+			t.Fatalf("change %v: status = %d body = %s, want 400 config_invalid_change", change, resp.StatusCode, body)
+		}
+	}
+	if writeCount != 0 {
+		t.Fatalf("invalid server.server-id writes reached CPA: count=%d", writeCount)
+	}
+
+	// Uppercase valid UUID is accepted and response reflects CPA's lowercased readback.
+	validUpper := "20FB88E4-73AB-44DB-B5B5-4E7120BA3368"
+	validLower := "20fb88e4-73ab-44db-b5b5-4e7120ba3368"
+	patchBody, _ := json.Marshal(map[string]any{
+		"revision": loaded.Revision,
+		"changes":  []any{map[string]any{"path": []string{"server", "server-id"}, "value": validUpper}},
+	})
+	resp, body := doJSON(t, client, http.MethodPatch, baseURL+"/omc/api/v1/management/config", string(patchBody))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid server.server-id patch status = %d body = %s", resp.StatusCode, body)
+	}
+	var saved ManagementConfigPatchResponseDTO
+	if err := json.Unmarshal(body, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saved.SafeYAML, validLower) || strings.Contains(saved.SafeYAML, validUpper) {
+		t.Fatalf("safe_yaml must carry CPA's lowercased readback, got:\n%s", saved.SafeYAML)
+	}
+}
+
+func TestManagementConfigSourceJSONEscapingHeadroomAndYAMLSizeLimit(t *testing.T) {
+	initialYAML := "config-version: 8\nserver:\n  port: 8317\n" + configFixtureManagedPlugins
+	var currentYAML = initialYAML
+
+	cpaHandler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		path := strings.TrimPrefix(request.URL.Path, "/v8/management")
+		switch {
+		case request.Method == http.MethodGet && path == "/config.yaml":
+			writer.Header().Set("Content-Type", "application/yaml")
+			_, _ = writer.Write([]byte(currentYAML))
+		case request.Method == http.MethodGet && path == "/config":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"config-version":8,"server":{"port":8317}}`))
+		case request.Method == http.MethodPut && path == "/config.yaml":
+			raw, _ := io.ReadAll(request.Body)
+			currentYAML = string(raw)
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"status":"ok","config-version":8}`))
+		default:
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"status":"ok"}`))
+		}
+	})
+
+	client, baseURL, _ := startDashboardTestServerStoring(t, currentYAML, cpaHandler)
+
+	_, srcPayload := getJSON(t, client, baseURL+"/omc/api/v1/management/config/source")
+	var src struct {
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(srcPayload, &src); err != nil {
+		t.Fatal(err)
+	}
+
+	// Construct a valid YAML document slightly under CONFIG_YAML_LIMIT (~1.85 MiB)
+	// whose JSON-escaped request body exceeds 2 MiB because every "\n" and "\""
+	// expands to two bytes in JSON.
+	line := "  - \"k\"\n" // 8 bytes in YAML, 11 bytes in JSON
+	linesNeeded := (1850 * 1024) / len(line)
+	var yamlBuilder strings.Builder
+	yamlBuilder.WriteString("config-version: 8\nserver:\n  port: 8317\naccess:\n  api-keys:\n")
+	for range linesNeeded {
+		yamlBuilder.WriteString(line)
+	}
+	yamlBuilder.WriteString(configFixtureManagedPlugins)
+	largeYAML := yamlBuilder.String()
+	if len(largeYAML) >= management.CONFIG_YAML_LIMIT {
+		t.Fatalf("expected test YAML < CONFIG_YAML_LIMIT, got %d", len(largeYAML))
+	}
+	putBody, err := json.Marshal(map[string]string{"yaml": largeYAML, "revision": src.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(putBody) <= management.CONFIG_YAML_LIMIT {
+		t.Fatalf("expected JSON-escaped request body > CONFIG_YAML_LIMIT, got %d", len(putBody))
+	}
+
+	resp, body := doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/config/source", string(putBody))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("JSON-escaped valid YAML status = %d body %s, want 200", resp.StatusCode, body)
+	}
+
+	// Refresh revision and submit a YAML exceeding CONFIG_YAML_LIMIT (but within
+	// managementConfigSourceBodyLimit): must return 413 request_too_large instead of 502.
+	var saved struct {
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(body, &saved); err != nil {
+		t.Fatal(err)
+	}
+	tooLargeYAML := "config-version: 8\nserver:\n  port: 8317\n  note: \"" + strings.Repeat("a", management.CONFIG_YAML_LIMIT+128) + "\"\n"
+	tooLargeBody, _ := json.Marshal(map[string]string{"yaml": tooLargeYAML, "revision": saved.Revision})
+	resp, body = doJSON(t, client, http.MethodPut, baseURL+"/omc/api/v1/management/config/source", string(tooLargeBody))
+	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(string(body), requestTooLargeCode) {
+		t.Fatalf("oversized YAML status = %d body %s, want 413 request_too_large", resp.StatusCode, body)
 	}
 }

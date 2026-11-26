@@ -133,6 +133,10 @@ type Handler struct {
 	// 250ms debounced write-behind persistence and SSE reconciliation; nil until
 	// EnableStateCoordinator is called.
 	stateCoord *statecoord.Coordinator[projectedConfigState]
+	// refreshWaker notifies named background refresh tasks when their schedule changes.
+	refreshWaker func(string)
+	// githubRateLimitURL overrides GitHub's /rate_limit endpoint in tests; empty uses api.github.com.
+	githubRateLimitURL string
 }
 
 // now is the handler's view of the clock.
@@ -180,6 +184,20 @@ func NewHandler(cfg config.Config, repo *repository.Repository, cipher *appcrypt
 // SetOutboundTransport configures OMC-owned external downloads, not CPA or updater connections.
 func (h *Handler) SetOutboundTransport(transport http.RoundTripper) {
 	h.outboundTransport = transport
+}
+
+// SetRefreshWaker connects preference writes to the unified background refresh scheduler.
+func (h *Handler) SetRefreshWaker(waker func(string)) {
+	h.refreshWaker = waker
+}
+
+func (h *Handler) wakeRefresh(names ...string) {
+	if h == nil || h.refreshWaker == nil {
+		return
+	}
+	for _, name := range names {
+		h.refreshWaker(name)
+	}
 }
 
 func (h *Handler) Router() http.Handler {
@@ -270,6 +288,9 @@ func (h *Handler) routes() chi.Router {
 				v1.Get("/management/insights/cube", h.insightsCube)
 				v1.Get("/management/insights/rhythm", h.insightsRhythm)
 				v1.Get("/management/insights/clients", h.insightsClients)
+				v1.Get("/management/trends/quota", h.trendsQuota)
+				v1.Get("/management/trends/usage", h.trendsUsage)
+				v1.Get("/management/trends/telemetry", h.trendsTelemetry)
 				v1.Get("/management/logs", h.managementLogs)
 				v1.Delete("/management/logs", h.clearManagementLogs)
 				v1.Get("/management/logs/status", h.managementLogsStatus)
@@ -310,6 +331,7 @@ func (h *Handler) routes() chi.Router {
 				v1.Delete("/pricing/channels/{channel}", h.deletePricingChannel)
 				v1.Post("/pricing/price-unpriced", h.priceAllUnpricedUsage)
 				v1.Post("/pricing/sync", h.startPricingSync)
+				v1.Get("/pricing/sync-schedule", h.getPricingSyncSchedule)
 				v1.Put("/pricing/sync-schedule", h.updatePricingSyncSchedule)
 				v1.Get("/usage/events", h.listUsageEvents)
 				v1.Get("/usage/events/{id}", h.getUsageEvent)
@@ -321,6 +343,7 @@ func (h *Handler) routes() chi.Router {
 				v1.Get("/management/auth-files/safe-fields", h.getManagementAuthFileSafeFields)
 				v1.Get("/management/auth-files/model-aliases", h.listManagementOAuthModelAliases)
 				v1.Get("/management/auth-files/excluded-models", h.listManagementOAuthExcludedModels)
+				v1.Get("/management/auth-files/request-scoped-errors", h.listManagementOAuthRequestScopedErrors)
 				v1.Get("/management/auth-files/provider-models", h.listManagementOAuthProviderModels)
 				v1.Get("/management/auth-files/models", h.listManagementAuthFileModels)
 				v1.Post("/management/auth-files", h.uploadManagementAuthFiles)
@@ -332,6 +355,7 @@ func (h *Handler) routes() chi.Router {
 				v1.Post("/management/auth-files/vertex-import", h.importVertexServiceAccount)
 				v1.Patch("/management/auth-files/model-aliases", h.patchManagementOAuthModelAliases)
 				v1.Patch("/management/auth-files/excluded-models", h.patchManagementOAuthExcludedModels)
+				v1.Patch("/management/auth-files/request-scoped-errors", h.patchManagementOAuthRequestScopedErrors)
 				v1.Delete("/management/auth-files", h.deleteManagementAuthFiles)
 				v1.Get("/management/auth-files/download", h.downloadManagementAuthFile)
 				v1.Get("/management/routing", h.getRouting)
@@ -339,6 +363,9 @@ func (h *Handler) routes() chi.Router {
 				v1.Get("/management/routing/models", h.getRoutingModels)
 				v1.Get("/management/outbound-proxy", h.getOutboundProxy)
 				v1.Put("/management/outbound-proxy", h.putOutboundProxy)
+				v1.Get("/management/github-token", h.getGitHubToken)
+				v1.Put("/management/github-token", h.putGitHubToken)
+				v1.Post("/management/github-token/test", h.testGitHubToken)
 				v1.Get("/management/config", h.managementConfigGet)
 				v1.Patch("/management/config", h.managementConfigPatch)
 				v1.Put("/management/config/source", h.managementConfigSourcePut)
@@ -391,6 +418,7 @@ func (h *Handler) routes() chi.Router {
 				v1.Delete("/management/quota/warmup/runs", h.clearWarmupRuns)
 				v1.Get("/management/quota/{authIndex}", h.getCredentialQuotaDetail)
 				v1.Get("/management/quota/{authIndex}/capacity", h.getQuotaCapacityHistory)
+				v1.Get("/management/quota/{authIndex}/subscription-cycle", h.getQuotaSubscriptionCycle)
 
 				v1.Post("/management/system/database-backup-authorization", h.startDatabaseBackupOAuth)
 				v1.Get("/management/system/database-backup-authorization/{id}", h.getDatabaseBackupOAuth)
@@ -538,6 +566,7 @@ type ResourceOverrideResponseDTO struct {
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 403 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 429 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /auth/login [post]
@@ -561,7 +590,23 @@ func (h *Handler) login(writer http.ResponseWriter, request *http.Request) {
 	var payload loginRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 8*1024))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil || strings.TrimSpace(payload.Password) == "" {
+	if err := decoder.Decode(&payload); err != nil {
+		if maxBytes, tooLarge := isRequestBodyTooLarge(err); tooLarge {
+			writeRequestBodyTooLarge(writer, maxBytes)
+			return
+		}
+		writeError(writer, http.StatusBadRequest, "management key is required")
+		return
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		if maxBytes, tooLarge := isRequestBodyTooLarge(err); tooLarge {
+			writeRequestBodyTooLarge(writer, maxBytes)
+			return
+		}
+		writeError(writer, http.StatusBadRequest, "management key is required")
+		return
+	}
+	if strings.TrimSpace(payload.Password) == "" {
 		writeError(writer, http.StatusBadRequest, "management key is required")
 		return
 	}
@@ -862,6 +907,7 @@ func (h *Handler) listResources(writer http.ResponseWriter, request *http.Reques
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Router /v1/resources/{id}/override [patch]
 func (h *Handler) updateResourceOverride(writer http.ResponseWriter, request *http.Request) {
 	id := chi.URLParam(request, "id")
@@ -873,6 +919,18 @@ func (h *Handler) updateResourceOverride(writer http.ResponseWriter, request *ht
 	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 16*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
+		if maxBytes, tooLarge := isRequestBodyTooLarge(err); tooLarge {
+			writeRequestBodyTooLarge(writer, maxBytes)
+			return
+		}
+		writeError(writer, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		if maxBytes, tooLarge := isRequestBodyTooLarge(err); tooLarge {
+			writeRequestBodyTooLarge(writer, maxBytes)
+			return
+		}
 		writeError(writer, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
@@ -1272,6 +1330,10 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 
 func writeError(writer http.ResponseWriter, status int, message string) {
 	writeJSON(writer, status, map[string]string{"error": message})
+}
+
+func writeErrorCode(writer http.ResponseWriter, status int, code, message string) {
+	writeJSON(writer, status, map[string]string{"code": code, "error": message})
 }
 
 const auditWriteFailedCode = "audit_write_failed"

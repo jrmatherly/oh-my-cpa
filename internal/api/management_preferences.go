@@ -61,6 +61,7 @@ var knownPreferences = map[string]bool{
 	repository.PreferenceUpdateDismissals:       true,
 	repository.PreferenceQuotaAutoRefresh:       true,
 	repository.PreferenceUpdateCheck:            true,
+	repository.PreferenceExchangeRateRefresh:    true,
 	repository.PreferenceOMCPluginSource:        true,
 }
 
@@ -132,6 +133,7 @@ func (h *Handler) listPreferences(writer http.ResponseWriter, request *http.Requ
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
 // @Failure 409 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
 // @Router /v1/preferences/{key} [put]
 func (h *Handler) putPreference(writer http.ResponseWriter, request *http.Request) {
@@ -148,6 +150,10 @@ func (h *Handler) putPreference(writer http.ResponseWriter, request *http.Reques
 
 	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, repository.MaxPreferenceValueBytes))
 	if err != nil {
+		if maxBytes, tooLarge := isRequestBodyTooLarge(err); tooLarge {
+			writeRequestBodyTooLarge(writer, maxBytes)
+			return
+		}
 		writeError(writer, http.StatusBadRequest, "unreadable preference body")
 		return
 	}
@@ -190,11 +196,18 @@ func (h *Handler) putPreference(writer http.ResponseWriter, request *http.Reques
 			return
 		}
 	}
-	// The update check interval decides how often the sweep spends GitHub requests, so it is
-	// held to the same rule.
+	// The update check intervals decide how often the background sweeps read GitHub and
+	// the plugin store, so they are validated strictly on write.
 	if key == repository.PreferenceUpdateCheck {
 		if _, err := release.ParseUpdateCheckSettings(body); err != nil {
 			writeError(writer, http.StatusBadRequest, release.ErrInvalidUpdateCheckSettings.Error())
+			return
+		}
+	}
+	// The exchange-rate refresh schedule controls how often display FX rates are fetched.
+	if key == repository.PreferenceExchangeRateRefresh {
+		if _, err := exchangerate.ParseRefreshSettings(body); err != nil {
+			writeError(writer, http.StatusBadRequest, exchangerate.ErrInvalidRefreshSettings.Error())
 			return
 		}
 	}
@@ -263,6 +276,13 @@ func (h *Handler) putPreference(writer http.ResponseWriter, request *http.Reques
 		h.publishStateSync("management-providers", "management-providers-sanitized", stateScopeIdentityDirectory)
 	} else if key == repository.PreferenceModelIcons {
 		h.publishStateSync(stateScopeIdentityDirectory)
+	} else if key == repository.PreferenceUpdateCheck {
+		h.wakeRefresh("release_updates", "plugin_updates")
+	} else if key == repository.PreferenceExchangeRateRefresh {
+		h.wakeRefresh("exchange_rates")
+		if h.exchangeRates != nil {
+			h.exchangeRates.Wake()
+		}
 	}
 	writeJSON(writer, http.StatusOK, PreferencePutResponseDTO{Key: key, Value: json.RawMessage(body)})
 }

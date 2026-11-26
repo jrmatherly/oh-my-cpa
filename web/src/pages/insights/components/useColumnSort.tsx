@@ -8,7 +8,9 @@ export interface SortableColumn<T> extends ColumnDef<T> {
   sortValue?: (record: T) => number | null;
 }
 
-type Sort = { key: React.Key; order: 'ascending' | 'descending' } | null;
+export type SortOrder = 'ascending' | 'descending';
+
+type Sort = { key: React.Key; order: SortOrder } | null;
 
 /**
  * Sortable headers for an Insights table. The header text becomes a button that orders the rows
@@ -20,10 +22,10 @@ export interface ColumnSort<T> {
   data: readonly T[];
   /** The column in force, for a surface without headers to click (a phone's rows). */
   sortKey: React.Key | null;
-  /** The direction in force; the page's own ranking reads as largest first. */
-  order: 'ascending' | 'descending';
-  /** Orders by a column, largest first unless told otherwise. */
-  sortBy: (key: React.Key, order?: 'ascending' | 'descending') => void;
+  /** The direction in force; defaults to descending when no explicit column sort is active. */
+  sortOrder: SortOrder;
+  /** Orders by a column, largest first by default, or in the requested direction. */
+  sortBy: (key: React.Key, order?: SortOrder) => void;
 }
 
 export function useColumnSort<T>(columns: readonly SortableColumn<T>[], data: readonly T[]): ColumnSort<T> {
@@ -58,6 +60,6 @@ export function useColumnSort<T>(columns: readonly SortableColumn<T>[], data: re
       ),
     };
   });
-  const sortBy = React.useCallback((key: React.Key, order: 'ascending' | 'descending' = 'descending') => setSort({ key, order }), []);
-  return { columns: headed, data: sorted, sortKey: active ? sort!.key : null, order: active ? sort!.order : 'descending', sortBy };
+  const sortBy = React.useCallback((key: React.Key, order: SortOrder = 'descending') => setSort({ key, order }), []);
+  return { columns: headed, data: sorted, sortKey: active ? sort!.key : null, sortOrder: active ? sort!.order : 'descending', sortBy };
 }

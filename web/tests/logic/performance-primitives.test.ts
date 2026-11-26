@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import React from 'react';
 import { MutationObserver, QueryClient, QueryObserver } from '@tanstack/react-query';
 import { test } from 'vitest';
+import { lineSlotChildren } from '../../src/components/ui/line-slot.tsx';
 
+import { ApiError } from '../../src/api/client.ts';
 import { MUTATION_KEYS, QUERY_KEYS } from '../../src/api/queryKeys.ts';
 import {
   createStateLiveChannel,
+  parseStateSyncEvent,
   resolveStateEventsURL,
   type MinimalEventSource,
   type StateSyncEvent,
@@ -40,7 +44,14 @@ import { isDiscreteWheel, keyScrollFor, pageDistance, type WheelSample } from '.
 import { isSameDrawing } from '../../src/charts/useChartMorph.ts';
 import { isSameReadout } from '../../src/components/dashboard/RollingNumber.tsx';
 import { PAGE_SKELETON_REGISTRY } from '../../src/components/common/PageLoading.tsx';
-import { ROUTE_DESCRIPTORS, consoleRouteRegistry } from '../../src/routePreload.ts';
+import {
+  ROUTE_DESCRIPTORS,
+  consoleRouteRegistry,
+  prefetchLandingRouteData,
+  retryTrendsQuery,
+  trendsQuotaParamsFromSearch,
+} from '../../src/routePreload.ts';
+import { readTrendsView, trendsQuotaParams } from '../../src/pages/trends/trendsLogic.ts';
 import { buildNavGroupSpecs } from '../../src/types/sidebarNav.ts';
 
 test('frame scheduler separates priority tiers across slices, caps per-slice jobs, and yields across frames', () => {
@@ -472,6 +483,34 @@ test('route registry resolves exact and prefix routes, respects intent cooldown,
   while (idleCallbacks.length > 0) idleCallbacks.shift()!();
   assert.deepEqual(loaded, ['/insights'], 'idle prewarm skips active route and normal-priority plugin routes');
   cancelIdle();
+
+  // Mobile/constrained devices skip speculative idle prewarming completely.
+  loaded.length = 0;
+  const mobileRegistry = createRouteRegistry(
+    [
+      {
+        path: '/dashboard',
+        priority: 'critical',
+        preloadChunk: async () => { loaded.push('/dashboard'); },
+      },
+      {
+        path: '/insights',
+        priority: 'high',
+        preloadChunk: async () => { loaded.push('/insights'); },
+      },
+    ],
+    {
+      canIdlePrewarm: () => false,
+      scheduleIdle: (cb) => {
+        idleCallbacks.push(cb);
+        return () => undefined;
+      },
+    },
+  );
+  const cancelMobileIdle = mobileRegistry.scheduleIdlePrewarm('/dashboard');
+  while (idleCallbacks.length > 0) idleCallbacks.shift()!();
+  assert.deepEqual(loaded, [], 'constrained/mobile devices skip background idle prewarm');
+  cancelMobileIdle();
   queryClient.clear();
 });
 
@@ -633,7 +672,7 @@ test('optimistic mutation updates cache synchronously, rolls back on error, and 
 test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies sync_error rollback while guarding active mutations', async () => {
   const queryClient = new QueryClient();
   let isVisible = true;
-  let visibilityHandler: (() => void) | null = null;
+  let visibilityHandler: (() => void) | undefined;
   const listenersByType = new Map<string, Array<(evt: MessageEvent<string> | Event) => void>>();
   let closedCount = 0;
 
@@ -656,7 +695,7 @@ test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies
     onVisibilityChange: (handler) => {
       visibilityHandler = handler;
       return () => {
-        visibilityHandler = null;
+        visibilityHandler = undefined;
       };
     },
     setTimer: () => 1,
@@ -711,11 +750,15 @@ test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies
   resolveActiveMutation();
   await activePromise;
 
+  queryClient.setQueryData(QUERY_KEYS.oauthRequestScopedErrors, {
+    request_scoped_errors: { copilot: [{ status: 429, match: ['optimistic'], action: 'continue' }] },
+  });
+
   // Emit sync_error carrying authoritative disabled: true snapshot; verify immediate rollback + error notification.
   const syncErrorEvent: StateSyncEvent = {
     type: 'sync_error',
     version: 3,
-    scopes: ['management-providers'],
+    scopes: ['management-providers', 'management-oauth-request-scoped-errors'],
     code: 'config_rejected',
     error: 'CPA rejected codex update',
     data: {
@@ -742,6 +785,9 @@ test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies
       auth_file_statuses: [{ name: 'codex-a.json', auth_index: 'idx-a', disabled: true }],
       oauth_model_aliases: {},
       oauth_excluded_models: {},
+      oauth_request_scoped_errors: {
+        copilot: [{ status: 400, match: ['server_rule'], action: 'stop' }],
+      },
     },
   };
   await reconcileStateSyncEvent(queryClient, syncErrorEvent, tracker, (err) => {
@@ -752,8 +798,55 @@ test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies
     QUERY_KEYS.providers(false),
   );
   assert.equal(rolledBack?.providers[0]?.disabled, true, 'sync_error snapshot rolls back optimistic provider status');
+  const rolledBackErrors = queryClient.getQueryData<{ request_scoped_errors: Record<string, Array<{ status: number }>> }>(
+    QUERY_KEYS.oauthRequestScopedErrors,
+  );
+  assert.equal(
+    rolledBackErrors?.request_scoped_errors.copilot?.[0]?.status,
+    400,
+    'sync_error snapshot rolls back optimistic OAuth request-scoped error rules',
+  );
   assert.deepEqual(syncErrors, ['CPA rejected codex update']);
   assert.equal(queryClient.getQueryState(QUERY_KEYS.providers(false))?.isInvalidated, true);
+  assert.equal(queryClient.getQueryState(QUERY_KEYS.oauthRequestScopedErrors)?.isInvalidated, true);
+
+  // When a snapshot reports oauth_request_scoped_errors as unavailable (omitted / null),
+  // existing cached error rules must be retained; a loaded empty object clears them.
+  const unavailableEvent = parseStateSyncEvent('sync_error', JSON.stringify({
+    type: 'sync_error',
+    version: 4,
+    scopes: ['management-oauth-request-scoped-errors'],
+    data: {
+      ...syncErrorEvent.data,
+      oauth_request_scoped_errors: null,
+    },
+  }));
+  assert.ok(unavailableEvent && unavailableEvent.data?.oauth_request_scoped_errors === undefined);
+  await reconcileStateSyncEvent(queryClient, unavailableEvent!, tracker);
+  assert.equal(
+    queryClient.getQueryData<{ request_scoped_errors: Record<string, Array<{ status: number }>> }>(
+      QUERY_KEYS.oauthRequestScopedErrors,
+    )?.request_scoped_errors.copilot?.[0]?.status,
+    400,
+    'unavailable snapshot retains cached error rules instead of wiping them',
+  );
+  const emptyLoadedEvent = parseStateSyncEvent('sync_error', JSON.stringify({
+    type: 'sync_error',
+    version: 5,
+    scopes: ['management-oauth-request-scoped-errors'],
+    data: {
+      ...syncErrorEvent.data,
+      oauth_request_scoped_errors: {},
+    },
+  }));
+  await reconcileStateSyncEvent(queryClient, emptyLoadedEvent!, tracker);
+  assert.deepEqual(
+    queryClient.getQueryData<{ request_scoped_errors: Record<string, unknown[]> }>(
+      QUERY_KEYS.oauthRequestScopedErrors,
+    )?.request_scoped_errors,
+    {},
+    'loaded empty object clears cached error rules',
+  );
 
   // Simulate an OMC process restart: tracker held version 3, reconnected stream emits ready at version 1.
   // The lower ready version must start a fresh epoch, invalidate cached state, and allow version 2 through!
@@ -778,6 +871,17 @@ test('state SSE channel suspends when hidden and reconcileStateSyncEvent applies
   );
   assert.equal(tracker.lastVersion, 2);
   assert.equal(queryClient.getQueryState(QUERY_KEYS.providers(false))?.isInvalidated, true);
+
+  // Quota state_sync must invalidate both management-quota and trends-quota caches together.
+  queryClient.setQueryData(QUERY_KEYS.quota, { quotas: [] });
+  queryClient.setQueryData([...QUERY_KEYS.trendsQuota, ''], { items: [] });
+  await reconcileStateSyncEvent(
+    queryClient,
+    { type: 'state_sync', version: 3, scopes: ['management-quota'] },
+    tracker,
+  );
+  assert.equal(queryClient.getQueryState(QUERY_KEYS.quota)?.isInvalidated, true);
+  assert.equal(queryClient.getQueryState([...QUERY_KEYS.trendsQuota, ''])?.isInvalidated, true);
 
   // Verify resolveStateEventsURL honors root and custom OMCPA_BASE_PATH via window.__OMCPA_CONFIG__.
   const g = globalThis as { window?: { __OMCPA_CONFIG__?: { basePath?: string; apiBaseUrl?: string } } };
@@ -851,7 +955,11 @@ test('invalidateQueriesSilently keeps DataProgress bar idle when cached data rec
 
 test('a chart redraws for a new dataset, not for a parent re-render that only renews its handlers', () => {
   const groups = [{ id: 'a', values: [1, 2] }];
-  const drawn = { groups, metric: 'tokens', onSelect: () => undefined };
+  const drawn: { groups: { id: string; values: number[] }[]; metric: string; onSelect?: () => undefined } = {
+    groups,
+    metric: 'tokens',
+    onSelect: () => undefined,
+  };
   assert.equal(isSameDrawing({ ...drawn, onSelect: () => undefined }, drawn), true);
   assert.equal(isSameDrawing({ ...drawn, groups: [...groups] }, drawn), false);
   assert.equal(isSameDrawing({ ...drawn, metric: 'cost' }, drawn), false);
@@ -912,6 +1020,7 @@ test('frame scheduler enforces per-tier maxJobsByPriority caps independently', (
 test('reconcileHotRouteSlots preserves slot order, keeps outlet identity on warm return, and pins dashboard during LRU eviction', () => {
   assert.equal(HOT_ACTIVITY_ROUTES.has('/dashboard'), true);
   assert.equal(HOT_ACTIVITY_ROUTES.has('/insights'), true);
+  assert.equal(HOT_ACTIVITY_ROUTES.has('/trends'), true);
   assert.equal(HOT_ACTIVITY_ROUTES.has('/api-keys'), false, 'secret-bearing routes never enter hot route pool');
   assert.equal(PINNED_HOT_ROUTES.has('/dashboard'), true);
 
@@ -959,6 +1068,38 @@ test('reconcileHotRouteSlots preserves slot order, keeps outlet identity on warm
     { maxSlots: 2, pinnedKeys: PINNED_HOT_ROUTES },
   );
   assert.deepEqual(evicted.map((s) => s.key), ['/dashboard', '/extra'], 'evicts unpinned /insights in place, keeping /dashboard pinned');
+
+  // The shell sizes the pool to every hot route, so the three observability pages all stay warm.
+  const trendsLoc = { locationContext: { location: { pathname: '/trends', search: '', hash: '', state: null } } };
+  const allHot = reconcileHotRouteSlots(slotsInsightsNewest, { key: '/trends', outlet: { id: 'trends-1' }, locationContext: trendsLoc }, { maxSlots: HOT_ACTIVITY_ROUTES.size });
+  assert.deepEqual(allHot.map((s) => s.key), ['/dashboard', '/insights', '/trends']);
+
+  // Shrinking when all remaining non-active slots are pinned evicts the least-recently-used slot, not index 0.
+  const allPinnedShrunk = reconcileHotRouteSlots(
+    [
+      { key: '/dashboard', outlet: dashOutlet1, locationContext: dashLoc1, lastActiveStep: 4 },
+      { key: '/insights', outlet: insightsOutlet, locationContext: insightsLoc, lastActiveStep: 2 },
+      { key: '/trends', outlet: { id: 'trends-1' }, locationContext: trendsLoc, lastActiveStep: 3 },
+    ],
+    { key: '/trends', outlet: { id: 'trends-2' }, locationContext: trendsLoc },
+    { maxSlots: 2, pinnedKeys: new Set(['/dashboard', '/insights', '/trends']) },
+  );
+  assert.deepEqual(allPinnedShrunk.map((s) => s.key), ['/dashboard', '/trends'], 'evicts oldest pinned /insights rather than newer /dashboard');
+
+  // Mobile mode caps to 1 active hot slot (releasing hidden chart trees) and drops slots on non-hot routes.
+  const mobileSingle = reconcileHotRouteSlots(
+    allHot,
+    { key: '/insights', outlet: { id: 'insights-2' }, locationContext: insightsLoc },
+    { maxSlots: 1, pinnedKeys: new Set(), dropWhenInactive: true },
+  );
+  assert.deepEqual(mobileSingle.map((s) => s.key), ['/insights']);
+  assert.equal(mobileSingle[0]?.outlet, insightsOutlet, 'preserves outlet identity when shrinking pool to active route');
+  const mobileCleared = reconcileHotRouteSlots(
+    mobileSingle,
+    null,
+    { maxSlots: 1, pinnedKeys: new Set(), dropWhenInactive: true },
+  );
+  assert.deepEqual(mobileCleared, [], 'mobile releases off-screen hot route when navigating to a non-hot route');
 });
 
 test('buildMonotoneSparkline produces overshoot-free monotone paths and maps pointer x to nearest bucket', () => {
@@ -1126,4 +1267,108 @@ test('every route descriptor and static navigation entry declares a registered s
       assert.ok(resolved?.loadingBody, `nav item ${item.key} must resolve to a ROUTE_DESCRIPTOR with loadingBody`);
     }
   }
+});
+
+test('lineSlotChildren recursively wraps fragment text children in spans while preserving keys', () => {
+  const normalized = lineSlotChildren([
+    React.createElement(React.Fragment, { key: 'frag-1' }, 'a-long-credential-name', 42),
+    React.createElement('strong', { key: 'el-2' }, 'badge'),
+  ]) as React.ReactElement<{ children?: React.ReactNode }>[];
+  assert.equal(normalized.length, 2);
+  assert.equal(normalized[0]?.type, React.Fragment);
+  assert.equal(normalized[0]?.key, '.$frag-1');
+  assert.equal(normalized[1]?.type, 'strong');
+  assert.equal(normalized[1]?.key, '.$el-2');
+  const inner = React.Children.toArray(normalized[0]?.props.children) as React.ReactElement<{ children?: React.ReactNode }>[];
+  assert.equal(inner.length, 2);
+  assert.equal(inner[0]?.type, 'span');
+  assert.equal(inner[0]?.props.children, 'a-long-credential-name');
+  assert.equal(inner[1]?.type, 'span');
+  assert.equal(inner[1]?.props.children, 42);
+});
+
+test('trendsQuotaParamsFromSearch matches readTrendsView + trendsQuotaParams and landing prefetch targets /trends only', async () => {
+  const cases = [
+    '',
+    '?provider=codex&model=gpt-5',
+    '?auth_index=cred-2&provider=claude&provider=codex&provider=claude&auth_index=%20cred-2%20&auth_index=%20%20',
+    '?bucket=hour&group=provider&quota_view=cycles',
+  ];
+  for (const search of cases) {
+    const expected = trendsQuotaParams(readTrendsView(new URLSearchParams(search)).filters);
+    assert.equal(trendsQuotaParamsFromSearch(search), expected, `mismatch for search=${search}`);
+  }
+
+  const trendsDescriptor = consoleRouteRegistry.resolve('/trends');
+  assert.equal(trendsDescriptor?.prefetchData, undefined, 'hover intent on /trends must not invoke upstream CPA quota reads');
+
+  const queryClient = new QueryClient();
+  const seen: Array<{ queryKey: readonly unknown[]; retry: unknown }> = [];
+  const originalPrefetch = queryClient.prefetchQuery.bind(queryClient);
+  queryClient.prefetchQuery = (async (options: Parameters<typeof originalPrefetch>[0]) => {
+    seen.push({ queryKey: options.queryKey, retry: options.retry });
+  }) as typeof queryClient.prefetchQuery;
+
+  prefetchLandingRouteData(queryClient, '/dashboard', '?provider=codex');
+  prefetchLandingRouteData(queryClient, '/insights', '?provider=codex');
+  assert.deepEqual(seen, [], 'non-trends landing routes must not prefetch trends-quota');
+
+  prefetchLandingRouteData(queryClient, '/trends', '?model=gpt-5&provider=codex&auth_index=c1');
+  prefetchLandingRouteData(queryClient, '/trends/', '?provider=codex');
+  assert.deepEqual(seen, [
+    { queryKey: ['trends-quota', 'provider=codex&auth_index=c1'], retry: retryTrendsQuery },
+    { queryKey: ['trends-quota', 'provider=codex'], retry: retryTrendsQuery },
+  ]);
+  assert.equal(retryTrendsQuery(0, new Error('transient 500')), true);
+  assert.equal(retryTrendsQuery(2, new Error('transient 500')), false);
+  assert.equal(retryTrendsQuery(0, new ApiError('uncaptured', 404, { code: 'demo_uncaptured' })), false);
+});
+
+test('settlePendingRouteLoaders stays pending until in-flight imports settle and drains handled rejections cleanly', async () => {
+  const { createNamedLoader, createRouteLoader, settlePendingRouteLoaders } = await import('../../src/utils/routeLoader.ts');
+  let release!: (mod: { Widget: () => null }) => void;
+  const loadWidget = createNamedLoader(
+    () =>
+      new Promise<{ Widget: () => null }>((resolve) => {
+        release = resolve;
+      }),
+    'Widget',
+  );
+  const pending = loadWidget();
+  let waitCompleted = false;
+  const wait = settlePendingRouteLoaders().then(() => {
+    waitCompleted = true;
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(waitCompleted, false, 'settlement must remain pending until the import resolves');
+  release({ Widget: () => null });
+  await wait;
+  assert.equal(waitCompleted, true);
+  assert.equal(typeof (await pending).default, 'function');
+
+  // A rejected import whose caller handles the rejection still resolves settlement and allows retry.
+  let failLoad!: (reason: Error) => void;
+  let attempts = 0;
+  const loadFlaky = createRouteLoader(() => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Promise<{ default: () => null }>((_, reject) => {
+        failLoad = reject;
+      });
+    }
+    return Promise.resolve({ default: () => null });
+  });
+  const firstAttempt = loadFlaky().catch((err: unknown) => err);
+  let rejectSettled = false;
+  const drainRejected = settlePendingRouteLoaders().then(() => {
+    rejectSettled = true;
+  });
+  await Promise.resolve();
+  assert.equal(rejectSettled, false);
+  failLoad(new Error('chunk network error'));
+  await drainRejected;
+  assert.equal(rejectSettled, true);
+  assert.equal((await firstAttempt) instanceof Error, true);
+  assert.equal(typeof (await loadFlaky()).default, 'function');
 });

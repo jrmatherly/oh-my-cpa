@@ -26,9 +26,11 @@ import type {
   ManagementOAuthExcludedModelsResponse,
   ManagementOAuthModelAlias,
   ManagementOAuthModelAliasesResponse,
+  ManagementOAuthRequestScopedErrorsResponse,
 } from '../types/managementOAuthModelAlias';
 import type { ModelSquareDirectory, ModelSquareRoute } from '../types/modelSquare';
 import type { OutboundProxyInput, OutboundProxySettings } from '../types/outboundProxy';
+import type { GitHubTokenInput, GitHubTokenStatus, GitHubTokenTestResult } from '../types/githubToken';
 import type {
   PluginConfigResponse,
   PluginItem,
@@ -48,6 +50,7 @@ import type {
 } from '../types/pricing';
 import type {
   ClientAPIKeyItem,
+  ProviderErrorRule,
   ProviderItem,
   ProviderKeyEntry,
   SaveProviderModelItem,
@@ -158,6 +161,7 @@ export interface DemoSandboxState {
     siwcOverrides: Record<string, { use_siwc?: boolean; siwc_bound?: boolean; siwc_status?: 'off' | 'valid' | 'invalid'; siwc_expires_at?: string }>;
     modelAliases?: Record<string, ManagementOAuthModelAlias[]>;
     excludedModels?: Record<string, string[]>;
+    requestScopedErrors?: Record<string, ProviderErrorRule[]>;
     archivedByIndex?: Record<string, ArchivedCredentialItem>;
   };
   routing: {
@@ -200,6 +204,8 @@ export interface DemoSandboxState {
   };
   system: {
     outboundProxy?: OutboundProxySettings;
+    githubToken?: GitHubTokenStatus;
+    cpaServerId?: string;
     dataRetentionDays?: number;
     logsClearedAtMs?: number;
     lastMaintenanceAtMs?: number;
@@ -349,6 +355,7 @@ export function countDemoSandboxChanges(state = loadState()): number {
   count += Object.keys(state.authFiles.recoveredNames).length;
   if (state.authFiles.modelAliases) count += Object.keys(state.authFiles.modelAliases).length;
   if (state.authFiles.excludedModels) count += Object.keys(state.authFiles.excludedModels).length;
+  if (state.authFiles.requestScopedErrors) count += Object.keys(state.authFiles.requestScopedErrors).length;
   count += Object.keys(state.routing.settingsOverrides).length;
   count += Object.keys(state.routing.memberOverrides).length;
   count += Object.keys(state.plugins.enabledOverrides).length;
@@ -367,7 +374,7 @@ export function countDemoSandboxChanges(state = loadState()): number {
   count += state.quota.warmupRunsAdded.length;
   count += state.customIcons.created.length + state.customIcons.deletedIds.length + Object.keys(state.customIcons.updated).length;
   count += state.fonts.deletedIds.length;
-  if (state.system.outboundProxy || state.system.dataRetentionDays !== undefined || state.system.logsClearedAtMs !== undefined || state.system.dbBackupAutomation || (state.system.dbBackupJobs?.length ?? 0) > 0) count += 1;
+  if (state.system.outboundProxy || state.system.githubToken || state.system.dataRetentionDays !== undefined || state.system.logsClearedAtMs !== undefined || state.system.dbBackupAutomation || (state.system.dbBackupJobs?.length ?? 0) > 0) count += 1;
   return count;
 }
 
@@ -773,6 +780,106 @@ function syncScalarsFromDoc(doc: { getIn(path: string[]): unknown }, current: Co
     }
   }
   return next;
+}
+
+function maskSandboxGitHubToken(token: string): string {
+  const trimmed = token.trim();
+  if (!trimmed) return '';
+  if (trimmed.length >= 20) return `${trimmed.slice(0, 8)}••••••••${trimmed.slice(-4)}`;
+  if (trimmed.length >= 12) return `${trimmed.slice(0, 4)}••••••••${trimmed.slice(-2)}`;
+  return '••••••••';
+}
+
+function syncSandboxGitHubTokenFromDoc(
+  state: DemoSandboxState,
+  yamlDoc: { getIn: (path: string[]) => unknown; setIn: (path: string[], value: unknown) => void },
+  safeDoc: { setIn: (path: string[], value: unknown) => void } | null,
+  revision: string,
+): void {
+  const raw = yamlDoc.getIn(['server', 'github-token']);
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) {
+    state.system.githubToken = { configured: false, cpa_revision: revision };
+    return;
+  }
+  const masked = value === '__OMCPA_UNCHANGED__'
+    ? (state.system.githubToken?.masked_token || '••••••••')
+    : maskSandboxGitHubToken(value);
+  // Keep raw token secrets out of browser sandbox storage.
+  yamlDoc.setIn(['server', 'github-token'], '__OMCPA_UNCHANGED__');
+  safeDoc?.setIn(['server', 'github-token'], '__OMCPA_UNCHANGED__');
+  state.system.githubToken = {
+    configured: true,
+    masked_token: masked,
+    cpa_revision: revision,
+  };
+}
+
+const SANDBOX_UUID_HYPHENATED_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const SANDBOX_NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+function generateSandboxUUIDv4(): string {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID().toLowerCase();
+  }
+  const bytes = new Uint8Array(16);
+  if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
+    cryptoObj.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function syncSandboxServerIdFromDoc(
+  state: DemoSandboxState,
+  yamlDoc: { getIn: (path: string[]) => unknown; setIn: (path: string[], value: unknown) => void },
+  safeDoc: { setIn: (path: string[], value: unknown) => void } | null,
+  allocateIfMissing = false,
+): void {
+  const raw = yamlDoc.getIn(['server', 'server-id']);
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (SANDBOX_UUID_HYPHENATED_RE.test(trimmed) && trimmed.toLowerCase() !== SANDBOX_NIL_UUID) {
+      const lower = trimmed.toLowerCase();
+      yamlDoc.setIn(['server', 'server-id'], lower);
+      safeDoc?.setIn(['server', 'server-id'], lower);
+      state.system.cpaServerId = lower;
+      return;
+    }
+  }
+  if (allocateIfMissing) {
+    const generated = generateSandboxUUIDv4();
+    yamlDoc.setIn(['server', 'server-id'], generated);
+    safeDoc?.setIn(['server', 'server-id'], generated);
+    state.system.cpaServerId = generated;
+    return;
+  }
+  delete state.system.cpaServerId;
+}
+
+function projectSandboxSystemInfo(
+  base: SystemInfoResponse | null,
+  state: DemoSandboxState,
+): SystemInfoResponse | null {
+  if (!base || (!state.system.lastUpdateCheckAtMs && !state.system.cpaServerId)) {
+    return base;
+  }
+  return {
+    ...base,
+    omc_version: state.system.lastUpdateCheckAtMs && base.omc_version
+      ? { ...base.omc_version, checked_at_ms: state.system.lastUpdateCheckAtMs }
+      : base.omc_version,
+    cpa: state.system.cpaServerId && base.cpa
+      ? { ...base.cpa, server_id: state.system.cpaServerId }
+      : base.cpa,
+  };
 }
 
 async function ensureConfigState(state: DemoSandboxState, fetchBaseline: FetchBaselineFn): Promise<{
@@ -1884,6 +1991,18 @@ export async function interceptDemoRequest(
       });
     }
 
+    if (pathname === '/management/auth-files/request-scoped-errors') {
+      const res = await fetchBaseline(pathWithQuery, options);
+      if (!res.ok) return res;
+      const base = await readBaselineJson<ManagementOAuthRequestScopedErrorsResponse>('auth-files-request-scoped-errors', res);
+      return jsonResponse({
+        request_scoped_errors: {
+          ...base.request_scoped_errors,
+          ...(state.authFiles.requestScopedErrors ?? {}),
+        },
+      });
+    }
+
     if (pathname === '/management/oauth/status') {
       const id = parsedUrl.searchParams.get('state') || parsedUrl.searchParams.get('session_id') || '';
       const session = oauthSessions.get(id);
@@ -1891,10 +2010,13 @@ export async function interceptDemoRequest(
         if (session.status === 'waiting' && session.flow === 'device' && Date.now() - session.createdAtMs > 1800) {
           session.status = 'success';
           if (session.recoveryTarget) {
-            state.authFiles.recoveredNames[session.recoveryTarget.name] = {
+            const targetName = session.recoveryTarget.name;
+            state.authFiles.recoveredNames[targetName] = {
               refreshedAt: new Date().toISOString(),
               verified: session.recoveryTarget.verify === true,
             };
+            recordSandboxAudit(state, 'oauth.recover_sandbox', 'auth_file', targetName);
+            saveState(state);
           } else {
             const idx = state.authFiles.created.length + 1;
             const name = `${session.provider}-sandbox-${idx}.json`;
@@ -2033,6 +2155,27 @@ export async function interceptDemoRequest(
       return jsonResponse(mergePricing(base, state));
     }
 
+    if (pathname === '/pricing/sync-schedule') {
+      const base = await ensureBaseline<PricingResponse>('pricing', '/pricing', fetchBaseline);
+      const merged = base ? mergePricing(base, state) : undefined;
+      const syncState = merged?.sync.state;
+      const interval = syncState?.auto_sync_interval_hours ?? state.pricing.syncIntervalHours ?? 24;
+      return jsonResponse({
+        interval_hours: interval,
+        known: Boolean(merged?.sync.known),
+        state: {
+          source: syncState?.source ?? 'openrouter',
+          last_success_at_ms: syncState?.last_success_at_ms ?? null,
+          has_failed: Boolean(syncState?.last_error),
+          last_matched: syncState?.last_matched ?? 0,
+          last_unmatched: syncState?.last_unmatched ?? 0,
+          next_sync_at_ms: syncState?.next_sync_at_ms ?? null,
+          auto_sync_interval_hours: interval,
+          updated_at_ms: syncState?.updated_at_ms ?? Date.now(),
+        },
+      });
+    }
+
     if (pathname === '/pricing/attention') {
       const [res, pricingBase] = await Promise.all([
         fetchBaseline(pathWithQuery, options),
@@ -2120,7 +2263,10 @@ export async function interceptDemoRequest(
     }
 
     if (pathname === '/management/system/diagnostics') {
-      const sysRes = await ensureBaseline<SystemInfoResponse>('system', '/management/system', fetchBaseline);
+      const sysRes = projectSandboxSystemInfo(
+        await ensureBaseline<SystemInfoResponse>('system', '/management/system', fetchBaseline),
+        state,
+      );
       const bundle = {
         generated_at: new Date().toISOString(),
         sandbox: true,
@@ -2463,10 +2609,29 @@ export async function interceptDemoRequest(
       });
     }
 
-    // Outbound proxy & Data retention & System
+    // Outbound proxy, GitHub token & Data retention & System
     if (pathname === '/management/outbound-proxy') {
       if (state.system.outboundProxy) return jsonResponse(state.system.outboundProxy);
       return fetchBaseline(pathWithQuery, options);
+    }
+
+    if (pathname === '/management/github-token') {
+      const { scalarsRes } = await ensureConfigState(state, fetchBaseline);
+      if (state.system.githubToken) {
+        return jsonResponse({
+          ...state.system.githubToken,
+          cpa_revision: scalarsRes.revision,
+        } satisfies GitHubTokenStatus);
+      }
+      const res = await fetchBaseline(pathWithQuery, options);
+      if (res.ok) {
+        const base = (await res.json()) as GitHubTokenStatus;
+        return jsonResponse({ ...base, cpa_revision: scalarsRes.revision } satisfies GitHubTokenStatus);
+      }
+      return jsonResponse({
+        configured: false,
+        cpa_revision: scalarsRes.revision,
+      } satisfies GitHubTokenStatus);
     }
 
     if (pathname === '/management/system/data-retention') {
@@ -2483,13 +2648,7 @@ export async function interceptDemoRequest(
       const res = await fetchBaseline(pathWithQuery, options);
       if (!res.ok) return res;
       const base = (await res.json()) as SystemInfoResponse;
-      if (state.system.lastUpdateCheckAtMs) {
-        return jsonResponse({
-          ...base,
-          omc_version: base.omc_version ? { ...base.omc_version, checked_at_ms: state.system.lastUpdateCheckAtMs } : base.omc_version,
-        });
-      }
-      return jsonResponse(base);
+      return jsonResponse(projectSandboxSystemInfo(base, state));
     }
 
     if (pathname === '/management/system/maintenance') {
@@ -2587,6 +2746,9 @@ export async function interceptDemoRequest(
           oauth_excluded_models: state.authFiles.excludedModels
             ? { ...base.data.oauth_excluded_models, ...state.authFiles.excludedModels }
             : base.data.oauth_excluded_models,
+          oauth_request_scoped_errors: state.authFiles.requestScopedErrors
+            ? { ...base.data.oauth_request_scoped_errors, ...state.authFiles.requestScopedErrors }
+            : base.data.oauth_request_scoped_errors,
         },
       });
     }
@@ -2810,9 +2972,11 @@ export async function interceptDemoRequest(
       }
     }
     pushConfigBackup(state, backupsList, sourceRes.yaml, sourceRes.revision, 'config_changes');
+    const revision = nextRevision(state);
+    syncSandboxGitHubTokenFromDoc(state, yamlDoc, safeDoc, revision);
+    syncSandboxServerIdFromDoc(state, yamlDoc, safeDoc);
     const nextYaml = yamlDoc.toString();
     const nextSafeYaml = safeDoc.toString();
-    const revision = nextRevision(state);
     state.config.yaml = nextYaml;
     state.config.safeYaml = nextSafeYaml;
     state.config.scalars = syncScalarsFromDoc(yamlDoc, scalarsRes.scalars);
@@ -2834,19 +2998,22 @@ export async function interceptDemoRequest(
     const backupsList = await ensureConfigBackups(state, fetchBaseline);
     pushConfigBackup(state, backupsList, sourceRes.yaml, sourceRes.revision, 'config_source');
     const revision = nextRevision(state);
-    state.config.yaml = nextYaml;
-    state.config.safeYaml = nextYaml;
+    syncSandboxGitHubTokenFromDoc(state, doc, null, revision);
+    syncSandboxServerIdFromDoc(state, doc, null, true);
+    const sanitizedYaml = doc.toString();
+    state.config.yaml = sanitizedYaml;
+    state.config.safeYaml = sanitizedYaml;
     state.config.scalars = syncScalarsFromDoc(doc, scalarsRes.scalars);
     state.config.revision = revision;
     recordSandboxAudit(state, 'config.save_source', 'config', 'config_source_yaml', {
-      bytes: new TextEncoder().encode(nextYaml).byteLength,
+      bytes: new TextEncoder().encode(sanitizedYaml).byteLength,
     });
     saveState(state);
     return jsonResponse({
       status: 'ok',
       revision,
-      yaml: nextYaml,
-      size_bytes: new TextEncoder().encode(nextYaml).byteLength,
+      yaml: sanitizedYaml,
+      size_bytes: new TextEncoder().encode(sanitizedYaml).byteLength,
     });
   }
 
@@ -2920,8 +3087,11 @@ export async function interceptDemoRequest(
     const { parseDocument } = await import('yaml');
     const doc = parseDocument(targetYaml);
     const revision = nextRevision(state);
-    state.config.yaml = targetYaml;
-    state.config.safeYaml = targetYaml;
+    syncSandboxGitHubTokenFromDoc(state, doc, null, revision);
+    syncSandboxServerIdFromDoc(state, doc, null, true);
+    const sanitizedYaml = doc.toString();
+    state.config.yaml = sanitizedYaml;
+    state.config.safeYaml = sanitizedYaml;
     state.config.scalars = syncScalarsFromDoc(doc, scalarsRes.scalars);
     state.config.revision = revision;
     recordSandboxAudit(state, 'config.backup_restore', 'config_backup', String(backupId));
@@ -3155,12 +3325,28 @@ export async function interceptDemoRequest(
     return jsonResponse({ status: 'ok', provider: body.provider, models: merged[body.provider] });
   }
 
+  if (pathname === '/management/auth-files/request-scoped-errors' && method === 'PATCH') {
+    const body = parseJsonBody<{ provider?: string; rules?: ProviderErrorRule[] }>(options);
+    if (!body?.provider) return errorResponse('Missing provider', 'invalid_request', 400);
+    const base = await ensureBaseline<ManagementOAuthRequestScopedErrorsResponse>(
+      'auth-files-request-scoped-errors',
+      '/management/auth-files/request-scoped-errors',
+      fetchBaseline,
+    );
+    const merged = { ...(base?.request_scoped_errors ?? {}), ...(state.authFiles.requestScopedErrors ?? {}) };
+    merged[body.provider] = body.rules ?? [];
+    state.authFiles.requestScopedErrors = merged;
+    recordSandboxAudit(state, 'oauth_request_scoped_errors.update', 'oauth_provider', body.provider);
+    saveState(state);
+    return jsonResponse({ status: 'ok', provider: body.provider, rules: merged[body.provider] });
+  }
+
   // Sandbox OAuth / SIWC interactive flows
   if (pathname === '/management/oauth/start' && method === 'POST') {
     const body = parseJsonBody<{ provider?: string; name?: string; auth_index?: string; verify?: boolean }>(options);
     const provider = body?.provider || 'codex';
     const id = `demo-oauth-${Date.now().toString(36)}`;
-    const isDevice = provider.startsWith('kimi') || provider.includes('qoder') || provider.includes('workbuddy');
+    const isDevice = provider.startsWith('kimi') || provider === 'meta' || provider === 'copilot' || provider.includes('qoder') || provider.includes('workbuddy');
     const session: DemoOAuthSessionState = {
       id,
       provider,
@@ -3176,6 +3362,7 @@ export async function interceptDemoRequest(
       status: 'waiting',
       state: id,
       session_id: id,
+      flow: session.flow,
       url: session.url,
       ...(session.userCode ? { user_code: session.userCode, verification_url: session.url } : {}),
     });
@@ -3440,11 +3627,19 @@ export async function interceptDemoRequest(
     const interval = body?.interval_hours ?? 24;
     state.pricing.syncIntervalHours = interval;
     const base = await ensureBaseline<PricingResponse>('pricing', '/pricing', fetchBaseline);
+    const merged = base ? mergePricing(base, state) : undefined;
+    const syncState = merged?.sync.state;
     saveState(state);
     return jsonResponse({
       interval_hours: interval,
+      known: Boolean(merged?.sync.known),
       state: {
-        ...(base?.sync.state ?? { source: 'openrouter', last_error: '', last_matched: 0, last_unmatched: 0, updated_at_ms: Date.now() }),
+        source: syncState?.source ?? 'openrouter',
+        last_success_at_ms: syncState?.last_success_at_ms ?? null,
+        has_failed: Boolean(syncState?.last_error),
+        last_matched: syncState?.last_matched ?? 0,
+        last_unmatched: syncState?.last_unmatched ?? 0,
+        next_sync_at_ms: syncState?.next_sync_at_ms ?? null,
         auto_sync_interval_hours: interval,
         updated_at_ms: Date.now(),
       },
@@ -3818,6 +4013,59 @@ export async function interceptDemoRequest(
     recordSandboxAudit(state, 'outbound_proxy.update', 'outbound_proxy', 'default');
     saveState(state);
     return jsonResponse(next);
+  }
+
+  if (pathname === '/management/github-token' && method === 'PUT') {
+    const input = parseJsonBody<GitHubTokenInput>(options);
+    const token = (input?.token ?? '').trim();
+    const submittedRevision = (input?.cpa_revision ?? '').trim();
+    const { scalarsRes, sourceRes } = await ensureConfigState(state, fetchBaseline);
+    const backupsList = await ensureConfigBackups(state, fetchBaseline);
+    const { parseDocument } = await import('yaml');
+    const currentRevision = state.config.revision ?? sourceRes.revision;
+    if (!submittedRevision) {
+      return errorResponse('cpa_revision is required; reload settings before saving', 'invalid_request', 400);
+    }
+    if (submittedRevision !== currentRevision) {
+      return errorResponse('CPA configuration changed on disk; reload settings before saving', 'config_conflict', 409);
+    }
+    const currentYaml = state.config.yaml ?? sourceRes.yaml;
+    const currentSafeYaml = state.config.safeYaml ?? scalarsRes.safe_yaml ?? currentYaml;
+    const yamlDoc = parseDocument(currentYaml);
+    const safeDoc = parseDocument(currentSafeYaml);
+    if (token === '') {
+      yamlDoc.deleteIn(['server', 'github-token']);
+      safeDoc.deleteIn(['server', 'github-token']);
+    } else {
+      // Never persist the submitted raw token; store the sentinel in YAML and mask in status.
+      yamlDoc.setIn(['server', 'github-token'], '__OMCPA_UNCHANGED__');
+      safeDoc.setIn(['server', 'github-token'], '__OMCPA_UNCHANGED__');
+    }
+    pushConfigBackup(state, backupsList, currentYaml, currentRevision, 'config_changes');
+    const revision = nextRevision(state);
+    state.config.yaml = yamlDoc.toString();
+    state.config.safeYaml = safeDoc.toString();
+    state.config.scalars = syncScalarsFromDoc(yamlDoc, state.config.scalars ?? scalarsRes.scalars);
+    state.config.revision = revision;
+    const masked = maskSandboxGitHubToken(token);
+    const next: GitHubTokenStatus = {
+      configured: token !== '',
+      ...(masked ? { masked_token: masked } : {}),
+      cpa_revision: revision,
+    };
+    state.system.githubToken = next;
+    recordSandboxAudit(state, token === '' ? 'github_token.clear' : 'github_token.save', 'config', 'github_token');
+    saveState(state);
+    return jsonResponse(next);
+  }
+
+  if (pathname === '/management/github-token/test' && method === 'POST') {
+    const input = parseJsonBody<{ token?: string }>(options);
+    const hasToken = Boolean((input?.token ?? '').trim()) || Boolean(state.system.githubToken?.configured);
+    const result: GitHubTokenTestResult = hasToken
+      ? { status: 'valid', authenticated: true, limit: 5000, remaining: 4992, used: 8, reset_at_ms: Date.now() + 45 * 60_000 }
+      : { status: 'anonymous', authenticated: false, limit: 60, remaining: 54, used: 6, reset_at_ms: Date.now() + 45 * 60_000 };
+    return jsonResponse(result);
   }
 
   if (pathname === '/exchange-rates/refresh' && method === 'POST') {

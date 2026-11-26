@@ -12,6 +12,7 @@ export type ConfigSectionId =
 export type ConfigFieldType =
   | 'switch'
   | 'string'
+  | 'server_id'
   | 'number'
   | 'select'
   | 'api_keys'
@@ -92,7 +93,7 @@ export const CONFIG_GROUPS: ConfigGroupDefinition[] = [
     labelKey: 'cfg.grp_service',
     descKey: 'cfg.grp_service_desc',
     variant: 'form-grid',
-    fieldIds: ['host', 'port', 'authDir', 'kvStoreDisabled', 'kvStorePath', 'trustedProxies', 'maxRequestBodyBytes', 'shutdownTimeout', 'githubToken'],
+    fieldIds: ['host', 'port', 'serverId', 'authDir', 'kvStoreDisabled', 'kvStorePath', 'trustedProxies', 'maxRequestBodyBytes', 'shutdownTimeout', 'githubToken'],
   },
   {
     id: 'grp_apikeys',
@@ -183,6 +184,14 @@ export const CONFIG_GROUPS: ConfigGroupDefinition[] = [
 
   // ── 5. Shared provider behaviour ──────────────────────────────────────────
   {
+    id: 'grp_model_catalogs',
+    sectionId: 'providers',
+    labelKey: 'cfg.grp_model_catalogs',
+    descKey: 'cfg.grp_model_catalogs_desc',
+    variant: 'form-grid',
+    fieldIds: ['modelsCatalog', 'modelsCodexCatalog', 'modelsDevinCatalog'],
+  },
+  {
     id: 'grp_codex_behavior',
     sectionId: 'providers',
     labelKey: 'cfg.grp_codex_behavior',
@@ -228,7 +237,16 @@ export const CONFIG_GROUPS: ConfigGroupDefinition[] = [
     labelKey: 'cfg.grp_claude_behavior',
     descKey: 'cfg.grp_claude_behavior_desc',
     variant: 'settings-list',
-    fieldIds: ['claudeModelLevelCooling', 'claudeToolSearch', 'claudeServerSideFallback', 'claudeSessionDatePinDays', 'claudeDisableCloakMode', 'claudeDisableCloakingModelList', 'claudeShowCodexCommentary'],
+    fieldIds: [
+      'claudeOAuthIncludeCreateAPIKey',
+      'claudeModelLevelCooling',
+      'claudeToolSearch',
+      'claudeServerSideFallback',
+      'claudeSessionDatePinDays',
+      'claudeDisableCloakMode',
+      'claudeDisableCloakingModelList',
+      'claudeShowCodexCommentary',
+    ],
   },
   {
     id: 'grp_claude_headers',
@@ -355,6 +373,15 @@ export const ALL_CONFIG_FIELDS: ConfigFieldDefinition[] = [
     max: 65535,
     defaultValue: 8317,
     keywords: ['port', 'listen'],
+  },
+  {
+    id: 'serverId',
+    sectionId: 'connectivity',
+    labelKey: 'cfg.f_server_id',
+    yamlPath: ['server', 'server-id'],
+    type: 'server_id',
+    placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+    keywords: ['server-id', 'server id', 'uuid', 'deployment', 'identity'],
   },
   {
     id: 'authDir',
@@ -901,6 +928,36 @@ export const ALL_CONFIG_FIELDS: ConfigFieldDefinition[] = [
   },
 
   // ── 5. OAuth provider behaviour ──────────────────────────────────────────
+  // CPA v8 accepts http(s) URLs or absolute local paths under the canonical
+  // top-level `models` root; these fields have no pre-relocation spelling.
+  {
+    id: 'modelsCatalog',
+    sectionId: 'providers',
+    labelKey: 'cfg.f_models_catalog',
+    descKey: 'cfg.f_models_catalog_desc',
+    yamlPath: ['models', 'catalog'],
+    type: 'string',
+    placeholder: 'https://models.router-for.me/models.json',
+    keywords: ['models', 'catalog', 'models.json', 'definitions', 'claude', 'gemini', 'antigravity', 'oauth', 'url', 'path'],
+  },
+  {
+    id: 'modelsCodexCatalog',
+    sectionId: 'providers',
+    labelKey: 'cfg.f_models_codex_catalog',
+    yamlPath: ['models', 'codex-catalog'],
+    type: 'string',
+    placeholder: 'https://models.router-for.me/codex_client_models.json',
+    keywords: ['models', 'codex', 'codex-catalog', 'codex_client_models.json', 'catalog', 'definitions', 'url', 'path'],
+  },
+  {
+    id: 'modelsDevinCatalog',
+    sectionId: 'providers',
+    labelKey: 'cfg.f_models_devin_catalog',
+    yamlPath: ['models', 'devin-catalog'],
+    type: 'string',
+    placeholder: 'https://models.router-for.me/devin_models.json',
+    keywords: ['models', 'devin', 'devin-catalog', 'devin_models.json', 'catalog', 'definitions', 'url', 'path'],
+  },
   {
     id: 'antigravityCredits',
     sectionId: 'providers',
@@ -1256,6 +1313,19 @@ export const ALL_CONFIG_FIELDS: ConfigFieldDefinition[] = [
     keywords: ['codex', 'live', 'udp', 'port'],
   },
   {
+    id: 'claudeOAuthIncludeCreateAPIKey',
+    sectionId: 'providers',
+    labelKey: 'cfg.f_claude_oauth_create_api_key',
+    descKey: 'cfg.f_claude_oauth_create_api_key_desc',
+    // CPA treats an absent value as true to match native Claude Code.
+    // This governs OAuth login authorization scope rather than upstream request
+    // handling, so it belongs under oauth.providers.claude with no legacy path.
+    yamlPath: ['oauth', 'providers', 'claude', 'oauth-include-create-api-key'],
+    type: 'switch',
+    defaultValue: true,
+    keywords: ['claude', 'oauth', 'scope', 'create_api_key', 'org:create_api_key'],
+  },
+  {
     id: 'claudeToolSearch',
     sectionId: 'providers',
     labelKey: 'cfg.f_claude_tool_search',
@@ -1598,7 +1668,7 @@ export const ALL_CONFIG_FIELDS: ConfigFieldDefinition[] = [
     descKey: 'cfg.f_payload_replace_desc',
     yamlPath: ['requests', 'payload', 'replace'],
     type: 'json_editor',
-    keywords: ['payload', 'replace', 'text', 'user', 'replacements', 'positions', 'all'],
+    keywords: ['payload', 'replace', 'text', 'user', 'system', 'developer', 'paths', 'regex', 'replacements', 'positions', 'all'],
   },
   {
     id: 'payloadFilterRules',

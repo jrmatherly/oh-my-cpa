@@ -125,6 +125,7 @@ func demoExportCases() []demoExportCase {
 		{Name: "system-maintenance", Path: "/api/v1/management/system/maintenance"},
 		{Name: "system-data-retention", Path: "/api/v1/management/system/data-retention"},
 		{Name: "outbound-proxy", Path: "/api/v1/management/outbound-proxy"},
+		{Name: "github-token", Path: "/api/v1/management/github-token"},
 		{Name: "config", Path: "/api/v1/management/config"},
 		{Name: "config-source", Path: "/api/v1/management/config/source"},
 		{Name: "config-backups", Path: "/api/v1/management/config/backups"},
@@ -143,6 +144,7 @@ func demoExportCases() []demoExportCase {
 		{Name: "client-key-aliases", Path: "/api/v1/management/client-key-aliases"},
 		{Name: "model-square", Path: "/api/v1/management/model-square"},
 		{Name: "pricing", Path: "/api/v1/pricing"},
+		{Name: "pricing-sync-schedule", Path: "/api/v1/pricing/sync-schedule"},
 		{Name: "pricing-attention", Path: "/api/v1/pricing/attention"},
 		{Name: "pricing-catalog", Path: "/api/v1/pricing/catalog"},
 		{Name: "plugins", Path: "/api/v1/management/plugins"},
@@ -162,6 +164,7 @@ func demoExportCases() []demoExportCase {
 		// without a name is what the console's own model picker sends.
 		{Name: "auth-files-model-aliases", Path: "/api/v1/management/auth-files/model-aliases"},
 		{Name: "auth-files-excluded-models", Path: "/api/v1/management/auth-files/excluded-models"},
+		{Name: "auth-files-request-scoped-errors", Path: "/api/v1/management/auth-files/request-scoped-errors"},
 		// The rule editors read one catalog per provider; these are the fixture's
 		// providers that carry rules, which are the ones the drawer opens on.
 		{Name: "auth-files-provider-models-claude", Path: "/api/v1/management/auth-files/provider-models?provider=claude"},
@@ -182,6 +185,7 @@ func demoExportCases() []demoExportCase {
 		{Name: "quota", Path: "/api/v1/management/quota"},
 		// One credential's quota detail, for the page the quota list links into.
 		{Name: "quota-codex", Path: "/api/v1/management/quota/auth-codex-01"},
+		{Name: "trends-quota", Path: "/api/v1/management/trends/quota"},
 		// Consumption details for observable windows. Every
 		// sibling window of each demo credential is exported so switching periods inside
 		// the consumption dialog works on the static demo Worker too.
@@ -196,6 +200,8 @@ func demoExportCases() []demoExportCase {
 		{Name: "quota-capacity-auth-antigravity-01-ag_Claude and GPT models_aerolith-5h", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Claude+and+GPT+models_aerolith-5h", Route: "/api/v1/management/quota/{authIndex}/capacity"},
 		{Name: "quota-capacity-auth-antigravity-01-ag_Claude and GPT models_aerolith-week", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Claude+and+GPT+models_aerolith-week", Route: "/api/v1/management/quota/{authIndex}/capacity"},
 		{Name: "quota-capacity-auth-antigravity-01-ag_Gemini 4 Argon_gemini-4-argon-week", Path: "/api/v1/management/quota/auth-antigravity-01/capacity?window=ag_Gemini+4+Argon_gemini-4-argon-week", Route: "/api/v1/management/quota/{authIndex}/capacity"},
+		// Subscription billing-cycle usage totals for demo credentials with verified upstream billing dates.
+		{Name: "quota-subscription-cycle-auth-codex-01", Path: "/api/v1/management/quota/auth-codex-01/subscription-cycle", Route: "/api/v1/management/quota/{authIndex}/subscription-cycle"},
 		{Name: "logs", Path: "/api/v1/management/logs?limit=200"},
 		{Name: "logs-status", Path: "/api/v1/management/logs/status"},
 		{Name: "service-logs", Path: "/api/v1/management/service-logs"},
@@ -279,6 +285,21 @@ func demoExportCases() []demoExportCase {
 			demoExportCase{Name: "insights-rhythm-" + preset, Path: "/api/v1/management/insights/rhythm?preset=" + preset},
 			demoExportCase{Name: "insights-clients-" + preset, Path: "/api/v1/management/insights/clients?preset=" + preset},
 		)
+		for _, view := range []struct {
+			name   string
+			groups []string
+		}{
+			{"usage", []string{"model", "call_point", "client_agent", "key", "provider", "credential"}},
+			{"telemetry", []string{"model", "call_point", "provider", "credential"}},
+		} {
+			for _, group := range view.groups {
+				name := "trends-" + view.name + "-"
+				if group != "model" {
+					name += group + "-"
+				}
+				cases = append(cases, demoExportCase{Name: name + preset, Path: "/api/v1/management/trends/" + view.name + "?preset=" + preset + "&group_by=" + group})
+			}
+		}
 	}
 	// The heatmap is asked for in the viewer's own zone; the export keeps a UTC and a
 	// non-UTC zone so the Worker's calendar maths has a reference for both an offset
@@ -429,7 +450,7 @@ func buildDemoExportDataset(t *testing.T) (demoExportResponses, []byte) {
 			one.Path = resolved
 		}
 		responses[one.Name] = demoExportFetch(t, server.URL, one)
-		if strings.HasPrefix(one.Name, "insights-") && responses[one.Name].Status != http.StatusOK {
+		if (strings.HasPrefix(one.Name, "insights-") || strings.HasPrefix(one.Name, "trends-")) && responses[one.Name].Status != http.StatusOK {
 			t.Fatalf("%s returned HTTP %d", one.Name, responses[one.Name].Status)
 		}
 		if strings.HasPrefix(one.Name, "insights-cube-") {
@@ -970,7 +991,7 @@ func demoExportRouter(t *testing.T) (http.Handler, time.Time) {
 		t.Fatalf("build export cipher: %v", err)
 	}
 
-	db, err := repository.Open(context.Background(), "file::memory:?cache=shared",
+	db, err := repository.Open(context.Background(), apiMemoryDSN(),
 		repository.WithCipher(cipher))
 	if err != nil {
 		t.Fatalf("open export repository: %v", err)

@@ -356,6 +356,7 @@ func quotaAttemptDTO(attempt *quota.ReadAttempt) *QuotaRefreshAttemptDTO {
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 500 {object} ErrorResponseDTO
 // @Failure 502 {object} ErrorResponseDTO
 // @Router /v1/management/quota/refresh [post]
@@ -425,6 +426,7 @@ func (h *Handler) refreshCredentialQuota(writer http.ResponseWriter, request *ht
 		_ = h.recordAudit(request, "quota.refresh", "quota", targetIndex, outcome, map[string]any{
 			"status": refreshed.Status,
 		})
+		h.publishStateSync("management-quota")
 
 		writeJSON(writer, http.StatusOK, QuotaSingleRefreshResponseDTO{
 			Status: "ok",
@@ -508,6 +510,9 @@ func (h *Handler) refreshCredentialQuota(writer http.ResponseWriter, request *ht
 				out = append(out, r)
 			}
 		}
+		if len(out) > 0 {
+			h.publishStateSync("management-quota")
+		}
 		writeJSON(writer, http.StatusOK, QuotaBatchRefreshResponseDTO{Status: "ok", Quotas: out, Total: len(out)})
 		return
 	}
@@ -544,6 +549,9 @@ func (h *Handler) refreshCredentialQuota(writer http.ResponseWriter, request *ht
 		writeFrame("quota", r)
 	}
 	writeFrame("done", map[string]any{"status": "ok", "total": total})
+	if total > 0 {
+		h.publishStateSync("management-quota")
+	}
 }
 
 // finishBatchReading audits a Meta read and attaches the quota forecasts before a batch reading is
@@ -750,6 +758,7 @@ func (h *Handler) clearCredentialCooldownWithAction(writer http.ResponseWriter, 
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 500 {object} ErrorResponseDTO
 // @Failure 502 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
@@ -769,6 +778,7 @@ func (h *Handler) clearCredentialCooldown(writer http.ResponseWriter, request *h
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 500 {object} ErrorResponseDTO
 // @Failure 502 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
@@ -788,6 +798,7 @@ func (h *Handler) resetCredentialQuota(writer http.ResponseWriter, request *http
 // @Failure 400 {object} ErrorResponseDTO
 // @Failure 401 {object} ErrorResponseDTO
 // @Failure 404 {object} ErrorResponseDTO
+// @Failure 413 {object} ErrorResponseDTO
 // @Failure 500 {object} ErrorResponseDTO
 // @Failure 502 {object} ErrorResponseDTO
 // @Failure 503 {object} ErrorResponseDTO
